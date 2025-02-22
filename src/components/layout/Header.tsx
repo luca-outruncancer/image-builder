@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import UploadModal from '../upload/UploadModal';
+import { Upload } from 'lucide-react';
 
 export default function Header() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -14,19 +15,26 @@ export default function Header() {
 
   return (
     <>
-      <header className="border-b border-gray-200 bg-white p-4 z-10">
-        <div className="flex items-center justify-between max-w-[95vw] mx-auto">
-          <img 
-            src="/OutrunCancer-logo.png" 
-            alt="Outrun Cancer Logo" 
-            className="h-8"
-          />
-          <h1 className="text-3xl font-bold">Image Board</h1>
+      <header className="sticky top-0 border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center">
+            <img 
+              src="/OutrunCancer-logo.png" 
+              alt="Outrun Cancer Logo" 
+              className="h-8 w-auto"
+            />
+          </div>
+          
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl hidden sm:block">
+            Image Board
+          </h1>
+
           <button 
             onClick={handleUploadClick}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 active:scale-95"
           >
-            Upload
+            <Upload size={18} />
+            <span>Upload</span>
           </button>
         </div>
       </header>
