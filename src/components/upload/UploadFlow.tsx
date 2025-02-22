@@ -131,16 +131,16 @@ export default function UploadFlow({ isOpen }: { isOpen: boolean }) {
         </>
       ) : (
         <div className="mb-4">
-          <div className="border border-black rounded p-2 bg-gray-50">
+          <div className="p-4 flex items-center justify-center">
             <img
               src={preview?.url}
               alt="Preview"
               style={{
                 width: isCustomSize ? customSize.width : selectedSize.width,
                 height: isCustomSize ? customSize.height : selectedSize.height,
-                objectFit: 'cover'
+                objectFit: 'cover',
+                border: '1px solid black'
               }}
-              className="mx-auto"
             />
           </div>
           <p className="text-sm text-gray-600 mt-2 text-center">
