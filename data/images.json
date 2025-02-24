@@ -178,5 +178,45 @@
     "start_position_y": 0,
     "active": true,
     "timestamp": "2025-02-20T05:52:34.800Z"
+  },
+  {
+    "image_id": 19,
+    "image_location": "/uploads/Wsr7Ka6FJav-P3nQfMn5j_pizza_oven.jpg",
+    "size_x": 200,
+    "size_y": 200,
+    "start_position_x": 210,
+    "start_position_y": 410,
+    "active": true,
+    "timestamp": "2025-02-22T00:11:43.278Z"
+  },
+  {
+    "image_id": 20,
+    "image_location": "/uploads/IczQh2CfO-DUpmynB8gLz_flue_pizza_oven.jpg",
+    "size_x": 200,
+    "size_y": 200,
+    "start_position_x": 180,
+    "start_position_y": 610,
+    "active": true,
+    "timestamp": "2025-02-22T08:10:48.817Z"
+  },
+  {
+    "image_id": 21,
+    "image_location": "/uploads/ar1ul68Se7Cp0KfZDCDaO_pizza_oven.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 400,
+    "start_position_y": 200,
+    "active": true,
+    "timestamp": "2025-02-22T11:09:30.278Z"
+  },
+  {
+    "image_id": 22,
+    "image_location": "/uploads/yWcIhCrJw8d_wql4_UODN_flue_pizza_oven.jpg",
+    "size_x": 200,
+    "size_y": 200,
+    "start_position_x": 0,
+    "start_position_y": 310,
+    "active": true,
+    "timestamp": "2025-02-22T11:09:52.039Z"
   }
 ]
