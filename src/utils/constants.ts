@@ -1,5 +1,5 @@
 // src/utils/constants.ts
-export const CANVAS_WIDTH = 2000;
+export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 1000;
 export const GRID_SIZE = 10;
 export const MAX_FILE_SIZE = 1024 * 1024; // 1MB

@@ -218,5 +218,35 @@
     "start_position_y": 310,
     "active": true,
     "timestamp": "2025-02-22T11:09:52.039Z"
+  },
+  {
+    "image_id": 23,
+    "image_location": "/uploads/u7Y88kO7Ula0KBydfshr2_cement.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 0,
+    "start_position_y": 0,
+    "active": true,
+    "timestamp": "2025-02-24T04:30:55.026Z"
+  },
+  {
+    "image_id": 24,
+    "image_location": "/uploads/CGAGGV-_IR0LGO5Yx6KR4_pizza_oven.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 580,
+    "start_position_y": 0,
+    "active": true,
+    "timestamp": "2025-02-24T04:31:34.091Z"
+  },
+  {
+    "image_id": 25,
+    "image_location": "/uploads/XMFYahUJBytrZCzHLNt3e_Mask-Group-16.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 500,
+    "start_position_y": 200,
+    "active": true,
+    "timestamp": "2025-02-24T09:57:36.471Z"
   }
 ]
