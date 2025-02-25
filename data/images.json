@@ -218,5 +218,55 @@
     "start_position_y": 310,
     "active": true,
     "timestamp": "2025-02-22T11:09:52.039Z"
+  },
+  {
+    "image_id": 23,
+    "image_location": "/uploads/u7Y88kO7Ula0KBydfshr2_cement.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 0,
+    "start_position_y": 0,
+    "active": true,
+    "timestamp": "2025-02-24T04:30:55.026Z"
+  },
+  {
+    "image_id": 24,
+    "image_location": "/uploads/CGAGGV-_IR0LGO5Yx6KR4_pizza_oven.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 580,
+    "start_position_y": 0,
+    "active": true,
+    "timestamp": "2025-02-24T04:31:34.091Z"
+  },
+  {
+    "image_id": 25,
+    "image_location": "/uploads/XMFYahUJBytrZCzHLNt3e_Mask-Group-16.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 500,
+    "start_position_y": 200,
+    "active": true,
+    "timestamp": "2025-02-24T09:57:36.471Z"
+  },
+  {
+    "image_id": 26,
+    "image_location": "/uploads/oH2d0Yy_KHr2cQD-qLNJ0_pizza_oven.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 800,
+    "start_position_y": 80,
+    "active": true,
+    "timestamp": "2025-02-24T11:44:27.779Z"
+  },
+  {
+    "image_id": 27,
+    "image_location": "/uploads/DQlBp-NKhmhCBRqh_ZWAN_cement.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 0,
+    "start_position_y": 90,
+    "active": true,
+    "timestamp": "2025-02-25T00:25:06.453Z"
   }
 ]

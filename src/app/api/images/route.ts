@@ -1,34 +1,54 @@
-// src/app/api/images/route.ts
+// src/app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
+import fs from 'fs';
 import path from 'path';
+import { createImageRecord } from '@/lib/imageStorage';
 
-const dataFile = path.join(process.cwd(), 'data', 'images.json');
-
-export async function GET() {
-  try {
-    const jsonData = await fs.readFile(dataFile, 'utf8');
-    const images = JSON.parse(jsonData);
-    return NextResponse.json({ images });
-  } catch (error) {
-    if ((error as any).code === 'ENOENT') {
-      await fs.mkdir(path.dirname(dataFile), { recursive: true });
-      await fs.writeFile(dataFile, '[]');
-      return NextResponse.json({ images: [] });
-    }
-    return NextResponse.json({ error: 'Failed to fetch images' }, { status: 500 });
-  }
+// Ensure the uploads directory exists
+const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const newRecord = await request.json();
-    const jsonData = await fs.readFile(dataFile, 'utf8').catch(() => '[]');
-    const records = JSON.parse(jsonData);
-    records.push(newRecord);
-    await fs.writeFile(dataFile, JSON.stringify(records, null, 2));
-    return NextResponse.json({ success: true, record: newRecord });
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+    const position = JSON.parse(formData.get('position') as string);
+    const size = JSON.parse(formData.get('size') as string);
+    
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+    
+    // Local file storage for development
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const filename = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9\.]/g, '_')}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, buffer);
+    const fileUrl = `/uploads/${filename}`;
+    
+    // Store metadata in database
+    const record = await createImageRecord({
+      image_location: fileUrl,
+      start_position_x: position.x,
+      start_position_y: position.y,
+      size_x: size.width,
+      size_y: size.height
+    });
+    
+    if (!record) {
+      return NextResponse.json({ error: 'Failed to save image metadata' }, { status: 500 });
+    }
+    
+    return NextResponse.json({ 
+      success: true, 
+      url: fileUrl, 
+      record 
+    });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to save record' }, { status: 500 });
+    console.error('Upload error:', error);
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }

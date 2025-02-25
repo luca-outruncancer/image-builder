@@ -1,11 +1,15 @@
 // src/app/api/upload/route.ts
-import { writeFile } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
 import path from 'path';
-import { nanoid } from 'nanoid';
-import { promises as fs } from 'fs';
+// import { put } from '@vercel/blob'; // Uncomment for Vercel deployment
+import { createImageRecord } from '@/lib/imageStorage';
 
-const STORAGE_FILE = path.join(process.cwd(), 'data', 'images.json');
+// Ensure the uploads directory exists
+const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,54 +18,43 @@ export async function POST(request: NextRequest) {
     const position = JSON.parse(formData.get('position') as string);
     const size = JSON.parse(formData.get('size') as string);
     
-    if (!file || !position || !size) {
-      return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
-
-    const filename = `${nanoid()}_${file.name}`;
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    const filePath = path.join(uploadDir, filename);
     
-    // Ensure upload directory exists
-    await fs.mkdir(uploadDir, { recursive: true });
-
+    // Local file storage for development
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
-
-    // Read existing records
-    let records = [];
-    try {
-      const jsonData = await fs.readFile(STORAGE_FILE, 'utf8');
-      records = JSON.parse(jsonData);
-    } catch (error) {
-      await fs.mkdir(path.dirname(STORAGE_FILE), { recursive: true });
-    }
-
-    // Create new record
-    const newRecord = {
-      image_id: records.length + 1,
-      image_location: `/uploads/${filename}`,
-      size_x: size.width,
-      size_y: size.height,
+    const filename = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9\.]/g, '_')}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, buffer);
+    const fileUrl = `/uploads/${filename}`;
+    
+    /* Vercel Blob Storage - uncomment for production
+    const blob = await put(file.name, file, { access: 'public' });
+    const fileUrl = blob.url;
+    */
+    
+    // Store metadata in database
+    const record = await createImageRecord({
+      image_location: fileUrl,
       start_position_x: position.x,
       start_position_y: position.y,
-      active: true,
-      timestamp: new Date().toISOString()
-    };
-
-    // Save updated records
-    records.push(newRecord);
-    await fs.writeFile(STORAGE_FILE, JSON.stringify(records, null, 2));
-
+      size_x: size.width,
+      size_y: size.height
+    });
+    
+    if (!record) {
+      return NextResponse.json({ error: 'Failed to save image metadata' }, { status: 500 });
+    }
+    
     return NextResponse.json({ 
-      success: true,
-      filename,
-      url: `/uploads/${filename}`,
-      record: newRecord
+      success: true, 
+      url: fileUrl, 
+      record 
     });
   } catch (error) {
     console.error('Upload error:', error);
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }
