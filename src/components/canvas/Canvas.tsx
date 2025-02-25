@@ -20,32 +20,21 @@ interface PlacedImage {
   file?: File;
 }
 
-interface PlacedImage {
-    id: string;
-    src: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    locked: boolean;
-    file?: File;
-  }
-  
-  interface SuccessInfo {
-    timestamp: string;
-    imageName: string;
-    position: { x: number; y: number };
-  }
+interface SuccessInfo {
+  timestamp: string;
+  imageName: string;
+  position: { x: number; y: number };
+}
 
-  export default function Canvas({ className = '' }: { className?: string }) {
-    const canvasRef = useRef<HTMLDivElement>(null);
-    const [placedImages, setPlacedImages] = useState<PlacedImage[]>([]);
-    const [tempImage, setTempImage] = useState<PlacedImage | null>(null);
-    const [pendingConfirmation, setPendingConfirmation] = useState<PlacedImage | null>(null);
-    const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null);
-    const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-    const imageToPlace = useImageStore(state => state.imageToPlace);
-    const setImageToPlace = useImageStore(state => state.setImageToPlace);
+export default function Canvas({ className = '' }: { className?: string }) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [placedImages, setPlacedImages] = useState<PlacedImage[]>([]);
+  const [tempImage, setTempImage] = useState<PlacedImage | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PlacedImage | null>(null);
+  const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null);
+  const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const imageToPlace = useImageStore(state => state.imageToPlace);
+  const setImageToPlace = useImageStore(state => state.setImageToPlace);
 
   useEffect(() => {
     const loadPlacedImages = async () => {
@@ -173,16 +162,21 @@ interface PlacedImage {
     window.location.reload();
   };
 
-return (
+  const canvasStyle = {
+    width: CANVAS_WIDTH,
+    height: CANVAS_HEIGHT,
+    overflow: 'hidden',
+    backgroundImage: `url('/patterns/cork-board-background.jpeg')`,
+    backgroundSize: '400px 400px',
+    backgroundRepeat: 'repeat',
+  };
+
+  return (
     <>
       <div
         ref={canvasRef}
-        className={`relative border border-gray-300 bg-white ${className}`}
-        style={{
-          width: CANVAS_WIDTH,
-          height: CANVAS_HEIGHT,
-          overflow: 'hidden'
-        }}
+        className={`relative border border-gray-300 ${className}`}
+        style={canvasStyle}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
