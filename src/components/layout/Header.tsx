@@ -4,7 +4,7 @@ import Link from 'next/link';
 export default function Header() {
   return (
     <>
-      <div className="flex flex-col items-center justify-center py-10 px-4 text-center bg-muted/50">
+      <div className="flex flex-col items-center justify-center py-10 px-4 text-center bg-white/50">
         <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-black to-muted-foreground">
           We believe in outrunning cancer.
         </h1>

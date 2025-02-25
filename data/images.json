@@ -258,5 +258,15 @@
     "start_position_y": 80,
     "active": true,
     "timestamp": "2025-02-24T11:44:27.779Z"
+  },
+  {
+    "image_id": 27,
+    "image_location": "/uploads/DQlBp-NKhmhCBRqh_ZWAN_cement.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 0,
+    "start_position_y": 90,
+    "active": true,
+    "timestamp": "2025-02-25T00:25:06.453Z"
   }
 ]

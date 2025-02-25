@@ -1,10 +1,10 @@
+// src/app/page.tsx
 "use client"
 
 import { useState } from "react"
-import { Upload } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import Canvas from "@/components/canvas/Canvas"
 import UploadModal from "@/components/upload/UploadModal"
+import ToolsPanel from "@/components/tools/ToolsPanel"
 
 export default function VisionBoard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -13,16 +13,10 @@ export default function VisionBoard() {
     <div className="min-h-screen bg-white p-8">
       <div className="max-w-[1200px] mx-auto">
         <div className="flex gap-12">
-          <div className="w-48 space-y-4">
-            <Button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="w-full flex items-center gap-2 bg-black text-white hover:bg-black/90"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Image
-            </Button>
-          </div>
+          {/* Tools Panel */}
+          <ToolsPanel onUploadClick={() => setIsUploadModalOpen(true)} />
 
+          {/* Vision Board Area */}
           <div className="relative flex-1">
             <div 
               className="relative w-[1000px] h-[1000px] mx-auto overflow-hidden rounded-lg"
