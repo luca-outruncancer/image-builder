@@ -248,5 +248,15 @@
     "start_position_y": 200,
     "active": true,
     "timestamp": "2025-02-24T09:57:36.471Z"
+  },
+  {
+    "image_id": 26,
+    "image_location": "/uploads/oH2d0Yy_KHr2cQD-qLNJ0_pizza_oven.jpg",
+    "size_x": 100,
+    "size_y": 50,
+    "start_position_x": 800,
+    "start_position_y": 80,
+    "active": true,
+    "timestamp": "2025-02-24T11:44:27.779Z"
   }
 ]

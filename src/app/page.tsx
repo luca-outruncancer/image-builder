@@ -27,8 +27,11 @@ export default function VisionBoard() {
             <div 
               className="relative w-[1000px] h-[1000px] mx-auto overflow-hidden rounded-lg"
               style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg width='200' height='200' viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4' fill='%23e5d3b3'/%3E%3C/svg%3E")`,
-                backgroundSize: '200px 200px',
+                backgroundColor: '#e5d3b3',
+                backgroundImage: `radial-gradient(circle at 100% 150%, #e5d3b3 24%, #d4c4a4 25%, #d4c4a4 28%, #e5d3b3 29%, #e5d3b3 36%, #d4c4a4 36%, #d4c4a4 40%, transparent 40%, transparent),
+                                 radial-gradient(circle at 0 150%, #e5d3b3 24%, #d4c4a4 25%, #d4c4a4 28%, #e5d3b3 29%, #e5d3b3 36%, #d4c4a4 36%, #d4c4a4 40%, transparent 40%, transparent),
+                                 radial-gradient(circle at 50% 100%, #d4c4a4 10%, #e5d3b3 11%, #e5d3b3 23%, #d4c4a4 24%, #d4c4a4 30%, #e5d3b3 31%, #e5d3b3 43%, #d4c4a4 44%, #d4c4a4 50%, #e5d3b3 51%, #e5d3b3 63%, #d4c4a4 64%, #d4c4a4 71%, transparent 71%, transparent)`,
+                backgroundSize: '100px 50px',
                 backgroundRepeat: 'repeat',
                 boxShadow: `
                   0 0 0 1px rgba(0, 0, 0, 0.05),

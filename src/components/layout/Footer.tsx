@@ -34,6 +34,12 @@ export default function Footer() {
           {/* Navigation Links */}
           <nav className="flex space-x-8">
             <Link 
+              href="/"
+              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
+            >
+              Home
+            </Link>
+            <Link 
               href="/about"
               className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
             >

@@ -9,10 +9,9 @@ export default function Header() {
           We believe in outrunning cancer.
         </h1>
         <p className="mx-auto max-w-[1500px] text-muted-foreground md:text-xl mt-6">
-            Every $ raised through this visual board will go towards building OUTRUNCANCER 3.0. A new more effective
-            way to raise awareness and funds for cancer prevention, by empowering and financially supporting
-            individuals to raise funds, donate to specific prevention projects, and bring blockchain transparency
-            across the board.        </p>
+          Every dollar raised through this Angel board funds the creation of OUTRUNCANCER 3.0 <br></br>
+          OC 3.0 is an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention. <br></br>
+          From transparent donation tracking to community-driven project support, this is the future of fundraising.</p>
       </div>
     </>
   );
