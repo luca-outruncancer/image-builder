@@ -166,7 +166,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT,
     overflow: 'hidden',
-    backgroundImage: `url('/patterns/cork-board-background.jpeg')`,
+    backgroundImage: `url('/patterns/magicpattern-starry-night-1740456570988.png')`,
     backgroundSize: '400px 400px',
     backgroundRepeat: 'repeat',
   };
@@ -181,7 +181,6 @@ export default function Canvas({ className = '' }: { className?: string }) {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <GridOverlay />
         
         {placedImages.map((image) => (
           <div
