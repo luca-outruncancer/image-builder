@@ -7,10 +7,11 @@ import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
 import ConfirmPlacement from './ConfirmPlacement';
 import { getImageRecords } from '@/lib/imageStorage';
-import { sendUSDCPayment, PaymentResult } from '@/utils/solanaPayment';
 import { saveTransaction, updateImagePaymentStatus } from '@/lib/transactionStorage';
 import ModalLayout from '../shared/ModalLayout';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
+import { processPayment, PaymentResult } from '@/utils/solanaPayment';
+
 
 interface PlacedImage {
   id: string;
@@ -72,7 +73,9 @@ export default function Canvas({ className = '' }: { className?: string }) {
       
       try {
         setIsPaymentProcessing(true);
-        const result = await sendUSDCPayment(
+        
+        // Use the unified processPayment function
+        const result = await processPayment(
           pendingConfirmation.cost,
           publicKey,
           signTransaction
@@ -94,6 +97,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
 
   useEffect(() => {
     if (imageToPlace) {
+      console.log("ImageToPlace cost:", imageToPlace.cost);
       setTempImage({
         id: Date.now().toString(),
         src: imageToPlace.previewUrl,
@@ -105,6 +109,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
         file: imageToPlace.file,
         cost: imageToPlace.cost || 0
       });
+      console.log("TempImage cost:", imageToPlace.cost || 0);
       setImageToPlace(null);
     }
   }, [imageToPlace, setImageToPlace]);
@@ -186,8 +191,14 @@ export default function Canvas({ className = '' }: { className?: string }) {
   const handleConfirmPlacement = async () => {
     if (!tempImage?.file) return;
     
+    console.log("Connected:", connected);
+    console.log("Public Key:", publicKey?.toString());
+    console.log("SignTransaction available:", !!signTransaction);
+    
     // First process payment
     const paymentResult = await processPayment();
+    
+    console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
       setPaymentError(paymentResult.error || 'Payment failed');
@@ -317,6 +328,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
       {pendingConfirmation && (
         <ConfirmPlacement
         position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
+        cost={pendingConfirmation.cost || 0}
         onConfirm={handleConfirmPlacement}
         onCancel={handleCancel}
         onBack={() => {

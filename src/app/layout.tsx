@@ -24,5 +24,5 @@ export default function RootLayout({
         </WalletProviderComponent>
       </body>
     </html>
-  )
+  );
 }

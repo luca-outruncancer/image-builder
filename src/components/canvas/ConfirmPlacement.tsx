@@ -1,11 +1,14 @@
 // src/components/canvas/ConfirmPlacement.tsx
+"use client";
+
 import { useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import ModalLayout from '../shared/ModalLayout';
-import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
+import { RECIPIENT_WALLET_ADDRESS, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 
 interface ConfirmPlacementProps {
   position: { x: number; y: number };
-  cost?: number;
+  cost: number;
   onConfirm: () => void;
   onReposition: () => void;
   onCancel: () => void;
@@ -14,7 +17,7 @@ interface ConfirmPlacementProps {
 
 export default function ConfirmPlacement({
   position,
-  cost = 0,
+  cost,
   onConfirm,
   onReposition,
   onCancel,
@@ -41,13 +44,18 @@ export default function ConfirmPlacement({
           >
             Reposition
           </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-            disabled={!connected}
-          >
-            {connected ? 'Pay & Confirm' : 'Connect Wallet to Continue'}
-          </button>
+          {connected ? (
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Pay & Confirm
+            </button>
+          ) : (
+            <WalletMultiButton className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+              Connect Wallet to Continue
+            </WalletMultiButton>
+          )}
         </div>
       }
     >
@@ -58,7 +66,7 @@ export default function ConfirmPlacement({
         
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
           <h3 className="font-semibold text-lg mb-2">Payment Details</h3>
-          <p className="text-sm mb-2">Cost: <span className="font-bold">{cost} USDC</span></p>
+          <p className="text-sm mb-2">Cost: <span className="font-bold">{cost} {ACTIVE_PAYMENT_TOKEN}</span></p>
           <p className="text-sm mb-2">Recipient: <span className="text-xs font-mono">{RECIPIENT_WALLET_ADDRESS}</span></p>
           
           {!connected && (
