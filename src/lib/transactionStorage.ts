@@ -1,0 +1,90 @@
+// src/lib/transactionStorage.ts
+'use client';
+
+import { createClient } from '@supabase/supabase-js';
+
+// Use environment variables for Supabase connection
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+export interface TransactionRecord {
+  image_id: number;
+  solana_wallet: string;
+  transaction_hash: string;
+  amount: number;
+  currency: string;
+}
+
+export async function saveTransaction(record: TransactionRecord) {
+  try {
+    console.log("Saving transaction to database:", record);
+    
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert([{
+        image_id: record.image_id,
+        solana_wallet: record.solana_wallet,
+        transaction_hash: record.transaction_hash,
+        amount: record.amount,
+        currency: record.currency,
+        timestamp: new Date().toISOString()
+      }])
+      .select();
+    
+    if (error) {
+      console.error("Supabase error saving transaction:", error);
+      throw error;
+    }
+    
+    console.log("Transaction saved successfully:", data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('Failed to save transaction:', error);
+    return { success: false, error };
+  }
+}
+
+export async function updateImagePaymentStatus(imageId: number, transactionHash: string) {
+  try {
+    console.log("Updating image payment status:", imageId, transactionHash);
+    
+    const { error } = await supabase
+      .from('images')
+      .update({ 
+        payment_status: 'paid',
+        transaction_hash: transactionHash,
+        payment_timestamp: new Date().toISOString()
+      })
+      .eq('image_id', imageId);
+    
+    if (error) {
+      console.error("Supabase error updating image:", error);
+      throw error;
+    }
+    
+    console.log("Image payment status updated successfully");
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update image payment status:', error);
+    return { success: false, error };
+  }
+}
+
+export async function getTransactionsByImage(imageId: number) {
+  try {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('image_id', imageId);
+    
+    if (error) {
+      throw error;
+    }
+    
+    return { success: true, data };
+  } catch (error) {
+    console.error('Failed to get transactions for image:', error);
+    return { success: false, error };
+  }
+}
