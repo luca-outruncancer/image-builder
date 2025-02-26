@@ -2,7 +2,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/utils/constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
 import ConfirmPlacement from './ConfirmPlacement';
@@ -11,7 +11,6 @@ import { saveTransaction, updateImagePaymentStatus } from '@/lib/transactionStor
 import ModalLayout from '../shared/ModalLayout';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import { processPayment, PaymentResult } from '@/utils/solanaPayment';
-
 
 interface PlacedImage {
   id: string;
@@ -63,35 +62,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
         console.error('Failed to load placed images:', error);
       }
     };
-    const processPayment = async (): Promise<PaymentResult> => {
-      if (!pendingConfirmation?.cost || !publicKey || !signTransaction) {
-        return { 
-          success: false, 
-          error: !connected ? 'Wallet not connected' : 'Missing payment information' 
-        };
-      }
-      
-      try {
-        setIsPaymentProcessing(true);
-        
-        // Use the unified processPayment function
-        const result = await processPayment(
-          pendingConfirmation.cost,
-          publicKey,
-          signTransaction
-        );
-        
-        return result;
-      } catch (error) {
-        console.error('Payment processing error:', error);
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Unknown payment error'
-        };
-      } finally {
-        setIsPaymentProcessing(false);
-      }
-    };
+
     loadPlacedImages();
   }, []);
 
@@ -156,11 +127,12 @@ export default function Canvas({ className = '' }: { className?: string }) {
       file: tempImage?.file!,
       width: tempImage?.width!,
       height: tempImage?.height!,
-      previewUrl: tempImage?.src!
+      previewUrl: tempImage?.src!,
+      cost: tempImage?.cost
     });
   };
   
-  const processPayment = async (): Promise<PaymentResult> => {
+  const handlePaymentProcess = async (): Promise<PaymentResult> => {
     if (!pendingConfirmation?.cost || !publicKey || !signTransaction) {
       return { 
         success: false, 
@@ -170,7 +142,9 @@ export default function Canvas({ className = '' }: { className?: string }) {
     
     try {
       setIsPaymentProcessing(true);
-      const result = await sendUSDCPayment(
+      console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN}`);
+      
+      const result = await processPayment(
         pendingConfirmation.cost,
         publicKey,
         signTransaction
@@ -189,15 +163,40 @@ export default function Canvas({ className = '' }: { className?: string }) {
   };
 
   const handleConfirmPlacement = async () => {
-    if (!tempImage?.file) return;
+    if (!tempImage?.file) {
+      console.error("No file to upload");
+      return;
+    }
     
-    console.log("Connected:", connected);
-    console.log("Public Key:", publicKey?.toString());
-    console.log("SignTransaction available:", !!signTransaction);
+    if (!connected) {
+      console.error("Wallet not connected");
+      setPaymentError("Please connect your wallet to continue");
+      return;
+    }
+    
+    if (!publicKey) {
+      console.error("No public key available");
+      setPaymentError("Cannot access wallet public key");
+      return;
+    }
+    
+    if (!signTransaction) {
+      console.error("Sign transaction function not available");
+      setPaymentError("Cannot access wallet signing function");
+      return;
+    }
+
+    const cost = tempImage.cost || 0;
+    console.log(`Processing payment of ${cost} ${ACTIVE_PAYMENT_TOKEN}`);
+    
+    if (cost <= 0) {
+      console.error("Invalid cost:", cost);
+      setPaymentError("Invalid payment amount");
+      return;
+    }
     
     // First process payment
-    const paymentResult = await processPayment();
-    
+    const paymentResult = await handlePaymentProcess();
     console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
@@ -215,17 +214,17 @@ export default function Canvas({ className = '' }: { className?: string }) {
         wallet: publicKey?.toString(),
         transaction_hash: paymentResult.transaction_hash,
         amount: tempImage.cost,
-        currency: 'USDC'
+        currency: ACTIVE_PAYMENT_TOKEN
       }));
-  
+
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
-  
+
       const data = await response.json();
       if (!data.success) throw new Error(data.error);
-  
+
       // Save transaction to database
       if (data.record?.image_id && paymentResult.transaction_hash) {
         await saveTransaction({
@@ -233,13 +232,13 @@ export default function Canvas({ className = '' }: { className?: string }) {
           solana_wallet: publicKey!.toString(),
           transaction_hash: paymentResult.transaction_hash,
           amount: tempImage.cost || 0,
-          currency: 'USDC'
+          currency: ACTIVE_PAYMENT_TOKEN
         });
         
         // Update image payment status
         await updateImagePaymentStatus(data.record.image_id, paymentResult.transaction_hash);
       }
-  
+
       setPlacedImages(prev => [...prev, { ...tempImage, src: data.url, locked: true, id: data.record.image_id.toString() }]);
       setTempImage(null);
       setPendingConfirmation(null);
@@ -327,22 +326,13 @@ export default function Canvas({ className = '' }: { className?: string }) {
 
       {pendingConfirmation && (
         <ConfirmPlacement
-        position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
-        cost={pendingConfirmation.cost || 0}
-        onConfirm={handleConfirmPlacement}
-        onCancel={handleCancel}
-        onBack={() => {
-          setTempImage(null);
-          setPendingConfirmation(null);
-          setImageToPlace({
-            file: tempImage?.file!,
-            width: tempImage?.width!,
-            height: tempImage?.height!,
-            previewUrl: tempImage?.src!
-          });
-        }}
-        onReposition={() => setPendingConfirmation(null)}
-      />
+          position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
+          cost={pendingConfirmation.cost || 0}
+          onConfirm={handleConfirmPlacement}
+          onCancel={handleCancel}
+          onBack={handleBack}
+          onReposition={() => setPendingConfirmation(null)}
+        />
       )}
 
       {paymentError && (
@@ -391,33 +381,51 @@ export default function Canvas({ className = '' }: { className?: string }) {
         </ModalLayout>
       )}
 
-        {successInfo && (
+      {successInfo && (
         <ModalLayout
-            isOpen={true}
-            title="Congratulations!"
-            onClose={handleDone}
-            customButtons={
+          isOpen={true}
+          title="Congratulations!"
+          onClose={handleDone}
+          customButtons={
             <div className="flex justify-end mt-6">
-                <button
+              <button
                 onClick={handleDone}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
+              >
                 Done
-                </button>
+              </button>
             </div>
-            }
+          }
         >
           <div className="text-center">
-            <p>Image uploaded successfully!</p>
+            <p className="text-lg font-semibold text-green-600">Image uploaded successfully!</p>
             <div className="mt-4 text-left text-sm">
               <p>Timestamp: {successInfo.timestamp}</p>
               <p>Image: {successInfo.imageName}</p>
               <p>Position: ({successInfo.position.x}, {successInfo.position.y})</p>
-              <p>Transaction Hash: ({successInfo.transactionHash})</p>
+              {successInfo.transactionHash && (
+                <div className="mt-2">
+                  <p className="font-semibold">Transaction Hash:</p>
+                  <p className="text-xs font-mono break-all bg-gray-100 p-2 rounded">
+                    {successInfo.transactionHash}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600">
+                    View on{" "}
+                    <a
+                      href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline"
+                    >
+                      Solana Explorer
+                    </a>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </ModalLayout>
-        )}
+      )}
     </>
   );
 }
