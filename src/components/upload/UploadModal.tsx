@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PRESET_SIZES } from '@/utils/constants';
+import { PRESET_SIZES, calculateCost } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import ModalLayout from '@/components/shared/ModalLayout';
 
@@ -54,10 +54,16 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       file: selectedFile,
       width: dimensions.width,
       height: dimensions.height,
-      previewUrl: preview.url
+      previewUrl: preview.url,
+      cost: calculateCost(dimensions.width, dimensions.height) // Add cost to the object
     });
     onClose();
   };
+
+  // Calculate the current cost
+  const currentCost = isCustomSize 
+    ? calculateCost(customSize.width, customSize.height) 
+    : calculateCost(selectedSize.width, selectedSize.height);
 
   const renderContent = () => {
     if (step === 'select') {
@@ -66,20 +72,26 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
           <div className="mb-4">
             <h3 className="font-medium mb-2">Select Size</h3>
             <div className="grid grid-cols-2 gap-2">
-              {PRESET_SIZES.map((size) => (
-                <button
-                  key={`${size.width}x${size.height}`}
-                  className={`p-2 border rounded ${
-                    !isCustomSize && selectedSize === size ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
-                  }`}
-                  onClick={() => {
-                    setSelectedSize(size);
-                    setIsCustomSize(false);
-                  }}
-                >
-                  {size.width} x {size.height}
-                </button>
-              ))}
+              {PRESET_SIZES.map((size) => {
+                const cost = calculateCost(size.width, size.height);
+                return (
+                  <button
+                    key={`${size.width}x${size.height}`}
+                    className={`p-2 border rounded ${
+                      !isCustomSize && selectedSize === size ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
+                    }`}
+                    onClick={() => {
+                      setSelectedSize(size);
+                      setIsCustomSize(false);
+                    }}
+                  >
+                    {size.width} x {size.height}
+                    <div className="mt-1 text-xs font-semibold">
+                      {cost} USDC
+                    </div>
+                  </button>
+                );
+              })}
               <button
                 className={`p-2 border rounded ${isCustomSize ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}`}
                 onClick={() => setIsCustomSize(true)}
@@ -114,6 +126,9 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     max="1000"
                   />
                 </div>
+              </div>
+              <div className="mt-2 text-right">
+                <span className="font-bold text-blue-600">{currentCost} USDC</span>
               </div>
             </div>
           )}
@@ -153,9 +168,14 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 className="mx-auto"
               />
             </div>
-            <p className="text-sm text-gray-600 mt-2 text-center">
-              {isCustomSize ? customSize.width : selectedSize.width} x {isCustomSize ? customSize.height : selectedSize.height} pixels
-            </p>
+            <div className="text-sm text-gray-600 mt-2 text-center">
+              <p>
+                {isCustomSize ? customSize.width : selectedSize.width} x {isCustomSize ? customSize.height : selectedSize.height} pixels
+              </p>
+              <p className="font-bold text-blue-600 mt-1">
+                Cost: {currentCost} USDC
+              </p>
+            </div>
           </div>
         )}
       </>

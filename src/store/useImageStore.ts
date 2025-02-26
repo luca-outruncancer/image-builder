@@ -1,17 +1,20 @@
 // src/store/useImageStore.ts
+'use client';
+
 import { create } from 'zustand';
 
-interface ImageToPlace {
+export type ImageToPlace = {
   file: File;
   width: number;
   height: number;
   previewUrl: string;
-}
+  cost?: number;
+} | null;
 
-interface ImageStore {
-  imageToPlace: ImageToPlace | null;
-  setImageToPlace: (image: ImageToPlace | null) => void;
-}
+type ImageStore = {
+  imageToPlace: ImageToPlace;
+  setImageToPlace: (image: ImageToPlace) => void;
+};
 
 export const useImageStore = create<ImageStore>((set) => ({
   imageToPlace: null,

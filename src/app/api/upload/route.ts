@@ -1,60 +1,107 @@
 // src/app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
+import { writeFile } from 'fs/promises';
 import path from 'path';
-// import { put } from '@vercel/blob'; // Uncomment for Vercel deployment
-import { createImageRecord } from '@/lib/imageStorage';
+import { nanoid } from 'nanoid';
+import { createClient } from '@supabase/supabase-js';
+import { verifyWalletOwnership } from '@/utils/solana';
 
-// Ensure the uploads directory exists
-const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const position = JSON.parse(formData.get('position') as string);
-    const size = JSON.parse(formData.get('size') as string);
-    
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    const positionString = formData.get('position') as string;
+    const sizeString = formData.get('size') as string;
+    const paymentString = formData.get('payment') as string;
+
+    if (!file || !positionString || !sizeString) {
+      return NextResponse.json(
+        { error: 'File, position, and size are required' },
+        { status: 400 }
+      );
     }
+
+    const position = JSON.parse(positionString);
+    const size = JSON.parse(sizeString);
+    const payment = paymentString ? JSON.parse(paymentString) : null;
+
+    // Generate a unique ID for the file
+    const id = nanoid();
+    const fileExtension = file.name.split('.').pop();
+    const fileName = `${id}.${fileExtension}`;
     
-    // Local file storage for development
+    // Save locally for development, use Vercel Blob in production
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const filename = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9\.]/g, '_')}`;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, buffer);
-    const fileUrl = `/uploads/${filename}`;
     
-    /* Vercel Blob Storage - uncomment for production
-    const blob = await put(file.name, file, { access: 'public' });
-    const fileUrl = blob.url;
-    */
+    // In local development, save to public directory
+    const filePath = path.join(process.cwd(), 'public/uploads', fileName);
+    await writeFile(filePath, buffer);
     
-    // Store metadata in database
-    const record = await createImageRecord({
-      image_location: fileUrl,
-      start_position_x: position.x,
-      start_position_y: position.y,
-      size_x: size.width,
-      size_y: size.height
-    });
+    // For local development, use a URL path to the local file
+    const url = `/uploads/${fileName}`;
     
-    if (!record) {
-      return NextResponse.json({ error: 'Failed to save image metadata' }, { status: 500 });
+    // Save record to database
+    const { data: record, error } = await supabase
+      .from('images')
+      .insert({
+        image_location: url,
+        start_position_x: position.x,
+        start_position_y: position.y,
+        size_x: size.width,
+        size_y: size.height,
+        active: true,
+        wallet_address: payment?.wallet || null,
+        transaction_hash: payment?.transaction_hash || null,
+        payment_status: payment?.transaction_hash ? 'paid' : 'pending',
+        cost: payment?.amount || null,
+        currency: payment?.currency || null
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Database error:', error);
+      return NextResponse.json(
+        { error: 'Failed to save image to database' },
+        { status: 500 }
+      );
     }
     
-    return NextResponse.json({ 
-      success: true, 
-      url: fileUrl, 
-      record 
+    // If payment info is provided, save to transactions table
+    if (payment?.wallet && payment?.transaction_hash) {
+      const { error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          image_id: record.image_id,
+          solana_wallet: payment.wallet,
+          transaction_hash: payment.transaction_hash,
+          amount: payment.amount,
+          currency: payment.currency,
+          timestamp: new Date().toISOString()
+        });
+      
+      if (txError) {
+        console.error('Transaction save error:', txError);
+        // Continue anyway since the image upload succeeded
+      }
+    }
+    
+    return NextResponse.json({
+      success: true,
+      url,
+      record
     });
   } catch (error) {
     console.error('Upload error:', error);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to upload image' },
+      { status: 500 }
+    );
   }
 }
