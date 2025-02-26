@@ -133,7 +133,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 </div>
               </div>
               <div className="mt-2 text-right">
-                <span className="font-bold text-blue-600">{currentCost} USDC</span>
+                <span className="font-bold text-blue-600">{currentCost} {ACTIVE_PAYMENT_TOKEN}</span>
               </div>
             </div>
           )}
