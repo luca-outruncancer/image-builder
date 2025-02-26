@@ -217,26 +217,58 @@ export default function Canvas({ className = '' }: { className?: string }) {
         currency: ACTIVE_PAYMENT_TOKEN
       }));
 
+      console.log("Uploading image with payment data:", {
+        wallet: publicKey?.toString(),
+        transaction_hash: paymentResult.transaction_hash,
+        amount: tempImage.cost,
+        currency: ACTIVE_PAYMENT_TOKEN
+      });
+
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
 
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
+      }
 
-      // Save transaction to database
+      const data = await response.json();
+      console.log("Upload response:", data);
+      
+      if (!data.success) throw new Error(data.error || 'Unknown server error');
+
+      // Save transaction to database - using client-side function
+      // This serves as a backup in case the server-side transaction save fails
       if (data.record?.image_id && paymentResult.transaction_hash) {
-        await saveTransaction({
-          image_id: data.record.image_id,
-          solana_wallet: publicKey!.toString(),
-          transaction_hash: paymentResult.transaction_hash,
-          amount: tempImage.cost || 0,
-          currency: ACTIVE_PAYMENT_TOKEN
-        });
-        
-        // Update image payment status
-        await updateImagePaymentStatus(data.record.image_id, paymentResult.transaction_hash);
+        try {
+          console.log("Saving transaction to database from client-side");
+          const saveResult = await saveTransaction({
+            image_id: data.record.image_id,
+            solana_wallet: publicKey!.toString(),
+            transaction_hash: paymentResult.transaction_hash,
+            amount: tempImage.cost || 0,
+            currency: ACTIVE_PAYMENT_TOKEN
+          });
+          
+          console.log("Transaction save result:", saveResult);
+          
+          if (!saveResult.success) {
+            console.error("Failed to save transaction details", saveResult.error);
+          }
+          
+          // Update image payment status
+          const updateResult = await updateImagePaymentStatus(data.record.image_id, paymentResult.transaction_hash);
+          console.log("Image update result:", updateResult);
+          
+          if (!updateResult.success) {
+            console.error("Failed to update image payment status", updateResult.error);
+          }
+        } catch (dbError) {
+          // Log error but continue - the image is already uploaded
+          console.error("Database error:", dbError);
+        }
       }
 
       setPlacedImages(prev => [...prev, { ...tempImage, src: data.url, locked: true, id: data.record.image_id.toString() }]);
@@ -251,7 +283,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
       });
     } catch (error) {
       console.error('Failed to save placement:', error);
-      setPaymentError('Image upload failed after payment was processed');
+      setPaymentError('Image upload failed after payment was processed. Please contact support with this transaction ID: ' + paymentResult.transaction_hash);
     }
   };
 
