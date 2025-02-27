@@ -2,7 +2,15 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
+import { 
+  CANVAS_WIDTH, 
+  CANVAS_HEIGHT, 
+  GRID_SIZE, 
+  ACTIVE_PAYMENT_TOKEN, 
+  RECIPIENT_WALLET_ADDRESS,
+  PAYMENT_TIMEOUT_MS,
+  MAX_RETRIES
+} from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { 
@@ -69,9 +77,6 @@ export interface CanvasState {
   snapToGrid: (value: number) => number;
   isPositionEmpty: (x: number, y: number, width: number, height: number, excludeId?: string) => boolean;
 }
-
-const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
-const MAX_RETRIES = 2; // Maximum retry attempts for payment
 
 export function useCanvasState(): CanvasState {
   const canvasRef = useRef<HTMLDivElement>(null);
