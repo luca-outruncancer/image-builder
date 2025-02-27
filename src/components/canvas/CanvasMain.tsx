@@ -8,6 +8,7 @@ import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
 
+
 interface CanvasMainProps {
   className?: string;
 }
@@ -42,10 +43,8 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasStyle = {
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT,
-    overflow: 'hidden',
-    backgroundImage: `url('/patterns/magicpattern-starry-night-1740456570988.png')`,
-    backgroundSize: '400px 400px',
-    backgroundRepeat: 'repeat',
+    overflow: "hidden",
+    position: "relative",
   };
 
   return (
@@ -65,16 +64,10 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
           onMouseLeave={handleMouseUp}
         >
           {/* Display all placed images */}
-          <CanvasImageLoader 
-            placedImages={placedImages} 
-          />
-          
+          <CanvasImageLoader placedImages={placedImages} />
+
           {/* Handle temporary image positioning */}
-          {tempImage && !pendingConfirmation && (
-            <CanvasImagePlacement 
-              tempImage={tempImage}
-            />
-          )}
+          {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
         </div>
       )}
 
