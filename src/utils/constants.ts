@@ -13,6 +13,10 @@ export const ACTIVE_NETWORK = WalletAdapterNetwork.Devnet; // Change to Mainnet 
 // Recipient wallet address
 export const RECIPIENT_WALLET_ADDRESS = "6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWReG4LC";
 
+// Payment related constants
+export const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
+export const MAX_RETRIES = 2; // Maximum retry attempts for payment
+
 // Token configuration
 export const PAYMENT_TOKENS = {
   SOL: {
