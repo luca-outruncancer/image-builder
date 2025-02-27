@@ -4,9 +4,21 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Use environment variables for Supabase connection
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+let supabase: any = null;
+
+try {
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("Supabase client initialized in transactionStorage");
+  } else {
+    console.error("Unable to initialize Supabase client due to missing environment variables in transactionStorage");
+  }
+} catch (error) {
+  console.error("Error initializing Supabase client in transactionStorage:", error);
+}
 
 export interface TransactionRecord {
   image_id: number;
@@ -19,6 +31,14 @@ export interface TransactionRecord {
 export async function saveTransaction(record: TransactionRecord) {
   try {
     console.log("Saving transaction to database:", record);
+    
+    if (!supabase) {
+      console.warn("Skipping database operation: Supabase client not available");
+      return { 
+        success: false, 
+        error: "Supabase client not available. Check your environment variables." 
+      };
+    }
     
     const { data, error } = await supabase
       .from('transactions')
@@ -49,6 +69,14 @@ export async function updateImagePaymentStatus(imageId: number, transactionHash:
   try {
     console.log("Updating image payment status:", imageId, transactionHash);
     
+    if (!supabase) {
+      console.warn("Skipping database operation: Supabase client not available");
+      return { 
+        success: false, 
+        error: "Supabase client not available. Check your environment variables." 
+      };
+    }
+    
     const { error } = await supabase
       .from('images')
       .update({ 
@@ -73,6 +101,14 @@ export async function updateImagePaymentStatus(imageId: number, transactionHash:
 
 export async function getTransactionsByImage(imageId: number) {
   try {
+    if (!supabase) {
+      console.warn("Skipping database operation: Supabase client not available");
+      return { 
+        success: false, 
+        error: "Supabase client not available. Check your environment variables." 
+      };
+    }
+    
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
