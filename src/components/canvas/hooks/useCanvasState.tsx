@@ -235,6 +235,11 @@ export function useCanvasState(): CanvasState {
           // Update image status to PAYMENT_TIMEOUT
           updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT)
             .catch(err => console.error("Failed to update image status to timeout:", err));
+          
+          // Hard refresh the page after timeout
+          setTimeout(() => {
+            window.location.reload();
+          }, 3000); // Give user 3 seconds to see the timeout message before refreshing
         }
       }, PAYMENT_TIMEOUT_MS);
       
@@ -338,6 +343,7 @@ export function useCanvasState(): CanvasState {
       
       if (data.warning) {
         dbWarning = data.warning;
+        console.warn("Database warning:", dbWarning);
       }
       
       console.log("Image uploaded successfully, ID:", imageRecord.image_id);
@@ -462,6 +468,11 @@ export function useCanvasState(): CanvasState {
         dbWarning: dbWarning || undefined
       });
       
+      // Schedule a page refresh after showing the success message
+      setTimeout(() => {
+        window.location.reload();
+      }, 5000); // Give the user 5 seconds to see the success message before refreshing
+      
     } catch (error) {
       console.error("Error processing transaction record:", error);
       
@@ -473,6 +484,11 @@ export function useCanvasState(): CanvasState {
         transactionHash: paymentResult.transaction_hash,
         dbWarning: "There was an error recording the transaction details, but your payment was completed successfully."
       });
+      
+      // Still schedule a page refresh
+      setTimeout(() => {
+        window.location.reload();
+      }, 5000);
     }
   };
 
@@ -484,7 +500,7 @@ export function useCanvasState(): CanvasState {
   const handleDone = () => {
     setSuccessInfo(null);
     setPaymentRetries(0);
-    window.location.reload();
+    window.location.reload(); // Hard refresh the page
   };
   
   const handleRetryPayment = () => {
