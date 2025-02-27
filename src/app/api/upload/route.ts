@@ -4,7 +4,8 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
-import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
+// Import the server-side version of the image storage functions
+import { createImageRecordServer, IMAGE_STATUS } from '@/lib/server/imageStorageServer';
 import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 
 export async function POST(request: NextRequest) {
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     const size = JSON.parse(sizeString);
     const payment = paymentString ? JSON.parse(paymentString) : null;
 
-    console.log("Upload request received:", { position, size, payment });
+    console.log("[Server] Upload request received:", { position, size, payment });
 
     // Generate a unique ID for the file
     const id = nanoid();
@@ -43,19 +44,19 @@ export async function POST(request: NextRequest) {
       try {
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
-          console.log("Created uploads directory:", uploadDir);
+          console.log("[Server] Created uploads directory:", uploadDir);
         }
       } catch (dirError) {
-        console.error("Error creating upload directory:", dirError);
+        console.error("[Server] Error creating upload directory:", dirError);
       }
       
       // In local development, save to public directory
       const filePath = path.join(uploadDir, fileName);
       await writeFile(filePath, buffer);
       
-      console.log("File saved successfully at:", filePath);
+      console.log("[Server] File saved successfully at:", filePath);
     } catch (fileError) {
-      console.error("Error saving file:", fileError);
+      console.error("[Server] Error saving file:", fileError);
       return NextResponse.json(
         { error: 'Failed to save file: ' + (fileError instanceof Error ? fileError.message : String(fileError)) },
         { status: 500 }
@@ -65,13 +66,13 @@ export async function POST(request: NextRequest) {
     // For local development, use a URL path to the local file
     const url = `/uploads/${fileName}`;
     
-    // Use the image storage utility to create a record
+    // Use the server-side image storage utility to create a record
     try {
       // Determine the initial status - default to pending payment
       let initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
       
-      // Create the image record
-      const { success, data: imageRecord, error } = await createImageRecord({
+      // Create the image record using the server-side function
+      const { success, data: imageRecord, error } = await createImageRecordServer({
         image_location: url,
         start_position_x: position.x,
         start_position_y: position.y,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
       });
       
       if (!success || !imageRecord) {
-        console.error("Error creating image record:", error);
+        console.error("[Server] Error creating image record:", error);
         return NextResponse.json({
           success: true, // Still mark as success since file was saved
           url,
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
         payment: paymentInfo
       });
     } catch (dbError) {
-      console.error("Database operation error:", dbError);
+      console.error("[Server] Database operation error:", dbError);
       
       // Still return success with the file URL and a warning
       return NextResponse.json({
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('[Server] Upload error:', error);
     return NextResponse.json(
       { error: 'Failed to upload image: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
