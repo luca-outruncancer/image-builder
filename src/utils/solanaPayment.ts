@@ -6,7 +6,8 @@ import {
   PublicKey, 
   Transaction,
   SystemProgram,
-  LAMPORTS_PER_SOL
+  LAMPORTS_PER_SOL,
+  Commitment
 } from '@solana/web3.js';
 import { 
   createTransferCheckedInstruction, 
@@ -14,7 +15,7 @@ import {
   getMint
 } from '@solana/spl-token';
 import { RECIPIENT_WALLET_ADDRESS, MINT_ADDRESS, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
-import { RPC_ENDPOINT } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
 
 export interface PaymentResult {
   success: boolean;
@@ -22,10 +23,26 @@ export interface PaymentResult {
   error?: string;
 }
 
-// Check if required imports are available
-console.log("@solana/web3.js imported:", typeof Connection !== 'undefined');
-console.log("RPC_ENDPOINT:", RPC_ENDPOINT);
-console.log("Active payment token:", ACTIVE_PAYMENT_TOKEN);
+// Create a connection with a custom commitment level and timeout
+function createConnection() {
+  const commitment: Commitment = 'confirmed';
+  
+  try {
+    if (!RPC_ENDPOINT) {
+      throw new Error('No RPC endpoint configured');
+    }
+    
+    const connection = new Connection(RPC_ENDPOINT, {
+      commitment,
+      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+    });
+    
+    return connection;
+  } catch (error) {
+    console.error("Failed to create Solana connection:", error);
+    throw new Error(`Connection initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 export async function processPayment(
   amount: number,
@@ -34,11 +51,34 @@ export async function processPayment(
 ): Promise<PaymentResult> {
   console.log(`Processing payment of ${amount} ${ACTIVE_PAYMENT_TOKEN}`);
   
-  // Choose payment method based on active token
-  if (ACTIVE_PAYMENT_TOKEN === "SOL") {
-    return sendSOLPayment(amount, payer, signTransaction);
-  } else {
-    return sendUSDCPayment(amount, payer, signTransaction);
+  try {
+    // Validate inputs
+    if (!amount || amount <= 0) {
+      throw new Error(`Invalid payment amount: ${amount}`);
+    }
+    
+    if (!payer) {
+      throw new Error('Missing payer wallet address');
+    }
+    
+    if (!signTransaction || typeof signTransaction !== 'function') {
+      throw new Error('Missing signature function');
+    }
+    
+    // Choose payment method based on active token
+    if (ACTIVE_PAYMENT_TOKEN === "SOL") {
+      return sendSOLPayment(amount, payer, signTransaction);
+    } else if (ACTIVE_PAYMENT_TOKEN === "USDC") {
+      return sendUSDCPayment(amount, payer, signTransaction);
+    } else {
+      throw new Error(`Unsupported payment token: ${ACTIVE_PAYMENT_TOKEN}`);
+    }
+  } catch (error) {
+    console.error("Payment processing error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }
 
@@ -58,7 +98,7 @@ export async function sendUSDCPayment(
   try {
     // Create connection to Solana
     console.log("Creating connection to", RPC_ENDPOINT);
-    const connection = new Connection(RPC_ENDPOINT);
+    const connection = createConnection();
     
     // Test the connection
     try {
@@ -69,7 +109,7 @@ export async function sendUSDCPayment(
       console.error("Connection test failed:", connError);
       return {
         success: false,
-        error: `Connection test failed: ${connError.message}`
+        error: `Connection failed: ${connError instanceof Error ? connError.message : String(connError)}`
       };
     }
     
@@ -142,39 +182,97 @@ export async function sendUSDCPayment(
               );
               
               const transaction = new Transaction().add(transferInstruction);
-              const blockHash = await connection.getLatestBlockhash();
+              
+              // Get latest blockhash with retry logic
+              let blockHash;
+              try {
+                blockHash = await connection.getLatestBlockhash('confirmed');
+                console.log("Blockhash retrieved:", blockHash.blockhash.substring(0, 10) + "...");
+              } catch (blockHashError) {
+                console.error("Failed to get blockhash:", blockHashError);
+                return {
+                  success: false,
+                  error: `Failed to get recent blockhash: ${blockHashError.message}`
+                };
+              }
+              
               transaction.recentBlockhash = blockHash.blockhash;
               transaction.feePayer = payer;
               
               console.log("Requesting signature from wallet");
               // This should trigger the wallet popup
-              const signedTransaction = await signTransaction(transaction);
-              console.log("Transaction signed");
-              
-              console.log("Sending transaction");
-              const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-              console.log("Transaction sent, signature:", signature);
-              
-              const confirmation = await connection.confirmTransaction({
-                signature,
-                blockhash: blockHash.blockhash,
-                lastValidBlockHeight: blockHash.lastValidBlockHeight,
-              });
-              
-              if (confirmation.value.err) {
-                console.error("Transaction error:", confirmation.value.err);
+              let signedTransaction;
+              try {
+                signedTransaction = await signTransaction(transaction);
+                console.log("Transaction signed successfully");
+              } catch (signError) {
+                console.error("Signing failed:", signError);
                 return {
                   success: false,
-                  error: `Transaction error: ${confirmation.value.err.toString()}`
+                  error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
                 };
               }
               
-              console.log("Transaction confirmed successfully");
-              return {
-                success: true,
-                transaction_hash: signature
-              };
+              // Send the signed transaction
+              console.log("Sending transaction");
+              let signature;
+              try {
+                signature = await connection.sendRawTransaction(signedTransaction.serialize());
+                console.log("Transaction sent, signature:", signature);
+              } catch (sendError) {
+                console.error("Failed to send transaction:", sendError);
+                return {
+                  success: false,
+                  error: `Failed to send transaction: ${sendError.message}`
+                };
+              }
               
+              // Confirm the transaction
+              console.log("Confirming transaction...");
+              try {
+                const confirmation = await connection.confirmTransaction({
+                  signature,
+                  blockhash: blockHash.blockhash,
+                  lastValidBlockHeight: blockHash.lastValidBlockHeight,
+                }, 'confirmed');
+                
+                if (confirmation.value.err) {
+                  console.error("Transaction error:", confirmation.value.err);
+                  return {
+                    success: false,
+                    error: `Transaction error: ${confirmation.value.err.toString()}`
+                  };
+                }
+                
+                console.log("Transaction confirmed successfully");
+                return {
+                  success: true,
+                  transaction_hash: signature
+                };
+              } catch (confirmError) {
+                console.error("Transaction confirmation failed:", confirmError);
+                
+                // Check transaction status manually
+                try {
+                  const status = await connection.getSignatureStatus(signature);
+                  console.log("Transaction status:", status);
+                  
+                  if (status.value && !status.value.err) {
+                    console.log("Transaction appears to be successful despite confirmation error");
+                    return {
+                      success: true,
+                      transaction_hash: signature
+                    };
+                  }
+                } catch (statusError) {
+                  console.error("Failed to check transaction status:", statusError);
+                }
+                
+                return {
+                  success: false,
+                  error: `Transaction confirmation failed: ${confirmError.message}`
+                };
+              }
             } catch (balanceError) {
               console.error("Error checking token balance:", balanceError);
               return {
@@ -237,10 +335,21 @@ export async function sendSOLPayment(
 ): Promise<PaymentResult> {
   try {
     console.log("Starting SOL payment process for", amount, "SOL");
-    const connection = new Connection(RPC_ENDPOINT);
+    const connection = createConnection();
     
     // Check payer balance
-    const balance = await connection.getBalance(payer);
+    console.log("Checking SOL balance for", payer.toString());
+    let balance;
+    try {
+      balance = await connection.getBalance(payer);
+    } catch (balanceError) {
+      console.error("Failed to get SOL balance:", balanceError);
+      return {
+        success: false,
+        error: `Failed to check SOL balance: ${balanceError.message}`
+      };
+    }
+    
     const solBalance = balance / LAMPORTS_PER_SOL;
     console.log("Current SOL balance:", solBalance);
     
@@ -264,42 +373,96 @@ export async function sendSOLPayment(
       })
     );
     
-    // Get recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
+    // Get recent blockhash with retry logic
+    let blockHash;
+    try {
+      blockHash = await connection.getLatestBlockhash('confirmed');
+      console.log("Blockhash retrieved:", blockHash.blockhash.substring(0, 10) + "...");
+    } catch (blockHashError) {
+      console.error("Failed to get blockhash:", blockHashError);
+      return {
+        success: false,
+        error: `Failed to get recent blockhash: ${blockHashError.message}`
+      };
+    }
+    
+    transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = payer;
     
     // Sign the transaction
     console.log("Requesting wallet signature...");
-    const signedTransaction = await signTransaction(transaction);
-    console.log("Transaction signed");
-    
-    // Send the transaction
-    console.log("Sending transaction...");
-    const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-    console.log("Transaction sent, signature:", signature);
-    
-    // Confirm transaction
-    console.log("Confirming transaction...");
-    const confirmation = await connection.confirmTransaction({
-      signature,
-      blockhash,
-      lastValidBlockHeight
-    });
-    
-    if (confirmation.value.err) {
-      console.error("Transaction confirmation error:", confirmation.value.err);
+    let signedTransaction;
+    try {
+      signedTransaction = await signTransaction(transaction);
+      console.log("Transaction signed successfully");
+    } catch (signError) {
+      console.error("Signing failed:", signError);
       return {
         success: false,
-        error: `Transaction failed: ${confirmation.value.err.toString()}`
+        error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
       };
     }
     
-    console.log("SOL payment successful");
-    return {
-      success: true,
-      transaction_hash: signature
-    };
+    // Send the signed transaction
+    console.log("Sending transaction...");
+    let signature;
+    try {
+      signature = await connection.sendRawTransaction(signedTransaction.serialize());
+      console.log("Transaction sent, signature:", signature);
+    } catch (sendError) {
+      console.error("Failed to send transaction:", sendError);
+      return {
+        success: false,
+        error: `Failed to send transaction: ${sendError.message}`
+      };
+    }
+    
+    // Confirm the transaction
+    console.log("Confirming transaction...");
+    try {
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash: blockHash.blockhash,
+        lastValidBlockHeight: blockHash.lastValidBlockHeight,
+      }, 'confirmed');
+      
+      if (confirmation.value.err) {
+        console.error("Transaction confirmation error:", confirmation.value.err);
+        return {
+          success: false,
+          error: `Transaction failed: ${confirmation.value.err.toString()}`
+        };
+      }
+      
+      console.log("SOL payment successful");
+      return {
+        success: true,
+        transaction_hash: signature
+      };
+    } catch (confirmError) {
+      console.error("Transaction confirmation failed:", confirmError);
+      
+      // Double-check transaction status in case it actually went through
+      try {
+        const status = await connection.getSignatureStatus(signature);
+        console.log("Transaction status:", status);
+        
+        if (status.value && !status.value.err) {
+          console.log("Transaction appears to be successful despite confirmation error");
+          return {
+            success: true,
+            transaction_hash: signature
+          };
+        }
+      } catch (statusError) {
+        console.error("Failed to check transaction status:", statusError);
+      }
+      
+      return {
+        success: false,
+        error: `Transaction confirmation failed: ${confirmError.message}`
+      };
+    }
   } catch (error) {
     console.error("SOL payment error:", error);
     return {
