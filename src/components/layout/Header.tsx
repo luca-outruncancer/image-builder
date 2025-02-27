@@ -1,24 +1,65 @@
-// src/components/layout/Header.tsx
-import Image from 'next/image';
-import Link from 'next/link';
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
+import { TextScramble } from './RainingLetters';
+import Link from 'next/link';
 
 export default function Header() {
+  const elementRef = useRef<HTMLHeadingElement>(null);
+  const scramblerRef = useRef<TextScramble | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (elementRef.current && !scramblerRef.current) {
+      scramblerRef.current = new TextScramble(elementRef.current);
+      setMounted(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mounted && scramblerRef.current) {
+      const phrases = [
+        'We believe in outrunning cancer'
+      ];
+      
+      let counter = 0;
+      const next = () => {
+        if (scramblerRef.current) {
+          scramblerRef.current.setText(phrases[counter]).then(() => {
+            setTimeout(next, 5000);
+          });
+          counter = (counter + 1) % phrases.length;
+        }
+      };
+
+      next();
+    }
+  }, [mounted]);
+
   return (
-    <>
-      <div className="flex flex-col items-center justify-center py-10 px-4 text-center bg-white/50 relative">
-        <div className="absolute top-4 right-4">
-          <WalletConnectButton />
-        </div>
-        <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-black to-muted-foreground">
-          We believe in outrunning cancer.
-        </h1>
-        <p className="mx-auto max-w-[1500px] text-muted-foreground md:text-xl mt-6">
-          Every dollar raised through this Angel board funds the creation of OUTRUNCANCER 3.0 <br></br>
-          OC 3.0 is an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention. <br></br>
-          From transparent donation tracking to community-driven project support, this is the future of fundraising.
-        </p>
+    <header className="w-full py-4 px-6 flex justify-between items-center relative z-20 bg-black bg-opacity-50 backdrop-blur-sm border-b border-green-900/30">
+      <div className="flex items-center">
+        <Link href="/" className="mr-8">
+          <h1 
+            ref={elementRef}
+            className="text-white text-2xl font-bold tracking-wider font-mono"
+          >
+            We believe in outrunning cancer
+          </h1>
+        </Link>
+        
+        <nav className="space-x-6">
+          <Link href="/about" className="text-white hover:text-green-400 transition-colors">
+            About
+          </Link>
+          <Link href="/terms" className="text-white hover:text-green-400 transition-colors">
+            Terms & Conditions
+          </Link>
+        </nav>
       </div>
-    </>
+      
+      <WalletConnectButton />
+    </header>
   );
 }
