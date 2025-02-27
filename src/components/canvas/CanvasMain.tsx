@@ -44,20 +44,24 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT,
     overflow: "hidden",
-    position: "relative",
+    position: "relative" as const,
+    background: "rgba(0, 0, 0, 0.2)", // Slightly transparent black background
+    backdropFilter: "blur(3px)",
+    boxShadow: "0 0 20px rgba(0, 255, 0, 0.1)", // Subtle green glow
+    border: "1px solid rgba(0, 255, 0, 0.2)", // Green border
   };
 
   return (
     <>
       {isLoadingImages ? (
-        <div className="flex items-center justify-center h-full w-full">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="flex items-center justify-center h-full w-full text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
           <span className="ml-3">Loading canvas...</span>
         </div>
       ) : (
         <div
           ref={canvasRef}
-          className={`relative border border-gray-300 ${className}`}
+          className={`relative rounded-lg ${className}`}
           style={canvasStyle}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
