@@ -486,9 +486,20 @@ export function useCanvasState(): CanvasState {
     setPaymentRetries(0);
   };
 
+  // Updated handleDone method to properly reset state for a new transaction
   const handleDone = () => {
+    console.log("Payment complete, resetting state for new transaction");
+    
+    // Clear all state variables related to the current transaction
     setSuccessInfo(null);
     setPaymentRetries(0);
+    setTempImage(null);
+    setPendingConfirmation(null);
+    setPaymentError(null);
+    setIsPaymentProcessing(false);
+    
+    // Force refresh to start with a clean slate
+    // This ensures a new transaction will be generated for the next payment
     window.location.reload();
   };
   
