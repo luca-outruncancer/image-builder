@@ -1,27 +1,20 @@
 // src/app/layout.tsx
-import type React from "react"
-import "@/app/globals.css"
-import { Inter } from 'next/font/google';
-import Footer from '@/components/layout/Footer';
+import RainingLettersLayout from '@/components/layout/RainingLettersLayout';
 import Header from '@/components/layout/Header';
-import { cn } from '@/lib/utils';
-import { WalletProviderComponent } from '@/components/solana/WalletProviderComponent';
-
-const inter = Inter({ subsets: ['latin'] });
+import './globals.css';
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="h-full">
-      <body className={cn(inter.className, 'relative min-h-full')}>
-        <WalletProviderComponent>
+    <html lang="en">
+      <body className="bg-black text-white">
+        <RainingLettersLayout>
           <Header />
-          <main className="pb-32">{children}</main>
-          <Footer className="absolute bottom-0 w-full" />
-        </WalletProviderComponent>
+          {children}
+        </RainingLettersLayout>
       </body>
     </html>
   );

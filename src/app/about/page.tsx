@@ -10,6 +10,12 @@ export default function AboutPage() {
 
             Outruncancer 1.0 - was all about a single person desire to make a difference, raising funds by combining a passion for running marathons 
             Outruncancer 2.0 followed -  
+
+
+            Every dollar raised through this Angel board funds the creation of OUTRUNCANCER 3.0 <br></br>
+          OC 3.0 is an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention. <br></br>
+          From transparent donation tracking to community-driven project support, this is the future of fundraising.
+
           </p>
         </div>
       </div>

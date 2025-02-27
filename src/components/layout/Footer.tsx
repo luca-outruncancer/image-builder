@@ -6,7 +6,7 @@ import { Twitter, Globe } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="border-t border-gray-200 bg-white">
+    <footer className="w-full py-4 px-6 text-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
           {/* Social Links */}
