@@ -1,6 +1,7 @@
 // src/app/layout.tsx
 import RainingLettersLayout from '@/components/layout/RainingLettersLayout';
 import Header from '@/components/layout/Header';
+import Providers from '@/components/providers/Providers';
 import './globals.css';
 
 export default function RootLayout({
@@ -11,10 +12,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-black text-white">
-        <RainingLettersLayout>
-          <Header />
-          {children}
-        </RainingLettersLayout>
+        <Providers>
+          <RainingLettersLayout>
+            <Header />
+            {children}
+          </RainingLettersLayout>
+        </Providers>
       </body>
     </html>
   );
