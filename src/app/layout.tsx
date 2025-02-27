@@ -1,5 +1,4 @@
-'use client';
-
+// src/app/layout.tsx
 import type React from "react"
 import "@/app/globals.css"
 import { Inter } from 'next/font/google';
@@ -16,26 +15,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
+      <head>
+        <style>{`
+          body {
+            color: white;
+            background-color: black;
+          }
+        `}</style>
+      </head>
       <body className={cn(inter.className, 'relative min-h-full bg-black')}>
         <WalletProviderComponent>
           <RainingLettersLayout>
             {children}
           </RainingLettersLayout>
         </WalletProviderComponent>
-        
-        {/* Global styles for the raining letters */}
-        <style jsx global>{`
-          .dud {
-            color: #0f0;
-            opacity: 0.7;
-          }
-          
-          /* Apply dark theme to entire site */
-          body {
-            color: white;
-            background-color: black;
-          }
-        `}</style>
       </body>
     </html>
   );
