@@ -2,34 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile } from 'fs/promises';
 import path from 'path';
-import { nanoid } from 'nanoid';
-import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
-
-// Initialize Supabase client with error handling
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-let supabase: any = null;
-
-try {
-  if (!supabaseUrl) {
-    console.error("Missing Supabase URL environment variable");
-  }
-  
-  if (!supabaseKey) {
-    console.error("Missing Supabase key environment variable");
-  }
-  
-  if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("Supabase client initialized successfully");
-  } else {
-    console.error("Unable to initialize Supabase client due to missing environment variables");
-  }
-} catch (error) {
-  console.error("Error initializing Supabase client:", error);
-}
+import { nanoid } from 'nanoid';
+import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
+import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 
 export async function POST(request: NextRequest) {
   try {
@@ -89,124 +65,75 @@ export async function POST(request: NextRequest) {
     // For local development, use a URL path to the local file
     const url = `/uploads/${fileName}`;
     
-    // If Supabase is not available, still allow file uploads but skip database operations
-    if (!supabase) {
-      console.warn("Skipping database operations due to missing Supabase configuration");
-      return NextResponse.json({
-        success: true,
-        url,
-        record: {
-          image_id: id,
-          image_location: url,
-          start_position_x: position.x,
-          start_position_y: position.y,
-          size_x: size.width,
-          size_y: size.height,
-          active: true,
-          wallet_address: payment?.wallet || null,
-          transaction_hash: payment?.transaction_hash || null,
-          payment_status: payment?.transaction_hash ? 'paid' : 'pending',
-        },
-        warning: "Database operations were skipped due to missing Supabase configuration"
-      });
-    }
-    
-    // Save record to database
+    // Use the image storage utility to create a record
     try {
-      console.log("Saving image record to database");
+      // Determine the initial status - default to pending payment
+      let initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
       
-      const { data: record, error } = await supabase
-        .from('images')
-        .insert({
-          image_location: url,
-          start_position_x: position.x,
-          start_position_y: position.y,
-          size_x: size.width,
-          size_y: size.height,
-          active: true,
-          wallet_address: payment?.wallet || null,
-          transaction_hash: payment?.transaction_hash || null,
-          payment_status: payment?.transaction_hash ? 'paid' : 'pending',
-          cost: payment?.amount || null,
-          currency: payment?.currency || null
-        })
-        .select()
-        .single();
-      
-      if (error) {
-        console.error('Database error:', error);
-        return NextResponse.json(
-          { 
-            success: true, // Still mark as success since file was saved
-            url,
-            error: 'Failed to save image to database: ' + error.message,
-            record: {
-              image_id: id,
-              image_location: url,
-              start_position_x: position.x,
-              start_position_y: position.y,
-              size_x: size.width,
-              size_y: size.height,
-            }
-          },
-          { status: 200 } // Return 200 since the file was saved successfully
-        );
-      }
-      
-      console.log("Image record saved:", record);
-      
-      // If payment info is provided, save to transactions table
-      if (payment?.wallet && payment?.transaction_hash) {
-        try {
-          console.log("Saving transaction record to database");
-          
-          const { data: txData, error: txError } = await supabase
-            .from('transactions')
-            .insert({
-              image_id: record.image_id,
-              solana_wallet: payment.wallet,
-              transaction_hash: payment.transaction_hash,
-              amount: payment.amount,
-              currency: payment.currency,
-              timestamp: new Date().toISOString()
-            })
-            .select();
-          
-          if (txError) {
-            console.error('Transaction save error:', txError);
-            // We'll continue anyway since the image upload succeeded
-          } else {
-            console.log("Transaction record saved:", txData);
-          }
-        } catch (txCatchError) {
-          console.error("Error saving transaction:", txCatchError);
-          // Continue anyway since the image upload succeeded
-        }
-      }
-      
-      return NextResponse.json({
-        success: true,
-        url,
-        record
+      // Create the image record
+      const { success, data: imageRecord, error } = await createImageRecord({
+        image_location: url,
+        start_position_x: position.x,
+        start_position_y: position.y,
+        size_x: size.width,
+        size_y: size.height,
+        image_status: initialStatus
       });
-    } catch (dbError) {
-      console.error("Database operation error:", dbError);
-      return NextResponse.json(
-        { 
+      
+      if (!success || !imageRecord) {
+        console.error("Error creating image record:", error);
+        return NextResponse.json({
           success: true, // Still mark as success since file was saved
           url,
-          error: 'Database operation failed: ' + (dbError instanceof Error ? dbError.message : String(dbError)),
           record: {
-            image_id: id,
+            image_id: Date.now(),
             image_location: url,
             start_position_x: position.x,
             start_position_y: position.y,
             size_x: size.width,
             size_y: size.height,
-          }
+            image_status: initialStatus,
+            created_at: new Date().toISOString()
+          },
+          warning: "Image record created in memory only. Database connection failed: " + error
+        });
+      }
+      
+      // If there's payment info, include it in the response
+      // We'll handle the actual transaction processing on the client
+      const paymentInfo = payment ? {
+        imageId: imageRecord.image_id,
+        senderWallet: payment.wallet,
+        recipientWallet: RECIPIENT_WALLET_ADDRESS,
+        amount: payment.amount,
+        token: payment.currency
+      } : null;
+      
+      return NextResponse.json({
+        success: true,
+        url,
+        record: imageRecord,
+        payment: paymentInfo
+      });
+    } catch (dbError) {
+      console.error("Database operation error:", dbError);
+      
+      // Still return success with the file URL and a warning
+      return NextResponse.json({
+        success: true, // Still mark as success since file was saved
+        url,
+        record: {
+          image_id: Date.now(),
+          image_location: url,
+          start_position_x: position.x,
+          start_position_y: position.y,
+          size_x: size.width,
+          size_y: size.height,
+          image_status: IMAGE_STATUS.PENDING_PAYMENT,
+          created_at: new Date().toISOString()
         },
-        { status: 200 } // Return 200 since the file was saved successfully
-      );
+        warning: "Database operation failed. File was saved locally but record wasn't stored in the database."
+      });
     }
   } catch (error) {
     console.error('Upload error:', error);
