@@ -2,12 +2,21 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
 import ConfirmPlacement from './ConfirmPlacement';
-import { getImageRecords } from '@/lib/imageStorage';
-import { saveTransaction, updateImagePaymentStatus } from '@/lib/transactionStorage';
+import { 
+  getImageRecords, 
+  createImageRecord, 
+  updateImageStatus, 
+  IMAGE_STATUS,
+  ImageRecord
+} from '@/lib/imageStorage';
+import { 
+  saveTransaction,
+  TransactionRecord
+} from '@/lib/transactionStorage';
 import ModalLayout from '../shared/ModalLayout';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import { processPayment, PaymentResult } from '@/utils/solanaPayment';
@@ -19,7 +28,7 @@ interface PlacedImage {
   y: number;
   width: number;
   height: number;
-  locked: boolean;
+  status: number;
   file?: File;
   cost?: number;
 }
@@ -32,6 +41,8 @@ interface SuccessInfo {
   dbWarning?: string;
 }
 
+const PAYMENT_TIMEOUT_MS = 120000; // 120 seconds (2 minutes)
+
 export default function Canvas({ className = '' }: { className?: string }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [placedImages, setPlacedImages] = useState<PlacedImage[]>([]);
@@ -41,14 +52,26 @@ export default function Canvas({ className = '' }: { className?: string }) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [paymentTimeoutId, setPaymentTimeoutId] = useState<NodeJS.Timeout | null>(null);
   const imageToPlace = useImageStore(state => state.imageToPlace);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
   const { publicKey, signTransaction, connected } = useWallet();
 
   useEffect(() => {
+    // Clear any existing timeout when component unmounts
+    return () => {
+      if (paymentTimeoutId) {
+        clearTimeout(paymentTimeoutId);
+      }
+    };
+  }, [paymentTimeoutId]);
+
+  useEffect(() => {
     const loadPlacedImages = async () => {
       try {
+        // Get images with status 1 (confirmed) or 2 (pending payment)
         const records = await getImageRecords();
+        
         if (records && Array.isArray(records)) {
           const loadedImages = records.map(record => ({
             id: record.image_id.toString(),
@@ -57,7 +80,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
             y: record.start_position_y,
             width: record.size_x,
             height: record.size_y,
-            locked: record.active
+            status: record.image_status
           }));
           setPlacedImages(loadedImages);
         } else {
@@ -84,7 +107,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
         y: 0,
         width: imageToPlace.width,
         height: imageToPlace.height,
-        locked: false,
+        status: IMAGE_STATUS.PENDING_PAYMENT, // Initial status
         file: imageToPlace.file,
         cost: imageToPlace.cost || 0
       });
@@ -104,7 +127,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!canvasRef.current || !tempImage || pendingConfirmation) return; // Add pendingConfirmation check  
+    if (!canvasRef.current || !tempImage || pendingConfirmation) return; 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = snapToGrid(e.clientX - rect.left - tempImage.width / 2);
     const y = snapToGrid(e.clientY - rect.top - tempImage.height / 2);
@@ -140,7 +163,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
     });
   };
   
-  const handlePaymentProcess = async (): Promise<PaymentResult> => {
+  const handlePaymentProcess = async (imageId: number): Promise<PaymentResult> => {
     if (!pendingConfirmation?.cost || !publicKey || !signTransaction) {
       return { 
         success: false, 
@@ -152,15 +175,42 @@ export default function Canvas({ className = '' }: { className?: string }) {
       setIsPaymentProcessing(true);
       console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN}`);
       
+      // Set payment timeout - cancel after 120 seconds
+      const timeout = setTimeout(() => {
+        // Cancel payment process if it's taking too long
+        if (isPaymentProcessing) {
+          console.log("Payment timed out after", PAYMENT_TIMEOUT_MS, "ms");
+          setPaymentError("Payment timed out. Please try again.");
+          setIsPaymentProcessing(false);
+          
+          // Update image status to PAYMENT_TIMEOUT
+          updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT)
+            .catch(err => console.error("Failed to update image status to timeout:", err));
+        }
+      }, PAYMENT_TIMEOUT_MS);
+      
+      setPaymentTimeoutId(timeout);
+      
       const result = await processPayment(
         pendingConfirmation.cost,
         publicKey,
         signTransaction
       );
       
+      // Clear timeout since we got a result
+      clearTimeout(timeout);
+      setPaymentTimeoutId(null);
+      
       return result;
     } catch (error) {
       console.error('Payment processing error:', error);
+      
+      // Clear any existing timeout
+      if (paymentTimeoutId) {
+        clearTimeout(paymentTimeoutId);
+        setPaymentTimeoutId(null);
+      }
+      
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown payment error'
@@ -203,134 +253,148 @@ export default function Canvas({ className = '' }: { className?: string }) {
       return;
     }
     
-    // First process payment
-    const paymentResult = await handlePaymentProcess();
-    console.log("Payment result:", paymentResult);
+    // STEP 1: Create image record with pending payment status
+    let imageRecord: ImageRecord | null = null;
+    let dbWarning: string | null = null;
     
-    if (!paymentResult.success) {
-      setPaymentError(paymentResult.error || 'Payment failed');
-      return;
-    }
-    
-    let dbWarning = null;
-    let imageRecord = null;
-    
-    // If payment successful, proceed with image upload
     try {
       const formData = new FormData();
       formData.append('file', tempImage.file);
       formData.append('position', JSON.stringify({ x: tempImage.x, y: tempImage.y }));
       formData.append('size', JSON.stringify({ width: tempImage.width, height: tempImage.height }));
-      formData.append('payment', JSON.stringify({ 
-        wallet: publicKey?.toString(),
-        transaction_hash: paymentResult.transaction_hash,
-        amount: tempImage.cost,
-        currency: ACTIVE_PAYMENT_TOKEN
-      }));
-
-      console.log("Uploading image with payment data:", {
-        wallet: publicKey?.toString(),
-        transaction_hash: paymentResult.transaction_hash,
-        amount: tempImage.cost,
-        currency: ACTIVE_PAYMENT_TOKEN
+     
+      // Upload the image file first
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
       });
-
-      try {
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Server error: ${response.status} - ${errorText}`);
-          dbWarning = `Database operations may have failed (${response.status}), but your image is still placed and payment processed.`;
-          
-          // Create a fallback image record
-          imageRecord = {
-            image_id: Date.now().toString(),
-            image_location: URL.createObjectURL(tempImage.file),
-            start_position_x: tempImage.x,
-            start_position_y: tempImage.y,
-            size_x: tempImage.width,
-            size_y: tempImage.height,
-            active: true
-          };
-        } else {
-          const data = await response.json();
-          console.log("Upload response:", data);
-          
-          if (!data.success) {
-            console.error("Upload was not successful:", data.error);
-            dbWarning = `${data.error || "Unknown error occurred"}, but your image is still placed and payment processed.`;
-          }
-          
-          if (data.warning) {
-            dbWarning = data.warning;
-          }
-          
-          imageRecord = data.record;
-        }
-      } catch (fetchError) {
-        console.error("Fetch error:", fetchError);
-        dbWarning = "Communication with server failed, but your payment was processed successfully.";
-        
-        // Create a fallback image record
-        imageRecord = {
-          image_id: Date.now().toString(),
-          image_location: URL.createObjectURL(tempImage.file),
-          start_position_x: tempImage.x,
-          start_position_y: tempImage.y,
-          size_x: tempImage.width,
-          size_y: tempImage.height,
-          active: true
-        };
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
-
-      // Create a visually placed image regardless of server response
+      
+      const data = await response.json();
+      console.log("Upload response:", data);
+      
+      if (!data.success) {
+        throw new Error(data.error || "Unknown server error");
+      }
+      
+      // Store the image record
+      imageRecord = data.record;
+      
+      if (data.warning) {
+        dbWarning = data.warning;
+      }
+      
+      // Add the image to the canvas with pending status
       setPlacedImages(prev => [
-        ...prev, 
-        { 
-          ...tempImage, 
-          src: imageRecord?.image_location || tempImage.src, 
-          locked: true, 
-          id: imageRecord?.image_id?.toString() || Date.now().toString() 
+        ...prev,
+        {
+          id: imageRecord!.image_id.toString(),
+          src: imageRecord!.image_location,
+          x: imageRecord!.start_position_x,
+          y: imageRecord!.start_position_y,
+          width: imageRecord!.size_x,
+          height: imageRecord!.size_y,
+          status: IMAGE_STATUS.PENDING_PAYMENT,
+          cost: tempImage.cost
         }
       ]);
       
+    } catch (uploadError) {
+      console.error("Failed to upload image:", uploadError);
+      setPaymentError("Failed to upload image. Please try again.");
+      return;
+    }
+    
+    if (!imageRecord) {
+      console.error("No image record created");
+      setPaymentError("Failed to create image record. Please try again.");
+      return;
+    }
+    
+    // STEP 2: Process payment
+    const imageId = parseInt(imageRecord.image_id.toString());
+    const paymentResult = await handlePaymentProcess(imageId);
+    console.log("Payment result:", paymentResult);
+    
+    if (!paymentResult.success) {
+      // STEP 2.1: Payment failed - update image status
+      try {
+        await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+      } catch (updateError) {
+        console.error("Failed to update image status after payment failure:", updateError);
+      }
+      
+      setPaymentError(paymentResult.error || 'Payment failed');
+      
+      // Remove the pending image from the canvas
+      setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+      
+      return;
+    }
+    
+    // STEP 3: Payment successful - record transaction and update image status
+    try {
+      // Create transaction record
+      const transactionRecord: TransactionRecord = {
+        image_id: imageId,
+        sender_wallet: publicKey.toString(),
+        recipient_wallet: RECIPIENT_WALLET_ADDRESS,
+        transaction_hash: paymentResult.transaction_hash!,
+        transaction_status: 'success',
+        amount: cost,
+        token: ACTIVE_PAYMENT_TOKEN
+      };
+      
+      // Save transaction record
+      const saveResult = await saveTransaction(transactionRecord);
+      console.log("Transaction save result:", saveResult);
+      
+      if (!saveResult.success) {
+        dbWarning = "Transaction record could not be saved to the database, but payment was processed successfully.";
+        console.error("Failed to save transaction record:", saveResult.error);
+        
+        // Try to update image status directly
+        try {
+          await updateImageStatus(imageId, IMAGE_STATUS.CONFIRMED, true);
+        } catch (updateError) {
+          console.error("Failed to update image status after payment:", updateError);
+        }
+      }
+      
+      // Update the placed image status in the UI
+      setPlacedImages(prev => prev.map(img => 
+        img.id === imageId.toString() 
+          ? { ...img, status: IMAGE_STATUS.CONFIRMED } 
+          : img
+      ));
+      
+      // Clear temporary states
       setTempImage(null);
       setPendingConfirmation(null);
       
+      // Show success info
       setSuccessInfo({
         timestamp: new Date().toLocaleString(),
         imageName: tempImage.file.name,
         position: { x: tempImage.x, y: tempImage.y },
         transactionHash: paymentResult.transaction_hash,
-        dbWarning: dbWarning
+        dbWarning: dbWarning || undefined
       });
       
     } catch (error) {
-      console.error('General error:', error);
+      console.error("Error processing transaction record:", error);
       
-      // Even if there's an error, show success since payment went through
-      setPlacedImages(prev => [
-        ...prev, 
-        { 
-          ...tempImage, 
-          locked: true, 
-          id: Date.now().toString() 
-        }
-      ]);
-      
-      setTempImage(null);
-      setPendingConfirmation(null);
-      
+      // Show a limited success message since payment succeeded but record failed
       setSuccessInfo({
         timestamp: new Date().toLocaleString(),
         imageName: tempImage.file.name,
         position: { x: tempImage.x, y: tempImage.y },
         transactionHash: paymentResult.transaction_hash,
-        dbWarning: "An error occurred while processing the image, but your payment was completed successfully."
+        dbWarning: "There was an error recording the transaction details, but your payment was completed successfully."
       });
     }
   };
@@ -378,9 +442,20 @@ export default function Canvas({ className = '' }: { className?: string }) {
             <img
               src={image.src}
               alt=""
-              className="w-full h-full object-cover pointer-events-none"
+              className={`w-full h-full object-cover pointer-events-none ${
+                image.status === IMAGE_STATUS.PENDING_PAYMENT 
+                  ? 'opacity-70 outline outline-2 outline-red-500'
+                  : ''
+              }`}
               draggable={false}
             />
+            {image.status === IMAGE_STATUS.PENDING_PAYMENT && (
+              <div className="absolute inset-0 bg-red-500 bg-opacity-10 flex items-center justify-center">
+                <span className="bg-white bg-opacity-70 text-red-600 text-xs font-bold px-2 py-1 rounded-sm">
+                  Payment Pending
+                </span>
+              </div>
+            )}
           </div>
         ))}
 
@@ -457,6 +532,7 @@ export default function Canvas({ className = '' }: { className?: string }) {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
             <p>Please approve the transaction in your wallet...</p>
             <p className="text-sm text-gray-500 mt-2">Do not close this window until the transaction is complete</p>
+            <p className="text-sm text-gray-500 mt-2">Payment will time out after 2 minutes if not completed</p>
           </div>
         </ModalLayout>
       )}
