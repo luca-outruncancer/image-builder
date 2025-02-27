@@ -1,63 +1,28 @@
-// src/components/layout/Footer.tsx
 'use client';
 
 import Link from 'next/link';
-import { Twitter, Globe } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="border-t border-gray-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
-          {/* Social Links */}
-          <div className="flex items-center space-x-6">
-            <Link 
-              href="https://x.com/outruncancer" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-gray-500 transition hover:text-blue-500"
-            >
-              <span className="sr-only">Twitter</span>
-              <Twitter size={22} className="h-6 w-6" />
-            </Link>
-            <Link 
-              href="https://www.outruncancer.com" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-gray-500 transition hover:text-blue-500"
-            >
-              <span className="sr-only">Website</span>
-              <Globe size={22} className="h-6 w-6" />
-            </Link>
-          </div>
-
-          {/* Navigation Links */}
-          <nav className="flex space-x-8">
-            <Link 
-              href="/"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
-            >
-              Home
-            </Link>
-            <Link 
-              href="/about"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
-            >
-              About
-            </Link>
-            <Link 
-              href="/terms"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
-            >
-              Terms and Conditions
-            </Link>
-          </nav>
-
-          {/* Copyright */}
-          <div className="text-sm text-gray-500">
-            © {new Date().getFullYear()} Outrun Cancer. All rights reserved.
-          </div>
+    <footer className="w-full py-4 px-6 mt-8 relative z-20 bg-black bg-opacity-50 backdrop-blur-sm border-t border-green-900/30">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+        <div className="mb-4 md:mb-0">
+          <p className="text-white text-sm">
+            &copy; {new Date().getFullYear()} Outrun Cancer Initiative. All rights reserved.
+          </p>
         </div>
+        
+        <nav className="flex gap-6">
+          <Link href="/privacy" className="text-white hover:text-green-400 transition-colors text-sm">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="text-white hover:text-green-400 transition-colors text-sm">
+            Terms of Service
+          </Link>
+          <Link href="/about" className="text-white hover:text-green-400 transition-colors text-sm">
+            About Us
+          </Link>
+        </nav>
       </div>
     </footer>
   );
