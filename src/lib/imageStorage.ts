@@ -42,6 +42,7 @@ export interface ImageRecord {
   confirmed_at?: string;
   payment_attempts?: number;
   last_updated_at?: string;
+  sender_wallet?: string; 
 }
 
 /**
@@ -70,6 +71,7 @@ export async function createImageRecord(imageData: Partial<ImageRecord>) {
         image_status: imageData.image_status || IMAGE_STATUS.PENDING_PAYMENT,
         created_at: now,
         last_updated_at: now,
+        sender_wallet: imageData.sender_wallet, // Store the wallet address
         payment_attempts: 0 // Initialize payment attempts counter
       })
       .select()

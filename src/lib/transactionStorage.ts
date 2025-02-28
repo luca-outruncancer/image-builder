@@ -90,7 +90,7 @@ export async function initializeTransaction(
         image_id: imageId,
         sender_wallet: senderWallet,
         recipient_wallet: recipientWallet,
-        transaction_hash: 'pending', // Placeholder until real transaction is created
+        transaction_hash: `pending_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`, // Unique pending hash
         transaction_status: TRANSACTION_STATUS.INITIATED,
         amount: amount,
         token: token,
@@ -112,7 +112,7 @@ export async function initializeTransaction(
       .from('images')
       .update({ 
         image_status: IMAGE_STATUS.PENDING_PAYMENT,
-        wallet_address: senderWallet, // Store wallet address with image
+        sender_wallet: senderWallet, // Store wallet address with image
         last_updated_at: now
       })
       .eq('image_id', imageId);
@@ -161,8 +161,7 @@ export async function updateTransactionStatus(
     }
     
     const updateData: any = {
-      transaction_status: status,
-      last_updated_at: new Date().toISOString()
+      transaction_status: status
     };
     
     // Add transaction hash if provided
