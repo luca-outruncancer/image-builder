@@ -5,7 +5,7 @@ import { Inter } from 'next/font/google';
 import Footer from '@/components/layout/Footer';
 import Header from '@/components/layout/Header';
 import { cn } from '@/lib/utils';
-import { WalletProviderComponent } from '@/components/solana/WalletProviderComponent';
+import Providers from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -17,11 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body className={cn(inter.className, 'relative min-h-full')}>
-        <WalletProviderComponent>
+        <Providers>
           <Header />
           <main className="pb-32">{children}</main>
           <Footer className="absolute bottom-0 w-full" />
-        </WalletProviderComponent>
+        </Providers>
       </body>
     </html>
   );

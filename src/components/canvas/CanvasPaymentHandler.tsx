@@ -1,10 +1,13 @@
 // src/components/canvas/CanvasPaymentHandler.tsx
 'use client';
 
+import { useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import ConfirmPlacement from './ConfirmPlacement';
 import ModalLayout from '../shared/ModalLayout';
-import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
+import { usePaymentContext } from '@/lib/payment/PaymentContext';
+import { PaymentStatus } from '@/lib/payment/types';
 
 interface PlacedImage {
   id: string;
@@ -18,19 +21,8 @@ interface PlacedImage {
   cost?: number;
 }
 
-interface SuccessInfo {
-  timestamp: string;
-  imageName: string;
-  position: { x: number; y: number };
-  transactionHash?: string;
-  dbWarning?: string;
-}
-
 interface CanvasPaymentHandlerProps {
   pendingConfirmation: PlacedImage;
-  paymentError: string | null;
-  isPaymentProcessing: boolean;
-  successInfo: SuccessInfo | null;
   onConfirm: () => void;
   onCancel: () => void;
   onBack: () => void;
@@ -42,9 +34,6 @@ interface CanvasPaymentHandlerProps {
 
 export default function CanvasPaymentHandler({
   pendingConfirmation,
-  paymentError,
-  isPaymentProcessing,
-  successInfo,
   onConfirm,
   onCancel,
   onBack,
@@ -54,12 +43,39 @@ export default function CanvasPaymentHandler({
   onDone
 }: CanvasPaymentHandlerProps) {
   const { connected } = useWallet();
+  const { 
+    paymentStatus, 
+    isProcessing, 
+    error, 
+    successInfo,
+    getErrorMessage
+  } = usePaymentContext();
 
   // Determine current payment step/status
-  const isConfirmationStep = pendingConfirmation && !isPaymentProcessing && !paymentError && !successInfo;
-  const isProcessingStep = isPaymentProcessing;
-  const isErrorStep = paymentError !== null;
+  const isConfirmationStep = pendingConfirmation && !isProcessing && !error && !successInfo;
+  const isProcessingStep = isProcessing;
+  const isErrorStep = error !== null;
   const isSuccessStep = successInfo !== null;
+
+  // Clean up session storage when component unmounts
+  useEffect(() => {
+    return () => {
+      try {
+        if (typeof window !== 'undefined') {
+          const keysToRemove = [];
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && (key.includes('blockhash') || key.includes('transaction'))) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(key => sessionStorage.removeItem(key));
+        }
+      } catch (e) {
+        console.error("Failed to clear session storage:", e);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -100,7 +116,7 @@ export default function CanvasPaymentHandler({
         >
           <div className="text-center p-4">
             <p className="text-red-600 font-semibold">Unable to process payment</p>
-            <p className="mt-2 text-gray-700">{paymentError}</p>
+            <p className="mt-2 text-gray-700">{error && getErrorMessage(error)}</p>
             
             {!connected && (
               <div className="mt-4">
@@ -156,9 +172,9 @@ export default function CanvasPaymentHandler({
           <div className="text-center">
             <p className="text-lg font-semibold text-green-600">Image uploaded successfully!</p>
             <div className="mt-4 text-left text-sm">
-              <p>Timestamp: {successInfo?.timestamp}</p>
-              <p>Image: {successInfo?.imageName}</p>
-              <p>Position: ({successInfo?.position.x}, {successInfo?.position.y})</p>
+              <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
+              <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
+              <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
               {successInfo?.transactionHash && (
                 <div className="mt-2">
                   <p className="font-semibold">Transaction Hash:</p>
@@ -176,12 +192,6 @@ export default function CanvasPaymentHandler({
                       Solana Explorer
                     </a>
                   </p>
-                </div>
-              )}
-              
-              {successInfo?.dbWarning && (
-                <div className="mt-4 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-yellow-700 text-xs">{successInfo.dbWarning}</p>
                 </div>
               )}
             </div>

@@ -1,13 +1,12 @@
 // src/components/canvas/CanvasMain.tsx
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/utils/constants';
 import CanvasImageLoader from './CanvasImageLoader';
 import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
-
 
 interface CanvasMainProps {
   className?: string;
@@ -21,7 +20,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     pendingConfirmation,
     paymentError,
     isPaymentProcessing,
-    successInfo,
     canvasRef,
     mousePosition,
     setMousePosition,
@@ -36,8 +34,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setPaymentError,
     setTempImage,
     setPendingConfirmation,
-    snapToGrid,
-    isPositionEmpty,
   } = useCanvasState();
 
   const canvasStyle = {
@@ -75,9 +71,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
       {pendingConfirmation && (
         <CanvasPaymentHandler
           pendingConfirmation={pendingConfirmation}
-          paymentError={paymentError}
-          isPaymentProcessing={isPaymentProcessing}
-          successInfo={successInfo}
           onConfirm={handleConfirmPlacement}
           onCancel={handleCancel}
           onBack={handleBack}
