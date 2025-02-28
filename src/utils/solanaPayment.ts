@@ -21,6 +21,7 @@ export interface PaymentResult {
   success: boolean;
   transaction_hash?: string;
   error?: string;
+  userRejected?: boolean; // Add this flag to indicate user rejection
 }
 
 // Create a connection with a custom commitment level and timeout
@@ -47,6 +48,21 @@ function createConnection() {
 // Generate a unique transaction ID to help prevent duplicate transactions
 function generateUniqueTransactionId() {
   return `tx_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+}
+
+// Check if error is a user rejection
+function isUserRejection(error: any): boolean {
+  if (!error) return false;
+  
+  const errorMessage = error.message || String(error);
+  return (
+    errorMessage.includes("rejected") || 
+    errorMessage.includes("cancelled") || 
+    errorMessage.includes("canceled") || 
+    errorMessage.includes("declined") ||
+    errorMessage.includes("User denied") ||
+    errorMessage.includes("User rejected")
+  );
 }
 
 export async function processPayment(
@@ -84,7 +100,8 @@ export async function processPayment(
     console.error("Payment processing error:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      userRejected: isUserRejection(error)
     };
   }
 }
@@ -216,6 +233,16 @@ export async function sendUSDCPayment(
                 console.log("Transaction signed successfully");
               } catch (signError) {
                 console.error("Signing failed:", signError);
+                
+                // Check if this is a user rejection and handle it specially
+                if (isUserRejection(signError)) {
+                  return {
+                    success: false,
+                    error: "Transaction was declined. You can try again when ready.",
+                    userRejected: true
+                  };
+                }
+                
                 return {
                   success: false,
                   error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
@@ -332,7 +359,8 @@ export async function sendUSDCPayment(
     console.error("USDC payment error:", error);
     return {
       success: false,
-      error: `Payment error: ${error instanceof Error ? error.message : String(error)}`
+      error: `Payment error: ${error instanceof Error ? error.message : String(error)}`,
+      userRejected: isUserRejection(error)
     };
   }
 }
@@ -408,6 +436,17 @@ export async function sendSOLPayment(
       console.log(`Transaction signed successfully (${transactionId})`);
     } catch (signError) {
       console.error(`Signing failed (${transactionId}):`, signError);
+      
+      // Check if this is a user rejection and handle it specially
+      if (isUserRejection(signError)) {
+        console.log("User rejected the transaction");
+        return {
+          success: false,
+          error: "Transaction was declined. You can try again when ready.",
+          userRejected: true
+        };
+      }
+      
       return {
         success: false,
         error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
@@ -494,7 +533,8 @@ export async function sendSOLPayment(
     
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      userRejected: isUserRejection(error)
     };
   }
 }
