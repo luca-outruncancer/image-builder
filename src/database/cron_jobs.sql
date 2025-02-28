@@ -17,7 +17,7 @@ BEGIN
   -- that don't have a successful transaction
   UPDATE images
   SET image_status = 4
-  WHERE image_status = 2  -- pending payment
+  WHERE image_status in (2,6)  -- pending payment or payment retry
     AND created_at < NOW() - INTERVAL '2 minutes'
     AND image_id NOT IN (
       SELECT image_id FROM transactions 
@@ -25,11 +25,11 @@ BEGIN
     );
     
   -- Set status=5 (payment not initiated/abandoned) for pending payments 
-  -- older than 24 hours with no transaction record at all
+  -- older than 2 minutes hours with no transaction record at all
   UPDATE images
   SET image_status = 5
   WHERE image_status = 2  -- pending payment
-    AND created_at < NOW() - INTERVAL '24 hours'
+    AND created_at < NOW() - INTERVAL '2 minutes'
     AND image_id NOT IN (
       SELECT image_id FROM transactions
     );
