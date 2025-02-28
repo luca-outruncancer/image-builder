@@ -294,6 +294,7 @@ export function useCanvasState(): CanvasState {
       
       setPaymentTimeoutId(timeout);
       
+      // issue here
       const result = await processPayment(
         pendingConfirmation.cost,
         publicKey,
@@ -518,24 +519,24 @@ export function useCanvasState(): CanvasState {
     console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
-      // Check if the transaction was rejected by the user
-      if (paymentResult.userRejected) {
+      // Check if the transaction was rejected by the user (any wallet error)
+      if (paymentResult.userRejected || paymentResult.error?.includes("WalletSignTransactionError")) {
         console.log("User rejected the transaction - returning to confirmation screen");
         
-        // Just return to confirmation screen without error message or retry
+        // Just silently return to confirmation screen
         setIsPaymentProcessing(false);
         setPaymentError(null);
         
-        // Mark transaction as cancelled in DB
-        try {
-          await updateTransactionStatus(
-            currentDbTransactionIdRef.current!, 
-            TRANSACTION_STATUS.FAILED,
-            undefined,
-            false
-          );
-        } catch (updateError) {
-          console.error("Failed to update transaction status after user rejection:", updateError);
+        // Update transaction status in DB
+        if (currentDbTransactionIdRef.current) {
+          try {
+            await updateTransactionStatus(
+              currentDbTransactionIdRef.current, 
+              TRANSACTION_STATUS.FAILED
+            );
+          } catch (updateError) {
+            console.error("Failed to update transaction status after rejection:", updateError);
+          }
         }
         
         return;

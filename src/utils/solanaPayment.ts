@@ -426,28 +426,11 @@ export async function sendSOLPayment(
     } catch (signError) {
       console.error(`Signing failed (${transactionId}):`, signError);
       
-      // Check if this is a user rejection
-      const errorMessage = signError.message || String(signError);
-      const isRejection = errorMessage.includes("rejected") || 
-                          errorMessage.includes("cancelled") || 
-                          errorMessage.includes("canceled") ||
-                          errorMessage.includes("declined") ||
-                          errorMessage.includes("User denied") ||
-                          errorMessage.includes("refused") ||
-                          errorMessage.includes("WalletSignTransactionError");
-      
-      if (isRejection) {
-        console.log("User rejected the transaction");
-        return {
-          success: false,
-          error: "Transaction was declined. You can try again when ready.",
-          userRejected: true
-        };
-      }
-      
+      // Detect all possible wallet rejection errors including WalletSignTransactionError
       return {
         success: false,
-        error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
+        error: "Transaction was declined. You can try again when ready.",
+        userRejected: true
       };
     }
     
