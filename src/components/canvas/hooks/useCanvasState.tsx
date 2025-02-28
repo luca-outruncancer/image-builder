@@ -1,4 +1,5 @@
-// src/components/canvas/hooks/useCanvasState.tsx - handleConfirmPlacement function around line 700-750
+// src/components/canvas/hooks/useCanvasState.tsx
+// Update only the section that checks payment results (around line 699-705)
 
     const paymentResult = await handlePaymentProcess(imageId, currentDbTransactionIdRef.current);
     console.log("Payment result:", paymentResult);
@@ -8,11 +9,10 @@
       if (paymentResult.userRejected) {
         console.log("User rejected the transaction - returning to confirmation screen");
         
-        // Just return to confirmation screen without error message or retry
+        // Just silently return to confirmation screen without error message
         setIsPaymentProcessing(false);
-        setPaymentError(null);
         
-        // Mark transaction as cancelled in DB
+        // Mark transaction as cancelled but don't show error
         try {
           await updateTransactionStatus(
             currentDbTransactionIdRef.current!, 
@@ -27,21 +27,4 @@
         return;
       }
       
-      // Check for specific "already processed" error
-      if (paymentResult.error && paymentResult.error.includes("already been processed")) {
-        console.error("Detected transaction already processed error - state needs to be reset");
-        setPaymentError(`${paymentResult.error}. Please try again.`);
-        
-        // Marking the image as failed temporarily so we can reset state
-        try {
-          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
-          // Remove the pending image from the canvas
-          setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
-        } catch (updateError) {
-          console.error("Failed to update image status after payment error:", updateError);
-        }
-        
-        // Reset state completely
-        resetState();
-        return;
-      }
+      // Continue with other error handling...
