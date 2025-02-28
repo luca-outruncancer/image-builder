@@ -1,7 +1,7 @@
 // src/components/canvas/hooks/useCanvasState.tsx
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   CANVAS_WIDTH, 
   CANVAS_HEIGHT, 
@@ -78,6 +78,9 @@ export interface CanvasState {
   isPositionEmpty: (x: number, y: number, width: number, height: number, excludeId?: string) => boolean;
 }
 
+// Generate a unique session ID to track this client instance
+const SESSION_ID = Math.random().toString(36).substring(2, 15);
+
 export function useCanvasState(): CanvasState {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [placedImages, setPlacedImages] = useState<PlacedImage[]>([]);
@@ -90,9 +93,17 @@ export function useCanvasState(): CanvasState {
   const [paymentTimeoutId, setPaymentTimeoutId] = useState<NodeJS.Timeout | null>(null);
   const [paymentRetries, setPaymentRetries] = useState(0);
   const [isLoadingImages, setIsLoadingImages] = useState(true);
+  // Use a ref to track current transaction to avoid stale closures in async functions
+  const currentTransactionRef = useRef<string | null>(null);
+  
   const imageToPlace = useImageStore(state => state.imageToPlace);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
   const { publicKey, signTransaction, connected } = useWallet();
+
+  // Log the session ID for debugging
+  useEffect(() => {
+    console.log(`Canvas Session ID: ${SESSION_ID}`);
+  }, []);
 
   // Clear any existing timeout when component unmounts
   useEffect(() => {
@@ -101,6 +112,23 @@ export function useCanvasState(): CanvasState {
         clearTimeout(paymentTimeoutId);
       }
     };
+  }, [paymentTimeoutId]);
+
+  // Reset state when payment is complete or when component unmounts
+  const resetState = useCallback(() => {
+    console.log("Resetting canvas state");
+    setTempImage(null);
+    setPendingConfirmation(null);
+    setSuccessInfo(null);
+    setPaymentError(null);
+    setIsPaymentProcessing(false);
+    setPaymentRetries(0);
+    currentTransactionRef.current = null;
+    
+    if (paymentTimeoutId) {
+      clearTimeout(paymentTimeoutId);
+      setPaymentTimeoutId(null);
+    }
   }, [paymentTimeoutId]);
 
   // Load placed images from the database
@@ -149,6 +177,9 @@ export function useCanvasState(): CanvasState {
         cost: imageToPlace.cost
       });
       
+      // Clear any previous state
+      resetState();
+      
       setTempImage({
         id: Date.now().toString(),
         src: imageToPlace.previewUrl,
@@ -163,7 +194,7 @@ export function useCanvasState(): CanvasState {
       
       setImageToPlace(null);
     }
-  }, [imageToPlace, setImageToPlace]);
+  }, [imageToPlace, setImageToPlace, resetState]);
 
   const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
@@ -197,6 +228,7 @@ export function useCanvasState(): CanvasState {
   };
 
   const handleCancel = () => {
+    resetState();
     window.location.reload();
   };
   
@@ -225,21 +257,25 @@ export function useCanvasState(): CanvasState {
     }
     
     try {
+      // Generate a unique transaction ID for this payment attempt
+      const transactionId = `${SESSION_ID}_${Date.now()}_${imageId}`;
+      currentTransactionRef.current = transactionId;
+      
       setIsPaymentProcessing(true);
-      console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN}`);
+      console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN} (ID: ${transactionId})`);
       console.log(`Attempt ${paymentRetries + 1} of ${MAX_RETRIES + 1}`);
       
       // Set payment timeout - cancel after PAYMENT_TIMEOUT_MS
       const timeout = setTimeout(() => {
         // Cancel payment process if it's taking too long
-        if (isPaymentProcessing) {
-          console.log(`Payment timed out after ${PAYMENT_TIMEOUT_MS / 1000} seconds`);
+        if (isPaymentProcessing && currentTransactionRef.current === transactionId) {
+          console.log(`Payment timed out after ${PAYMENT_TIMEOUT_MS / 1000} seconds (ID: ${transactionId})`);
           setPaymentError(`Payment timed out. Please try again.`);
           setIsPaymentProcessing(false);
           
           // Update image status to PAYMENT_TIMEOUT
           updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT)
-            .catch(err => console.error("Failed to update image status to timeout:", err));
+            .catch(err => console.error(`Failed to update image status to timeout (ID: ${transactionId}):`, err));
         }
       }, PAYMENT_TIMEOUT_MS);
       
@@ -250,6 +286,12 @@ export function useCanvasState(): CanvasState {
         publicKey,
         signTransaction
       );
+      
+      // Check if this is still the current transaction (prevents race conditions)
+      if (currentTransactionRef.current !== transactionId) {
+        console.log(`Transaction ${transactionId} was superseded, ignoring result`);
+        return { success: false, error: 'Transaction was superseded by another attempt' };
+      }
       
       // Clear timeout since we got a result
       clearTimeout(timeout);
@@ -275,6 +317,12 @@ export function useCanvasState(): CanvasState {
   };
 
   const handleConfirmPlacement = async () => {
+    // Check if we're already processing - prevent double clicks
+    if (isPaymentProcessing) {
+      console.log("Payment already in progress, ignoring duplicate request");
+      return;
+    }
+    
     if (!tempImage?.file) {
       console.error("No file to upload");
       setPaymentError("Missing image file");
@@ -380,6 +428,25 @@ export function useCanvasState(): CanvasState {
     console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
+      // Check for specific "already processed" error
+      if (paymentResult.error && paymentResult.error.includes("already been processed")) {
+        console.error("Detected transaction already processed error - state needs to be reset");
+        setPaymentError(`${paymentResult.error}. Please try again.`);
+        
+        // Marking the image as failed temporarily so we can reset state
+        try {
+          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+          // Remove the pending image from the canvas
+          setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+        } catch (updateError) {
+          console.error("Failed to update image status after payment error:", updateError);
+        }
+        
+        // Reset state completely
+        resetState();
+        return;
+      }
+      
       // Check if we should retry the payment
       if (paymentRetries < MAX_RETRIES) {
         console.log(`Payment failed, retrying (${paymentRetries + 1}/${MAX_RETRIES})...`);
@@ -467,6 +534,9 @@ export function useCanvasState(): CanvasState {
         dbWarning: dbWarning || undefined
       });
       
+      // Reset transaction ID since we're done with this transaction
+      currentTransactionRef.current = null;
+      
     } catch (error) {
       console.error("Error processing transaction record:", error);
       
@@ -490,21 +560,40 @@ export function useCanvasState(): CanvasState {
   const handleDone = () => {
     console.log("Payment complete, resetting state for new transaction");
     
-    // Clear all state variables related to the current transaction
-    setSuccessInfo(null);
-    setPaymentRetries(0);
-    setTempImage(null);
-    setPendingConfirmation(null);
-    setPaymentError(null);
-    setIsPaymentProcessing(false);
+    // Clear session storage of any blockhash or transaction data
+    try {
+      if (typeof window !== 'undefined') {
+        const keysToRemove = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          if (key && (key.includes('blockhash') || key.includes('transaction'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => sessionStorage.removeItem(key));
+        console.log(`Cleared ${keysToRemove.length} items from session storage`);
+      }
+    } catch (e) {
+      console.error("Failed to clear session storage:", e);
+    }
     
-    // Force refresh to start with a clean slate
-    // This ensures a new transaction will be generated for the next payment
+    // Complete reset of all state variables
+    resetState();
+    
+    // Reload the page to ensure a clean state
     window.location.reload();
   };
   
   const handleRetryPayment = () => {
     setPaymentError(null);
+    
+    // If the error was about already processed transaction, we should reset completely
+    if (paymentError && paymentError.includes("already been processed")) {
+      resetState();
+      window.location.reload();
+      return;
+    }
+    
     handleConfirmPlacement();
   };
 
