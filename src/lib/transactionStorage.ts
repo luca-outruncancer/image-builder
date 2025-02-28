@@ -39,8 +39,204 @@ export const TRANSACTION_STATUS = {
   SUCCESS: 'success',
   FAILED: 'failed',
   PENDING: 'pending',
-  TIMEOUT: 'timeout'
+  TIMEOUT: 'timeout',
+  INITIATED: 'initiated', // New status for pre-committed transactions
+  IN_PROGRESS: 'in_progress' // Status while blockchain transaction is processing
 };
+
+/**
+ * Initialize a transaction record before blockchain interaction
+ * @param imageId The ID of the image being processed
+ * @param senderWallet The wallet address of the sender
+ * @param recipientWallet The wallet address of the recipient 
+ * @param amount The payment amount
+ * @param token The token type (e.g., "SOL", "USDC")
+ * @returns Success indicator, transaction ID, and any error
+ */
+export async function initializeTransaction(
+  imageId: number,
+  senderWallet: string,
+  recipientWallet: string,
+  amount: number,
+  token: string
+): Promise<{ success: boolean, transactionId?: number, error?: any }> {
+  try {
+    console.log(`Initializing transaction record for image ${imageId}`);
+    
+    if (!supabase) {
+      console.warn("Skipping database operation: Supabase client not available");
+      return { 
+        success: false, 
+        error: "Supabase client not available. Check your environment variables." 
+      };
+    }
+    
+    // Validate input data
+    if (!imageId || !senderWallet || !recipientWallet || !amount || !token) {
+      console.error("Missing required fields for transaction initialization");
+      return {
+        success: false,
+        error: "Missing required fields for transaction initialization"
+      };
+    }
+    
+    // Get current timestamp
+    const now = new Date().toISOString();
+    
+    // Create transaction record with INITIATED status
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert([{
+        image_id: imageId,
+        sender_wallet: senderWallet,
+        recipient_wallet: recipientWallet,
+        transaction_hash: 'pending', // Placeholder until real transaction is created
+        transaction_status: TRANSACTION_STATUS.INITIATED,
+        amount: amount,
+        token: token,
+        timestamp: now,
+        retry_count: 0,
+        blockchain_confirmation: false
+      }])
+      .select();
+    
+    if (error) {
+      console.error("Supabase error initializing transaction:", error);
+      throw error;
+    }
+    
+    console.log("Transaction initialized successfully:", data[0]);
+    
+    // Update image status to indicate transaction initiation
+    const { error: updateError } = await supabase
+      .from('images')
+      .update({ 
+        image_status: IMAGE_STATUS.PENDING_PAYMENT,
+        wallet_address: senderWallet, // Store wallet address with image
+        last_updated_at: now
+      })
+      .eq('image_id', imageId);
+    
+    if (updateError) {
+      console.error("Error updating image status after transaction initialization:", updateError);
+      return { 
+        success: true, 
+        transactionId: data[0].transaction_id,
+        error: "Transaction initialized but image status could not be updated"
+      };
+    }
+    
+    return { 
+      success: true, 
+      transactionId: data[0].transaction_id 
+    };
+  } catch (error) {
+    console.error('Failed to initialize transaction:', error);
+    return { success: false, error };
+  }
+}
+
+/**
+ * Update the status of an existing transaction
+ * @param transactionId The ID of the transaction to update
+ * @param status The new status
+ * @param transactionHash Optional transaction hash (for completed transactions)
+ * @returns Success indicator and any error
+ */
+export async function updateTransactionStatus(
+  transactionId: number, 
+  status: string,
+  transactionHash?: string,
+  blockchainConfirmation?: boolean
+) {
+  try {
+    console.log(`Updating transaction ${transactionId} status to ${status}`);
+    
+    if (!supabase) {
+      console.warn("Skipping database operation: Supabase client not available");
+      return { 
+        success: false, 
+        error: "Supabase client not available. Check your environment variables." 
+      };
+    }
+    
+    const updateData: any = {
+      transaction_status: status,
+      last_updated_at: new Date().toISOString()
+    };
+    
+    // Add transaction hash if provided
+    if (transactionHash) {
+      updateData.transaction_hash = transactionHash;
+    }
+    
+    // Add blockchain confirmation if provided
+    if (blockchainConfirmation !== undefined) {
+      updateData.blockchain_confirmation = blockchainConfirmation;
+    }
+    
+    const { error } = await supabase
+      .from('transactions')
+      .update(updateData)
+      .eq('transaction_id', transactionId);
+    
+    if (error) {
+      console.error("Supabase error updating transaction status:", error);
+      throw error;
+    }
+    
+    console.log(`Transaction ${transactionId} status updated to ${status}`);
+    
+    // If this is a final status, also update the image status
+    if (status === TRANSACTION_STATUS.SUCCESS || status === TRANSACTION_STATUS.FAILED) {
+      // Get the image ID for this transaction
+      const { data: txData, error: txError } = await supabase
+        .from('transactions')
+        .select('image_id')
+        .eq('transaction_id', transactionId)
+        .single();
+      
+      if (txError) {
+        console.error("Error getting image ID for transaction:", txError);
+        return { 
+          success: true, 
+          warning: "Transaction status updated but could not update image status" 
+        };
+      }
+      
+      const imageId = txData.image_id;
+      const newImageStatus = status === TRANSACTION_STATUS.SUCCESS 
+        ? IMAGE_STATUS.CONFIRMED 
+        : IMAGE_STATUS.PAYMENT_FAILED;
+      
+      const additionalFields = status === TRANSACTION_STATUS.SUCCESS 
+        ? { confirmed_at: new Date().toISOString() } 
+        : {};
+      
+      const { error: imageError } = await supabase
+        .from('images')
+        .update({ 
+          image_status: newImageStatus,
+          last_updated_at: new Date().toISOString(),
+          ...additionalFields
+        })
+        .eq('image_id', imageId);
+      
+      if (imageError) {
+        console.error("Error updating image status after transaction update:", imageError);
+        return { 
+          success: true, 
+          warning: "Transaction status updated but image status could not be updated" 
+        };
+      }
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update transaction status:', error);
+    return { success: false, error };
+  }
+}
 
 /**
  * Save a transaction record and update the associated image status
