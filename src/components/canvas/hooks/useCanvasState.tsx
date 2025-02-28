@@ -518,6 +518,29 @@ export function useCanvasState(): CanvasState {
     console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
+      // Check if the transaction was rejected by the user
+      if (paymentResult.userRejected) {
+        console.log("User rejected the transaction - returning to confirmation screen");
+        
+        // Just return to confirmation screen without error message or retry
+        setIsPaymentProcessing(false);
+        setPaymentError(null);
+        
+        // Mark transaction as cancelled in DB
+        try {
+          await updateTransactionStatus(
+            currentDbTransactionIdRef.current!, 
+            TRANSACTION_STATUS.FAILED,
+            undefined,
+            false
+          );
+        } catch (updateError) {
+          console.error("Failed to update transaction status after user rejection:", updateError);
+        }
+        
+        return;
+      }
+    
       // Check for specific "already processed" error
       if (paymentResult.error && paymentResult.error.includes("already been processed")) {
         console.error("Detected transaction already processed error - state needs to be reset");

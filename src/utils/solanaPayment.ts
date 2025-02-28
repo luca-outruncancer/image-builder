@@ -21,6 +21,7 @@ export interface PaymentResult {
   success: boolean;
   transaction_hash?: string;
   error?: string;
+  userRejected?: boolean; 
 }
 
 // Create a connection with a custom commitment level and timeout
@@ -48,6 +49,22 @@ function createConnection() {
 function generateUniqueTransactionId() {
   return `tx_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 }
+
+// Manages user rejection
+function isUserRejection(error: any): boolean {
+  if (!error) return false;
+  
+  const errorMessage = error.message || String(error);
+  return (
+    errorMessage.includes("rejected") || 
+    errorMessage.includes("cancelled") || 
+    errorMessage.includes("canceled") || 
+    errorMessage.includes("declined") ||
+    errorMessage.includes("User denied") ||
+    errorMessage.includes("User rejected")
+  );
+}
+
 
 export async function processPayment(
   amount: number,
@@ -408,6 +425,26 @@ export async function sendSOLPayment(
       console.log(`Transaction signed successfully (${transactionId})`);
     } catch (signError) {
       console.error(`Signing failed (${transactionId}):`, signError);
+      
+      // Check if this is a user rejection
+      const errorMessage = signError.message || String(signError);
+      const isRejection = errorMessage.includes("rejected") || 
+                          errorMessage.includes("cancelled") || 
+                          errorMessage.includes("canceled") ||
+                          errorMessage.includes("declined") ||
+                          errorMessage.includes("User denied") ||
+                          errorMessage.includes("refused") ||
+                          errorMessage.includes("WalletSignTransactionError");
+      
+      if (isRejection) {
+        console.log("User rejected the transaction");
+        return {
+          success: false,
+          error: "Transaction was declined. You can try again when ready.",
+          userRejected: true
+        };
+      }
+      
       return {
         success: false,
         error: `Transaction signing failed: ${signError.message || "User may have rejected the request"}`
