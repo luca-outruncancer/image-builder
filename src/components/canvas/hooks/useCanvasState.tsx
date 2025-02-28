@@ -21,6 +21,9 @@ import {
 } from '@/lib/imageStorage';
 import { 
   saveTransaction,
+  initializeTransaction,
+  updateTransactionStatus,
+  TRANSACTION_STATUS,
   TransactionRecord
 } from '@/lib/transactionStorage';
 import { processPayment, PaymentResult } from '@/utils/solanaPayment';
@@ -95,6 +98,8 @@ export function useCanvasState(): CanvasState {
   const [isLoadingImages, setIsLoadingImages] = useState(true);
   // Use a ref to track current transaction to avoid stale closures in async functions
   const currentTransactionRef = useRef<string | null>(null);
+  // Keep track of the current transaction ID in the database
+  const currentDbTransactionIdRef = useRef<number | null>(null);
   
   const imageToPlace = useImageStore(state => state.imageToPlace);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
@@ -124,6 +129,7 @@ export function useCanvasState(): CanvasState {
     setIsPaymentProcessing(false);
     setPaymentRetries(0);
     currentTransactionRef.current = null;
+    currentDbTransactionIdRef.current = null;
     
     if (paymentTimeoutId) {
       clearTimeout(paymentTimeoutId);
@@ -248,7 +254,7 @@ export function useCanvasState(): CanvasState {
     }
   };
 
-  const handlePaymentProcess = async (imageId: number): Promise<PaymentResult> => {
+  const handlePaymentProcess = async (imageId: number, transactionDbId: number): Promise<PaymentResult> => {
     if (!pendingConfirmation?.cost || !publicKey || !signTransaction) {
       return { 
         success: false, 
@@ -261,8 +267,11 @@ export function useCanvasState(): CanvasState {
       const transactionId = `${SESSION_ID}_${Date.now()}_${imageId}`;
       currentTransactionRef.current = transactionId;
       
+      // Update transaction status to IN_PROGRESS
+      await updateTransactionStatus(transactionDbId, TRANSACTION_STATUS.IN_PROGRESS);
+      
       setIsPaymentProcessing(true);
-      console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN} (ID: ${transactionId})`);
+      console.log(`Processing payment of ${pendingConfirmation.cost} ${ACTIVE_PAYMENT_TOKEN} (ID: ${transactionId}, DB ID: ${transactionDbId})`);
       console.log(`Attempt ${paymentRetries + 1} of ${MAX_RETRIES + 1}`);
       
       // Set payment timeout - cancel after PAYMENT_TIMEOUT_MS
@@ -273,6 +282,10 @@ export function useCanvasState(): CanvasState {
           setPaymentError(`Payment timed out. Please try again.`);
           setIsPaymentProcessing(false);
           
+          // Update transaction status to TIMEOUT
+          updateTransactionStatus(transactionDbId, TRANSACTION_STATUS.TIMEOUT)
+            .catch(err => console.error(`Failed to update transaction status to timeout (ID: ${transactionId}):`, err));
+            
           // Update image status to PAYMENT_TIMEOUT
           updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT)
             .catch(err => console.error(`Failed to update image status to timeout (ID: ${transactionId}):`, err));
@@ -297,6 +310,23 @@ export function useCanvasState(): CanvasState {
       clearTimeout(timeout);
       setPaymentTimeoutId(null);
       
+      // Update the transaction status based on result
+      if (result.success && result.transaction_hash) {
+        await updateTransactionStatus(
+          transactionDbId, 
+          TRANSACTION_STATUS.SUCCESS, 
+          result.transaction_hash, 
+          true
+        );
+      } else if (result.error) {
+        await updateTransactionStatus(
+          transactionDbId, 
+          TRANSACTION_STATUS.FAILED, 
+          undefined, 
+          false
+        );
+      }
+      
       return result;
     } catch (error) {
       console.error('Payment processing error:', error);
@@ -305,6 +335,18 @@ export function useCanvasState(): CanvasState {
       if (paymentTimeoutId) {
         clearTimeout(paymentTimeoutId);
         setPaymentTimeoutId(null);
+      }
+      
+      // Update transaction status to FAILED
+      if (currentDbTransactionIdRef.current) {
+        try {
+          await updateTransactionStatus(
+            currentDbTransactionIdRef.current, 
+            TRANSACTION_STATUS.FAILED
+          );
+        } catch (updateError) {
+          console.error("Failed to update transaction status after error:", updateError);
+        }
       }
       
       return { 
@@ -365,6 +407,11 @@ export function useCanvasState(): CanvasState {
       formData.append('file', tempImage.file);
       formData.append('position', JSON.stringify({ x: tempImage.x, y: tempImage.y }));
       formData.append('size', JSON.stringify({ width: tempImage.width, height: tempImage.height }));
+      
+      // Add wallet address
+      if (publicKey) {
+        formData.append('wallet', publicKey.toString());
+      }
      
       console.log("Uploading image to server...");
       
@@ -422,9 +469,52 @@ export function useCanvasState(): CanvasState {
       return;
     }
     
-    // STEP 2: Process payment
+    // STEP 1.5: Initialize transaction record in database (PRE-COMMIT)
     const imageId = parseInt(imageRecord.image_id.toString());
-    const paymentResult = await handlePaymentProcess(imageId);
+    
+    try {
+      console.log(`Initializing transaction record for image ${imageId}`);
+      
+      const initResult = await initializeTransaction(
+        imageId,
+        publicKey.toString(),
+        RECIPIENT_WALLET_ADDRESS,
+        cost,
+        ACTIVE_PAYMENT_TOKEN
+      );
+      
+      if (!initResult.success || !initResult.transactionId) {
+        console.error("Failed to initialize transaction record:", initResult.error);
+        setPaymentError("Failed to initialize transaction record. Please try again.");
+        return;
+      }
+      
+      console.log(`Transaction record initialized with ID: ${initResult.transactionId}`);
+      currentDbTransactionIdRef.current = initResult.transactionId;
+    } catch (initError) {
+      console.error("Error initializing transaction:", initError);
+      setPaymentError("Failed to initialize transaction. Please try again.");
+      
+      // Update image status to error
+      try {
+        await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+        // Remove the pending image from the canvas
+        setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+      } catch (updateError) {
+        console.error("Failed to update image status after init error:", updateError);
+      }
+      
+      return;
+    }
+    
+    // STEP 2: Process payment
+    if (!currentDbTransactionIdRef.current) {
+      console.error("Missing transaction database ID");
+      setPaymentError("Transaction initialization incomplete. Please try again.");
+      return;
+    }
+    
+    const paymentResult = await handlePaymentProcess(imageId, currentDbTransactionIdRef.current);
     console.log("Payment result:", paymentResult);
     
     if (!paymentResult.success) {
@@ -483,36 +573,10 @@ export function useCanvasState(): CanvasState {
     // Reset retry counter on success
     setPaymentRetries(0);
     
-    // STEP 3: Payment successful - record transaction and update image status
+    // STEP 3: Payment successful - image and transaction status already updated in handlePaymentProcess
     try {
-      // Create transaction record
-      const transactionRecord: TransactionRecord = {
-        image_id: imageId,
-        sender_wallet: publicKey.toString(),
-        recipient_wallet: RECIPIENT_WALLET_ADDRESS,
-        transaction_hash: paymentResult.transaction_hash!,
-        transaction_status: 'success',
-        amount: cost,
-        token: ACTIVE_PAYMENT_TOKEN
-      };
-      
-      console.log("Saving transaction record to database...");
-      
-      // Save transaction record
-      const saveResult = await saveTransaction(transactionRecord);
-      console.log("Transaction save result:", saveResult);
-      
-      if (!saveResult.success) {
-        dbWarning = "Transaction record could not be saved to the database, but payment was processed successfully.";
-        console.error("Failed to save transaction record:", saveResult.error);
-        
-        // Try to update image status directly
-        try {
-          await updateImageStatus(imageId, IMAGE_STATUS.CONFIRMED, true);
-        } catch (updateError) {
-          console.error("Failed to update image status after payment:", updateError);
-        }
-      }
+      // Already updated the transaction status in handlePaymentProcess
+      // but we need to update the UI
       
       // Update the placed image status in the UI
       setPlacedImages(prev => prev.map(img => 
@@ -520,6 +584,19 @@ export function useCanvasState(): CanvasState {
           ? { ...img, status: IMAGE_STATUS.CONFIRMED } 
           : img
       ));
+      
+      // Clear temporary states
+      setTempImage(null);
+      setPendingConfirmation(null);
+      
+      // Show success info
+      setSuccessInfo({
+        timestamp: new Date().toLocaleString(),
+        imageName: tempImage.file.name,
+        position: { x: tempImage.x, y: tempImage.y },
+        transactionHash: paymentResult.transaction_hash,
+        dbWarning: dbWarning || undefined
+      });
       
       // Reset transaction ID since we're done with this transaction
       currentTransactionRef.current = null;
