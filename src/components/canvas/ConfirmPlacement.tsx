@@ -2,7 +2,6 @@
 "use client";
 
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import ModalLayout from '../shared/ModalLayout';
 import { RECIPIENT_WALLET_ADDRESS, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 
@@ -44,18 +43,13 @@ export default function ConfirmPlacement({
           >
             Reposition
           </button>
-          {connected ? (
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Pay & Confirm
-            </button>
-          ) : (
-            <WalletMultiButton className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-              Connect Wallet to Continue
-            </WalletMultiButton>
-          )}
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={!connected}
+          >
+            Pay & Confirm
+          </button>
         </div>
       }
     >
@@ -71,7 +65,7 @@ export default function ConfirmPlacement({
           
           {!connected && (
             <p className="text-red-500 text-sm mt-2">
-              Please connect your wallet to complete this transaction.
+              Please return to the main page and connect your wallet to continue.
             </p>
           )}
         </div>
