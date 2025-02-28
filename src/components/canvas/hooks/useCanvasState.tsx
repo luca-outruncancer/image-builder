@@ -521,33 +521,37 @@ export function useCanvasState(): CanvasState {
           : img
       ));
       
-      // Clear temporary states
-      setTempImage(null);
-      setPendingConfirmation(null);
-      
-      // Show success info
-      setSuccessInfo({
-        timestamp: new Date().toLocaleString(),
-        imageName: tempImage.file.name,
-        position: { x: tempImage.x, y: tempImage.y },
-        transactionHash: paymentResult.transaction_hash,
-        dbWarning: dbWarning || undefined
-      });
-      
       // Reset transaction ID since we're done with this transaction
       currentTransactionRef.current = null;
+      
+      // Clear session storage of any blockhash or transaction data
+      try {
+        if (typeof window !== 'undefined') {
+          const keysToRemove = [];
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && (key.includes('blockhash') || key.includes('transaction'))) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(key => sessionStorage.removeItem(key));
+          console.log(`Cleared ${keysToRemove.length} items from session storage`);
+        }
+      } catch (e) {
+        console.error("Failed to clear session storage:", e);
+      }
+      
+      // Immediately refresh the page after successful payment
+      console.log("Payment successful, refreshing page...");
+      window.location.reload();
       
     } catch (error) {
       console.error("Error processing transaction record:", error);
       
-      // Show a limited success message since payment succeeded but record failed
-      setSuccessInfo({
-        timestamp: new Date().toLocaleString(),
-        imageName: tempImage.file.name,
-        position: { x: tempImage.x, y: tempImage.y },
-        transactionHash: paymentResult.transaction_hash,
-        dbWarning: "There was an error recording the transaction details, but your payment was completed successfully."
-      });
+      // Even if there was an error with the transaction record,
+      // still refresh the page to start with a clean state
+      console.log("Payment appears successful despite record error, refreshing page...");
+      window.location.reload();
     }
   };
 
