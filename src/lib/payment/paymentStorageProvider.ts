@@ -639,7 +639,7 @@ export class PaymentStorageProvider {
       
       const now = new Date().toISOString();
       
-      // Update image status
+      // First, update image status
       const { error: imageError } = await this.supabase
         .from('images')
         .update({ 
@@ -662,22 +662,18 @@ export class PaymentStorageProvider {
         };
       }
       
-      // Add a transaction record for the timeout
+      // Then update the existing transaction record for this image
       const { error: txError } = await this.supabase
         .from('transactions')
-        .insert([{
-          image_id: imageId,
-          sender_wallet: 'unknown',
-          recipient_wallet: 'unknown',
-          transaction_hash: 'timeout',
+        .update({
           transaction_status: 'timeout',
-          amount: 0,
-          token: 'unknown',
-          timestamp: now
-        }]);
+          last_verified_at: now
+        })
+        .eq('image_id', imageId)
+        .in('transaction_status', ['initiated', 'pending', 'in_progress']);
       
       if (txError) {
-        console.error("Error creating timeout transaction record:", txError);
+        console.log("Note: Could not update transaction status for timeout:", txError);
         // Don't fail the operation, as the image status was updated successfully
       }
       
@@ -694,7 +690,7 @@ export class PaymentStorageProvider {
         )
       };
     }
-  }
+  } 
 }
 
 export default PaymentStorageProvider;

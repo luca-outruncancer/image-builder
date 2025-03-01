@@ -5,22 +5,30 @@ import { ErrorCategory, PaymentError } from './types';
  * Create a standardized payment error object
  */
 export function createPaymentError(
-  category: ErrorCategory,
-  message: string,
-  originalError?: any,
-  retryable: boolean = false,
-  code?: string
-): PaymentError {
-  console.error(`Payment error [${category}]: ${message}`, originalError);
-  
-  return {
-    category,
-    message,
-    originalError,
-    retryable,
-    code
-  };
-}
+    category: ErrorCategory,
+    message: string,
+    originalError?: any,
+    retryable: boolean = false,
+    code?: string
+  ): PaymentError {
+    // Only use console.error for unexpected errors
+    if (category === ErrorCategory.UNKNOWN_ERROR || 
+        category === ErrorCategory.BLOCKCHAIN_ERROR || 
+        category === ErrorCategory.NETWORK_ERROR) {
+      console.error(`Payment error [${category}]: ${message}`, originalError);
+    } else {
+      // Use console.log for expected errors (user rejection, timeouts, etc.)
+      console.log(`Payment note [${category}]: ${message}`, originalError);
+    }
+    
+    return {
+      category,
+      message,
+      originalError,
+      retryable,
+      code
+    };
+  }
 
 /**
  * Determine if an error is a user rejection
