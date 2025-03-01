@@ -27,16 +27,10 @@ export default function ConfirmPlacement({
   return (
     <ModalLayout
       isOpen={true}
-      title="Confirm Placement & Payment"
+      title="Confirm Placement"
       onClose={onCancel}
       customButtons={
         <div className="flex justify-end items-center gap-2 mt-6">
-          <button
-            onClick={onBack}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
-          >
-            Back
-          </button>
           <button
             onClick={onReposition}
             className="px-4 py-2 border rounded hover:bg-gray-100"
@@ -48,14 +42,14 @@ export default function ConfirmPlacement({
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             disabled={!connected}
           >
-            Pay & Confirm
+            Next
           </button>
         </div>
       }
     >
       <div className="space-y-4">
         <p className="text-center">
-          Confirm image placement at position ({position.x}, {position.y})?
+          Confirm image placement ({position.x}, {position.y})?
         </p>
         
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">

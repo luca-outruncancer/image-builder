@@ -27,7 +27,7 @@ interface ModalLayoutProps {
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-lg w-96">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">{title}</h2>
+            <h2 className="text-2xl font-bold">{title}</h2>
             <button 
               onClick={handleClose}
               type="button"

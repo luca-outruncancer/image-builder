@@ -209,17 +209,18 @@ export function useCanvasState(): CanvasState {
   };
   
   const handleBack = () => {
+    const currentTempImage = tempImage;
     setTempImage(null);
     setPendingConfirmation(null);
     resetPayment();
     
-    if (tempImage?.file) {
+    if (currentTempImage?.file) {
       setImageToPlace({
-        file: tempImage.file,
-        width: tempImage.width,
-        height: tempImage.height,
-        previewUrl: tempImage.src,
-        cost: tempImage.cost
+        file: currentTempImage.file,
+        width: currentTempImage.width,
+        height: currentTempImage.height,
+        previewUrl: currentTempImage.src,
+        cost: currentTempImage.cost
       });
     }
   };

@@ -192,12 +192,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       return (
         <div className="flex justify-end gap-2">
           <button
-            onClick={onClose}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          <button
             onClick={handleNext}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300"
             disabled={!selectedFile}
@@ -220,7 +214,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
           onClick={handleConfirm}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
-          Confirm & Place
+          Next
         </button>
       </div>
     );
