@@ -1,5 +1,5 @@
 // src/lib/payment/utils.ts
-import { PaymentError, ErrorCategory } from './types';
+import { ErrorCategory, PaymentError } from './types';
 
 /**
  * Create a standardized payment error object
