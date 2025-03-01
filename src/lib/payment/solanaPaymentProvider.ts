@@ -156,6 +156,7 @@ export class SolanaPaymentProvider {
         signedTransaction = await this.wallet.signTransaction(transaction);
       } catch (signError) {
         if (isUserRejectionError(signError)) {
+          console.log("Transaction declined by user");
           return {
             success: false,
             error: createPaymentError(
@@ -371,6 +372,7 @@ export class SolanaPaymentProvider {
           signedTransaction = await this.wallet.signTransaction(transaction);
         } catch (signError) {
           if (isUserRejectionError(signError)) {
+            console.log("Transaction declined by user");
             return {
               success: false,
               error: createPaymentError(

@@ -355,12 +355,28 @@ export function useCanvasState(): CanvasState {
     const success = await processPayment(paymentId);
     
     if (!success) {
-      console.error("Payment failed or was rejected");
+      // Change log level for user rejections
+      if (error?.category === 'user_rejection') {
+        console.log("User rejected the transaction");
+      } else {
+        console.error("Payment failed:", error?.message);
+      }
       
-      // If user rejected the transaction, we just leave it as is
+      // Handle user rejection 
       if (error?.category === 'user_rejection') {
         console.log("User rejected the transaction - returning to confirmation screen");
         return;
+      }
+      
+      // Handle timeout specifically
+      if (error?.category === 'timeout_error') {
+        // Clean up any records created for this session
+        try {
+          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT);
+          setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+        } catch (updateError) {
+          console.log("Failed to update image status after timeout:", updateError);
+        }
       }
       
       // Otherwise, we update image status to failed and remove it from canvas
