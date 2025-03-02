@@ -18,5 +18,6 @@ interface CanvasProps {
  * - useCanvasState: Custom hook for state management
  */
 export default function Canvas({ className = '' }: CanvasProps) {
+  // Passing className through to CanvasMain for styling
   return <CanvasMain className={className} />;
 }
