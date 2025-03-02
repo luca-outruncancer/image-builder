@@ -184,17 +184,31 @@ export function useCanvasState(): CanvasState {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!canvasRef.current || !tempImage || pendingConfirmation) return; 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = snapToGrid(e.clientX - rect.left - tempImage.width / 2);
-    const y = snapToGrid(e.clientY - rect.top - tempImage.height / 2);
     
+    const rect = canvasRef.current.getBoundingClientRect();
+    
+    // Get the current scale factor of the canvas
+    const scaleX = CANVAS_WIDTH / rect.width;
+    const scaleY = CANVAS_HEIGHT / rect.height;
+    
+    // Calculate the actual position within the original canvas dimensions
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+    
+    // Snap to grid
+    const x = snapToGrid(canvasX - tempImage.width / 2);
+    const y = snapToGrid(canvasY - tempImage.height / 2);
+    
+    // Constrain to canvas boundaries
     const newX = Math.max(0, Math.min(x, CANVAS_WIDTH - tempImage.width));
     const newY = Math.max(0, Math.min(y, CANVAS_HEIGHT - tempImage.height));
     
     if (isPositionEmpty(newX, newY, tempImage.width, tempImage.height)) {
       setTempImage(prev => prev ? { ...prev, x: newX, y: newY } : null);
     }
-    setMousePosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    
+    // Store position for other purposes (like tooltips)
+    setMousePosition({ x: canvasX, y: canvasY });
   };
 
   const handleMouseUp = () => {
