@@ -57,58 +57,62 @@ export default function AngelsBoard() {
   const { connected } = useWallet()
 
   return (
-    <main className="min-h-screen flex items-center justify-center py-8">
+    <div className="flex-1 flex items-center justify-center px-4 py-4 sm:py-6">
       <style jsx global>
         {backgroundStyle}
       </style>
       <div className="bg-pattern"></div>
       
-      <div className="content w-full max-w-5xl mx-auto px-4">
+      <div className="content w-full mx-auto">
         {/* Centered container with same styling as about page */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl text-white p-8">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
-            
-            <div className="flex gap-2 items-center">
-              <Button
-                size="sm"
-                className="text-white hover:bg-white/10"
-                onClick={() => setIsHowItWorksOpen(true)}
-              >
-                <Info className="mr-1 h-4 w-4" />
-                How It Works
-              </Button>
+        <div className="bg-white/10 backdrop-blur-md rounded-xl text-white max-w-[calc(100vw-2rem)] mx-auto">
+          <div className="p-4 sm:p-6 md:p-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
               
-              {connected ? (
+              <div className="flex gap-2 items-center self-end sm:self-auto">
                 <Button
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="flex items-center gap-1 bg-blue-700 hover:bg-blue-600 text-white"
                   size="sm"
+                  className="text-white hover:bg-white/10"
+                  onClick={() => setIsHowItWorksOpen(true)}
                 >
-                  <Upload className="w-4 h-4" />
-                  Upload Image
+                  <Info className="mr-1 h-4 w-4" />
+                  <span className="hidden sm:inline">How It Works</span>
+                  <span className="sm:hidden">Info</span>
                 </Button>
-              ) : (
-                <WalletConnectButton />
-              )}
+                
+                {connected ? (
+                  <Button
+                    onClick={() => setIsUploadModalOpen(true)}
+                    className="flex items-center gap-1 bg-blue-700 hover:bg-blue-600 text-white"
+                    size="sm"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Upload Image</span>
+                    <span className="sm:hidden">Upload</span>
+                  </Button>
+                ) : (
+                  <WalletConnectButton />
+                )}
+              </div>
             </div>
-          </div>
-          
-          <div className="mb-3 flex justify-between">
-            <div className="text-sm text-blue-300">
-              <span className="font-bold">$1 per 10 pixels</span>
-              <span className="mx-2 text-white/60">|</span>
-              <span className="text-white/80">Upload an image to secure your spot</span>
+            
+            <div className="mb-3 flex justify-between">
+              <div className="text-sm text-blue-300">
+                <span className="font-bold">$1 per 10 pixels</span>
+                <span className="mx-2 text-white/60">|</span>
+                <span className="text-white/80">Upload an image to secure your spot</span>
+              </div>
             </div>
-          </div>
-          
-          {/* Canvas container with scrolling */}
-          <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-1 shadow-lg">
-            <Canvas className="w-full" />
-          </div>
-          
-          <div className="mt-4 text-center text-sm text-white/60">
-            Images are permanently stored on this page and the Solana blockchain
+            
+            {/* Canvas container with scrolling */}
+            <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-1 shadow-lg">
+              <Canvas className="w-full" />
+            </div>
+            
+            <div className="mt-4 text-center text-sm text-white/60">
+              Images are permanently stored on this page and the Solana blockchain
+            </div>
           </div>
         </div>
       </div>
@@ -127,6 +131,6 @@ export default function AngelsBoard() {
         isOpen={isHowItWorksOpen}
         onClose={() => setIsHowItWorksOpen(false)}
       />
-    </main>
+    </div>
   )
 }
