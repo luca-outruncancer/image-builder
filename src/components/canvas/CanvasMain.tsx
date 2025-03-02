@@ -36,25 +36,22 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setPendingConfirmation,
   } = useCanvasState();
 
-  const canvasStyle = {
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
-    overflow: "hidden",
-    position: "relative",
-  };
-
   return (
     <>
       {isLoadingImages ? (
         <div className="flex items-center justify-center h-full w-full">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          <span className="ml-3">Loading canvas...</span>
+          <span className="ml-3 text-white">Loading canvas...</span>
         </div>
       ) : (
         <div
           ref={canvasRef}
-          className={`relative border border-gray-300 ${className}`}
-          style={canvasStyle}
+          className={`relative overflow-hidden ${className}`}
+          style={{
+            width: '100%',
+            height: '100%',
+            background: 'rgba(0,0,0,0.2)',
+          }}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
