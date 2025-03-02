@@ -2,11 +2,13 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
 import Canvas from "@/components/canvas/Canvas"
 import UploadModal from "@/components/upload/UploadModal"
-import ToolsPanel from "@/components/tools/ToolsPanel"
 import { Button } from "@/components/ui/button"
+import { Upload, Info } from "lucide-react"
+import { useWallet } from '@solana/wallet-adapter-react'
+import { WalletConnectButton } from '@/components/solana/WalletConnectButton'
+import HowItWorksModal from "@/components/canvas/HowItWorksModal"
 
 const backgroundStyle = `
   .bg-pattern {
@@ -29,50 +31,83 @@ const backgroundStyle = `
   }
 `
 
-export default function VisionBoard() {
+export default function AngelsBoard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
+  const { connected } = useWallet()
 
   return (
-    <main
-      className="min-h-screen"
-      style={{
-        background: "radial-gradient(circle at center, #1E40AF, #000000)",
-      }}
-    >
+    <main className="min-h-screen flex items-center justify-center py-8">
       <style jsx global>
         {backgroundStyle}
       </style>
       <div className="bg-pattern"></div>
-      <div className="content p-8">
-        <div className="max-w-[1200px] mx-auto">
+      
+      <div className="content w-full max-w-5xl mx-auto px-4">
+        {/* Centered container with same styling as about page */}
+        <div className="bg-white/10 backdrop-blur-md rounded-xl text-white p-8">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-white">OUTRUN CANCER - Angels Board</h1>
+            <h1 className="text-3xl font-bold">OUTRUN CANCER - Angels Board</h1>
+            
+            <div className="flex gap-2 items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/10"
+                onClick={() => setIsHowItWorksOpen(true)}
+              >
+                <Info className="mr-1 h-4 w-4" />
+                How It Works
+              </Button>
+              
+              {connected ? (
+                <Button
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="flex items-center gap-1 bg-blue-700 hover:bg-blue-600 text-white"
+                  size="sm"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload Image
+                </Button>
+              ) : (
+                <WalletConnectButton />
+              )}
+            </div>
           </div>
           
-          <div className="flex gap-8 flex-col md:flex-row">
-            {/* Tools Panel */}
-            <div className="bg-black/40 backdrop-blur-sm p-4 rounded-lg shadow-lg border border-white/10">
-              <ToolsPanel onUploadClick={() => setIsUploadModalOpen(true)} />
-            </div>
-
-            {/* Vision Board Area */}
-            <div className="relative flex-1">
-              <div className="relative w-full max-w-[1000px] h-[800px] mx-auto overflow-hidden rounded-lg shadow-lg border border-white/10">
-                <Canvas />
-              </div>
+          <div className="mb-3 flex justify-between">
+            <div className="text-sm text-blue-300">
+              <span className="font-bold">$1 per 10 pixels</span>
+              <span className="mx-2 text-white/60">|</span>
+              <span className="text-white/80">Upload an image to secure your spot</span>
             </div>
           </div>
+          
+          {/* Canvas without the tools panel */}
+          <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-1 shadow-lg">
+            <Canvas className="w-full h-[600px]" />
+          </div>
+          
+          <div className="mt-4 text-center text-sm text-white/60">
+            Images are permanently stored on this page and the Solana blockchain
+          </div>
         </div>
-
-        <UploadModal
-          isOpen={isUploadModalOpen}
-          onClose={() => setIsUploadModalOpen(false)}
-          onUpload={(file) => {
-            console.log("Uploaded file:", file)
-            setIsUploadModalOpen(false)
-          }}
-        />
       </div>
+
+      {/* Modals */}
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUpload={(file) => {
+          console.log("Uploaded file:", file)
+          setIsUploadModalOpen(false)
+        }}
+      />
+      
+      <HowItWorksModal
+        isOpen={isHowItWorksOpen}
+        onClose={() => setIsHowItWorksOpen(false)}
+      />
     </main>
   )
 }
