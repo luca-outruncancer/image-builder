@@ -124,7 +124,7 @@ export default function ModalLayout({
                     Cancel
                   </Button>
                   {onNext && (
-                    <Button onClick={onNext} className="bg-primary text-primary-foreground">
+                    <Button variant="primary" onClick={onNext}>
                       {nextLabel}
                     </Button>
                   )}
