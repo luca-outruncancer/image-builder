@@ -1,7 +1,7 @@
 // src/components/canvas/CanvasMain.tsx
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/utils/constants';
 import CanvasImageLoader from './CanvasImageLoader';
 import CanvasImagePlacement from './CanvasImagePlacement';
@@ -14,6 +14,7 @@ interface CanvasMainProps {
 
 export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const [canvasScale, setCanvasScale] = useState(1);
   
   const {
     isLoadingImages,
@@ -38,30 +39,57 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setPendingConfirmation,
   } = useCanvasState();
 
+  // Calculate and update canvas scale based on container width
+  useEffect(() => {
+    if (!canvasContainerRef.current) return;
+
+    const updateCanvasScale = () => {
+      const containerWidth = canvasContainerRef.current?.clientWidth || 0;
+      // Ensure we maintain at least 600px width if possible
+      const minimumScale = Math.max(600 / CANVAS_WIDTH, 0.3);
+      const calculatedScale = Math.max(containerWidth / CANVAS_WIDTH, minimumScale);
+      setCanvasScale(Math.min(calculatedScale, 1)); // Don't exceed 1:1 scale
+    };
+
+    updateCanvasScale();
+    window.addEventListener('resize', updateCanvasScale);
+    
+    return () => {
+      window.removeEventListener('resize', updateCanvasScale);
+    };
+  }, []);
+
+  // Calculate scaled dimensions
+  const scaledWidth = CANVAS_WIDTH * canvasScale;
+  const scaledHeight = CANVAS_HEIGHT * canvasScale;
+
   return (
     <div className={`relative ${className}`}>
       {isLoadingImages ? (
-        <div className="flex items-center justify-center h-full w-full">
+        <div className="flex items-center justify-center h-[50vh] w-full">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           <span className="ml-3 text-white">Loading canvas...</span>
         </div>
       ) : (
         <div 
           ref={canvasContainerRef}
-          className="relative w-full h-[600px] overflow-auto scrollbar-thin scrollbar-thumb-blue-500/40 scrollbar-track-transparent"
+          className="relative overflow-auto scrollbar-thin scrollbar-thumb-blue-500/40 scrollbar-track-transparent"
           style={{
-            maxHeight: '60vh'
+            maxHeight: '70vh',
+            width: '100%'
           }}
         >
           <div
             ref={canvasRef}
-            className="relative"
+            className="relative mx-auto"
             style={{
-              width: `${CANVAS_WIDTH}px`,
-              height: `${CANVAS_HEIGHT}px`,
+              width: `${scaledWidth}px`,
+              height: `${scaledHeight}px`,
               background: 'rgba(0,0,0,0.2)',
               backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
-              backgroundSize: '10px 10px'
+              backgroundSize: `${10 * canvasScale}px ${10 * canvasScale}px`,
+              transform: `scale(${canvasScale})`,
+              transformOrigin: 'top left'
             }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -73,7 +101,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
             {/* Handle temporary image positioning */}
             {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
           </div>
-          
         </div>
       )}
 
