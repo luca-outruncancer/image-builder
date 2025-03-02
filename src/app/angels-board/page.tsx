@@ -67,11 +67,10 @@ export default function AngelsBoard() {
         {/* Centered container with same styling as about page */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl text-white p-8">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold">OUTRUN CANCER - Angels Board</h1>
+            <h1 className="text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
             
             <div className="flex gap-2 items-center">
               <Button
-                variant="ghost"
                 size="sm"
                 className="text-white hover:bg-white/10"
                 onClick={() => setIsHowItWorksOpen(true)}

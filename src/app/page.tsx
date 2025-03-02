@@ -39,6 +39,8 @@ export default function Home() {
           <p className="text-lg sm:text-xl mb-8 text-gray-300 max-w-2xl">
             Every dollar raised through our Angel Board funds the creation of OUTRUNCANCER 3.0, 
             an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention.
+            <br></br>
+            From transparent donation tracking to community-driven project support, this is the future of fundraising.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-lg">
@@ -46,7 +48,7 @@ export default function Home() {
               <Button 
                 className="w-full h-16 text-lg bg-blue-700 hover:bg-blue-600 text-white"
               >
-                Angels Board
+                Angels' Board
               </Button>
             </Link>
             <Link href="/about" className="w-full">
@@ -57,11 +59,7 @@ export default function Home() {
               </Button>
             </Link>
           </div>
-          
-          <p className="text-sm text-gray-400 mt-8">
-            From transparent donation tracking to community-driven project support, 
-            this is the future of fundraising.
-          </p>
+
         </div>
       </div>
     </main>
