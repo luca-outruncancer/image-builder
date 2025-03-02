@@ -4,6 +4,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
+// Grid pattern style remains, but removed gradient background
 const backgroundStyle = `
   .bg-pattern {
     position: fixed;
@@ -27,12 +28,8 @@ const backgroundStyle = `
 
 export default function Home() {
   return (
-    <main
-      className="min-h-screen flex items-center justify-center"
-      style={{
-        background: "radial-gradient(circle at center, #1E40AF, #000000)",
-      }}
-    >
+    // Removed the background style since it's now in the layout
+    <main className="min-h-screen flex items-center justify-center">
       <style jsx global>
         {backgroundStyle}
       </style>
