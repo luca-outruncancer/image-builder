@@ -6,6 +6,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import ConfirmPlacement from './ConfirmPlacement';
 import ModalLayout from '../shared/ModalLayout';
+import { Button } from '@/components/ui/button';
 import { usePaymentContext } from '@/lib/payment/PaymentContext';
 import { PaymentStatus } from '@/lib/payment/types';
 
@@ -98,19 +99,19 @@ export default function CanvasPaymentHandler({
           title="Payment Error"
           onClose={onCloseError}
           customButtons={
-            <div className="flex justify-end gap-3 mt-4">
-              <button
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
                 onClick={onCancel}
-                className="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
                 onClick={onRetry}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
                 Try Again
-              </button>
+              </Button>
             </div>
           }
         >
@@ -159,13 +160,13 @@ export default function CanvasPaymentHandler({
           title="Congratulations!"
           onClose={onDone}
           customButtons={
-            <div className="flex justify-end mt-6">
-              <button
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
                 onClick={onDone}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
                 Done
-              </button>
+              </Button>
             </div>
           }
         >
