@@ -2,10 +2,11 @@
 'use client';
 
 import { useEffect } from 'react';
+import { X } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import ConfirmPlacement from './ConfirmPlacement';
-import ModalLayout from '../shared/ModalLayout';
+import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { usePaymentContext } from '@/lib/payment/PaymentContext';
 import { PaymentStatus } from '@/lib/payment/types';
@@ -78,127 +79,195 @@ export default function CanvasPaymentHandler({
     };
   }, []);
 
-  return (
-    <>
-      {/* Confirmation step */}
-      {isConfirmationStep && (
-        <ConfirmPlacement
-          position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
-          cost={pendingConfirmation.cost || 0}
-          onConfirm={onConfirm}
-          onCancel={onCancel}
-          onBack={onBack}
-          onReposition={onReposition}
-        />
-      )}
+  // Lock body scroll when any modal is open
+  useEffect(() => {
+    if (isProcessingStep || isErrorStep || isSuccessStep) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isProcessingStep, isErrorStep, isSuccessStep]);
 
-      {/* Payment error modal */}
-      {isErrorStep && (
-        <ModalLayout
-          isOpen={true}
-          title="Payment Error"
-          onClose={onCloseError}
-          customButtons={
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={onCancel}
+  if (isConfirmationStep) {
+    return (
+      <ConfirmPlacement
+        position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
+        cost={pendingConfirmation.cost || 0}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+        onBack={onBack}
+        onReposition={onReposition}
+      />
+    );
+  }
+
+  // Common modal structure for all states
+  const ModalTemplate = ({ 
+    title, 
+    children, 
+    onClose, 
+    buttons 
+  }: { 
+    title: string;
+    children: React.ReactNode;
+    onClose?: () => void;
+    buttons?: React.ReactNode;
+  }) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop with blur effect */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+        onClick={onClose}
+      />
+
+      {/* Modal container */}
+      <div
+        className="relative z-50 flex flex-col w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl animate-in fade-in-0 zoom-in-95 duration-200 max-h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex flex-col space-y-1.5 p-6 pb-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold leading-none tracking-tight">{title}</h2>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="inline-flex items-center justify-center rounded-full w-8 h-8 transition-colors hover:bg-gray-100"
               >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={onRetry}
-              >
-                Try Again
-              </Button>
-            </div>
-          }
-        >
-          <div className="text-center p-4">
-            <p className="text-red-600 font-semibold">Unable to process payment</p>
-            <p className="mt-2 text-gray-700">{error && getErrorMessage(error)}</p>
-            
-            {!connected && (
-              <div className="mt-4">
-                <p className="mb-2">Connect your wallet to continue:</p>
-                <div className="flex justify-center">
-                  <WalletConnectButton />
-                </div>
-              </div>
+                <X className="h-4 w-4 text-gray-500 hover:text-gray-900" />
+                <span className="sr-only">Close</span>
+              </button>
             )}
-
-            {connected && (
-              <div className="mt-4 text-sm text-gray-600">
-                <p>Please make sure your wallet has sufficient balance for this transaction.</p>
-              </div>
-            )}
           </div>
-        </ModalLayout>
-      )}
+        </div>
 
-      {/* Payment processing modal */}
-      {isProcessingStep && (
-        <ModalLayout
-          isOpen={true}
-          title="Processing Payment"
-          onClose={() => {}}
-        >
-          <div className="text-center p-4">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p>Please approve the transaction in your wallet...</p>
-            <p className="text-sm text-gray-500 mt-2">Do not close this window until the transaction is complete</p>
-            <p className="text-sm text-gray-500 mt-2">Payment will time out after 3 minutes if not completed</p>
-          </div>
-        </ModalLayout>
-      )}
+        <Separator />
 
-      {/* Success modal */}
-      {isSuccessStep && (
-        <ModalLayout
-          isOpen={true}
-          title="Congratulations!"
-          onClose={onDone}
-          customButtons={
-            <div className="flex justify-end">
-              <Button
-                variant="primary"
-                onClick={onDone}
-              >
-                Done
-              </Button>
+        {/* Content with scrolling */}
+        <div className="flex-1 overflow-auto p-6 pt-4">
+          {children}
+        </div>
+
+        {/* Footer with buttons if provided */}
+        {buttons && (
+          <>
+            <Separator />
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-4">
+              {buttons}
             </div>
-          }
-        >
-          <div className="text-center">
-            <p className="text-lg font-semibold text-green-600">Image uploaded successfully!</p>
-            <div className="mt-4 text-left text-sm">
-              <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
-              <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
-              <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
-              {successInfo?.transactionHash && (
-                <div className="mt-2">
-                  <p className="font-semibold">Transaction Hash:</p>
-                  <p className="text-xs font-mono break-all bg-gray-100 p-2 rounded">
-                    {successInfo.transactionHash}
-                  </p>
-                  <p className="mt-2 text-sm text-gray-600">
-                    View on{" "}
-                    <a
-                      href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-500 hover:underline"
-                    >
-                      Solana Explorer
-                    </a>
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </ModalLayout>
-      )}
-    </>
+          </>
+        )}
+      </div>
+    </div>
   );
+
+  if (isErrorStep) {
+    return (
+      <ModalTemplate
+        title="Payment Error"
+        onClose={onCloseError}
+        buttons={
+          <>
+            <Button
+              variant="outline"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-500 hover:bg-blue-600 text-white"
+              onClick={onRetry}
+            >
+              Try Again
+            </Button>
+          </>
+        }
+      >
+        <div className="text-center p-4">
+          <p className="text-red-600 font-semibold">Unable to process payment</p>
+          <p className="mt-2 text-gray-700">{error && getErrorMessage(error)}</p>
+          
+          {!connected && (
+            <div className="mt-4">
+              <p className="mb-2">Connect your wallet to continue:</p>
+              <div className="flex justify-center">
+                <WalletConnectButton />
+              </div>
+            </div>
+          )}
+
+          {connected && (
+            <div className="mt-4 text-sm text-gray-600">
+              <p>Please make sure your wallet has sufficient balance for this transaction.</p>
+            </div>
+          )}
+        </div>
+      </ModalTemplate>
+    );
+  }
+
+  if (isProcessingStep) {
+    return (
+      <ModalTemplate
+        title="Processing Payment"
+      >
+        <div className="text-center p-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Please approve the transaction in your wallet...</p>
+          <p className="text-sm text-gray-500 mt-2">Do not close this window until the transaction is complete</p>
+          <p className="text-sm text-gray-500 mt-2">Payment will time out after 3 minutes if not completed</p>
+        </div>
+      </ModalTemplate>
+    );
+  }
+
+  if (isSuccessStep) {
+    return (
+      <ModalTemplate
+        title="Congratulations!"
+        onClose={onDone}
+        buttons={
+          <Button
+            className="bg-blue-500 hover:bg-blue-600 text-white"
+            onClick={onDone}
+          >
+            Done
+          </Button>
+        }
+      >
+        <div className="text-center">
+          <p className="text-lg font-semibold text-green-600">Image uploaded successfully!</p>
+          <div className="mt-4 text-left text-sm">
+            <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
+            <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
+            <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
+            {successInfo?.transactionHash && (
+              <div className="mt-2">
+                <p className="font-semibold">Transaction Hash:</p>
+                <p className="text-xs font-mono break-all bg-gray-100 p-2 rounded">
+                  {successInfo.transactionHash}
+                </p>
+                <p className="mt-2 text-sm text-gray-600">
+                  View on{" "}
+                  <a
+                    href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    Solana Explorer
+                  </a>
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </ModalTemplate>
+    );
+  }
+
+  return null;
 }
