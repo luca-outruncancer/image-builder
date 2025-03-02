@@ -11,15 +11,10 @@ export default function Header() {
         <div className="absolute top-4 right-4">
           <WalletConnectButton />
         </div>
-        <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none text-white">
-          We believe in outrunning cancer.
-        </h1>
+        <h1 className="text-4xl sm:text-5xl font-extrabold mb-4 bg-clip-text text-transparent bg-gradient-to-br from-gray-200 to-gray-600">
+            OUTRUN CANCER
+          </h1>
         {/* Changed text-muted-foreground to text-gray-200 for better visibility on dark backgrounds */}
-        <p className="mx-auto max-w-[1500px] text-gray-200 md:text-xl mt-6">
-          Every dollar raised through this Angel board funds the creation of OUTRUNCANCER 3.0 <br></br>
-          OC 3.0 is an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention. <br></br>
-          From transparent donation tracking to community-driven project support, this is the future of fundraising.
-        </p>
       </div>
     </>
   );

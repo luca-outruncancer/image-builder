@@ -47,9 +47,6 @@ export default function VisionBoard() {
         <div className="max-w-[1200px] mx-auto">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold text-white">OUTRUN CANCER - Angels Board</h1>
-            <Link href="/">
-              <Button className="bg-blue-700 hover:bg-blue-600 text-white">Back to Home</Button>
-            </Link>
           </div>
           
           <div className="flex gap-8 flex-col md:flex-row">

@@ -41,6 +41,12 @@ export default function Footer({ className }: { className?: string }) {
               Home
             </Link>
             <Link 
+              href="/angels-board"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
+            >
+              Angels' Board
+            </Link>
+            <Link 
               href="/about"
               className="text-sm font-medium text-gray-300 transition hover:text-white"
             >

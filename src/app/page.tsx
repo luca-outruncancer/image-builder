@@ -36,9 +36,6 @@ export default function Home() {
       <div className="bg-pattern"></div>
       <div className="content w-full max-w-4xl mx-auto px-4">
         <div className="flex flex-col items-center justify-center space-y-8 text-center">
-          <h1 className="text-4xl sm:text-5xl font-extrabold mb-4 bg-clip-text text-transparent bg-gradient-to-br from-gray-200 to-gray-600">
-            OUTRUN CANCER
-          </h1>
           <p className="text-lg sm:text-xl mb-8 text-gray-300 max-w-2xl">
             Every dollar raised through our Angel Board funds the creation of OUTRUNCANCER 3.0, 
             an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention.

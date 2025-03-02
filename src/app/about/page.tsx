@@ -15,11 +15,6 @@ export default function AboutPage() {
       <div className="max-w-4xl mx-auto p-8 bg-white/10 backdrop-blur-md rounded-xl text-white">
         <div className="mb-8 flex justify-between items-center">
           <h1 className="text-3xl font-bold">About OUTRUN CANCER</h1>
-          <Link href="/">
-            <Button className="bg-blue-700 hover:bg-blue-600">
-              Back to Home
-            </Button>
-          </Link>
         </div>
         
         <div className="space-y-6">
