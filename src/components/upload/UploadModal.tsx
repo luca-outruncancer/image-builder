@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import ModalLayout from '@/components/shared/ModalLayout';
+import { Button } from '@/components/ui/button';
 
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [selectedSize, setSelectedSize] = useState(PRESET_SIZES[0]);
@@ -53,14 +54,14 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     // Calculate the cost based on dimensions
     const cost = calculateCost(dimensions.width, dimensions.height);
     
-    console.log("Calculated cost:", cost); // Add this for debugging
+    console.log("Calculated cost:", cost);
     
     setImageToPlace({
       file: selectedFile,
       width: dimensions.width,
       height: dimensions.height,
       previewUrl: preview.url,
-      cost: cost // Make sure cost is being set
+      cost: cost
     });
     onClose();
   };
@@ -82,7 +83,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
               return (
                 <button
                   key={`${size.width}x${size.height}`}
-                  className={`p-2 border rounded ${
+                  className={`p-2 border rounded transition-colors ${
                     !isCustomSize && selectedSize === size ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
                   }`}
                   onClick={() => {
@@ -98,7 +99,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
               );
             })}
               <button
-                className={`p-2 border rounded ${isCustomSize ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}`}
+                className={`p-2 border rounded transition-colors ${isCustomSize ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}`}
                 onClick={() => setIsCustomSize(true)}
               >
                 Custom Size
@@ -115,7 +116,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     type="number"
                     value={customSize.width}
                     onChange={(e) => setCustomSize(prev => ({ ...prev, width: parseInt(e.target.value) }))}
-                    className="border p-1 w-full"
+                    className="border rounded p-1 w-full"
                     min="10"
                     max="2000"
                   />
@@ -126,7 +127,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     type="number"
                     value={customSize.height}
                     onChange={(e) => setCustomSize(prev => ({ ...prev, height: parseInt(e.target.value) }))}
-                    className="border p-1 w-full"
+                    className="border rounded p-1 w-full"
                     min="10"
                     max="1000"
                   />
@@ -148,7 +149,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
             />
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="w-full p-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
+              className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 transition-colors"
             >
               {selectedFile ? selectedFile.name : 'Click to upload image'}
             </button>
@@ -191,31 +192,31 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     if (step === 'select') {
       return (
         <div className="flex justify-end gap-2">
-          <button
+          <Button
+            variant="primary"
             onClick={handleNext}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300"
             disabled={!selectedFile}
           >
             Next
-          </button>
+          </Button>
         </div>
       );
     }
 
     return (
       <div className="flex justify-end gap-2">
-        <button
+        <Button
+          variant="outline"
           onClick={handleBack}
-          className="px-4 py-2 border rounded hover:bg-gray-100"
         >
           Back
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
           onClick={handleConfirm}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
           Next
-        </button>
+        </Button>
       </div>
     );
   };
@@ -225,6 +226,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       isOpen={isOpen}
       title={step === 'select' ? 'Upload Image' : 'Preview Image'}
       customButtons={renderButtons()}
+      onClose={onClose}
     >
       {renderContent()}
     </ModalLayout>
