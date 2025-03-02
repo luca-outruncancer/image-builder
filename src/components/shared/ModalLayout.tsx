@@ -1,58 +1,141 @@
-// src/components/shared/ModalLayout.tsx
+"use client"
+
+import type React from "react"
+
+import { X } from "lucide-react"
+import { useEffect } from "react"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 
 interface ModalLayoutProps {
-    isOpen: boolean;
-    title: string;
-    children: React.ReactNode;
-    customButtons?: React.ReactNode;
-    onNext?: () => void;
-    nextLabel?: string;
+  isOpen: boolean
+  title: string
+  children: React.ReactNode
+  customButtons?: React.ReactNode
+  onNext?: () => void
+  nextLabel?: string
+  description?: string
+  size?: "sm" | "md" | "lg" | "xl"
+  onClose?: () => void
+}
+
+export default function ModalLayout({
+  isOpen,
+  title,
+  children,
+  customButtons,
+  onNext,
+  nextLabel = "Next",
+  description,
+  size = "md",
+  onClose,
+}: ModalLayoutProps) {
+  const handleClose = () => {
+    if (onClose) {
+      onClose()
+    } else {
+      window.location.reload()
+    }
   }
-  
-  export default function ModalLayout({
-    isOpen,
-    title,
-    children,
-    customButtons,
-    onNext,
-    nextLabel = 'Next'
-  }: ModalLayoutProps) {
-    if (!isOpen) return null;
-  
-    const handleClose = () => {
-      window.location.reload();
-    };
-  
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-lg w-96">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold">{title}</h2>
-            <button 
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = ""
+    }
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [isOpen])
+
+  // Handle escape key press
+  useEffect(() => {
+    const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        handleClose()
+      }
+    }
+
+    document.addEventListener("keydown", handleEscapeKey)
+    return () => document.removeEventListener("keydown", handleEscapeKey)
+  }, [isOpen, handleClose]) // Added handleClose to dependencies
+
+  if (!isOpen) return null
+
+  // Size classes for the modal
+  const sizeClasses = {
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-lg",
+    xl: "max-w-xl",
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop with blur effect */}
+      <div
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm transition-all duration-300"
+        onClick={handleClose}
+      />
+
+      {/* Modal container */}
+      <div
+        className={cn(
+          "relative z-50 flex flex-col w-full rounded-lg border bg-background text-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-200",
+          sizeClasses[size],
+          "max-h-[85vh]",
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex flex-col space-y-1.5 p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold leading-none tracking-tight text-foreground">{title}</h2>
+            <button
               onClick={handleClose}
-              type="button"
-              className="text-gray-500 hover:text-gray-700 text-xl font-medium"
+              className="inline-flex items-center justify-center rounded-full w-8 h-8 transition-colors hover:bg-muted"
             >
-              ×
+              <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              <span className="sr-only">Close</span>
             </button>
           </div>
-          
-          {children}
-  
-          {customButtons || (
-            <div className="flex justify-end items-center gap-2 mt-6">
-              {onNext && (
-                <button
-                  onClick={onNext}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  disabled={!onNext}
-                >
-                  {nextLabel}
-                </button>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </div>
+
+        <Separator />
+
+        {/* Content with scrolling */}
+        <div className="flex-1 overflow-auto p-6 pt-4">{children}</div>
+
+        {/* Footer */}
+        {(customButtons || onNext) && (
+          <>
+            <Separator />
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-4">
+              {customButtons || (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleClose}
+                    className="bg-muted text-muted-foreground hover:bg-muted/90"
+                  >
+                    Cancel
+                  </Button>
+                  {onNext && (
+                    <Button onClick={onNext} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                      {nextLabel}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
-    );
-  }
+    </div>
+  )
+}
+
