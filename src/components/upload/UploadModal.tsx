@@ -5,8 +5,6 @@ import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [selectedSize, setSelectedSize] = useState(PRESET_SIZES[0]);
@@ -40,30 +38,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     return () => URL.revokeObjectURL(objectUrl);
   }, [selectedFile]);
 
-  // Lock body scroll when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    }
-  }, [isOpen]);
-
-  // Handle escape key press
-  useEffect(() => {
-    const handleEscapeKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleEscapeKey);
-    return () => document.removeEventListener("keydown", handleEscapeKey);
-  }, [isOpen, onClose]);
-
   const handleNext = () => {
     if (selectedFile) setStep('preview');
   };
@@ -78,6 +52,8 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     const dimensions = isCustomSize ? customSize : selectedSize;
     // Calculate the cost based on dimensions
     const cost = calculateCost(dimensions.width, dimensions.height);
+    
+    console.log("Calculated cost:", cost);
     
     setImageToPlace({
       file: selectedFile,
@@ -96,192 +72,162 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
   if (!isOpen) return null;
 
-  const renderContent = () => {
-    if (step === 'select') {
-      return (
-        <>
-          <div className="mb-4">
-            <h3 className="font-medium mb-2">Select Size</h3>
-            <div className="grid grid-cols-2 gap-2">
-            {PRESET_SIZES.map((size) => {
-              const cost = calculateCost(size.width, size.height);
-              return (
-                <button
-                  key={`${size.width}x${size.height}`}
-                  className={`p-2 border rounded transition-colors ${
-                    !isCustomSize && selectedSize === size ? 'bg-blue-500 text-white' : 'border-gray-200 hover:bg-gray-50'
-                  }`}
-                  onClick={() => {
-                    setSelectedSize(size);
-                    setIsCustomSize(false);
-                  }}
-                >
-                  {size.width} × {size.height}
-                  <div className="mt-1 text-xs font-semibold">
-                    {cost} {ACTIVE_PAYMENT_TOKEN}
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+        <button 
+          onClick={onClose}
+          className="absolute top-3 right-3 text-white/70 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+        
+        <h2 className="text-xl font-bold p-6 border-b border-white/20">
+          {step === 'select' ? 'Upload Image' : 'Preview Image'}
+        </h2>
+
+        <div className="p-6">
+          {step === 'select' ? (
+            <>
+              <div className="mb-4">
+                <h3 className="font-medium mb-2 text-white/90">Select Size</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {PRESET_SIZES.map((size) => {
+                    const cost = calculateCost(size.width, size.height);
+                    return (
+                      <button
+                        key={`${size.width}x${size.height}`}
+                        className={`p-2 border rounded transition-colors ${
+                          !isCustomSize && selectedSize === size 
+                            ? 'bg-blue-500 border-blue-600 text-white' 
+                            : 'border-white/30 hover:bg-white/10'
+                        }`}
+                        onClick={() => {
+                          setSelectedSize(size);
+                          setIsCustomSize(false);
+                        }}
+                      >
+                        {size.width} x {size.height}
+                        <div className="mt-1 text-xs font-semibold text-blue-300">
+                          {cost} {ACTIVE_PAYMENT_TOKEN}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  <button
+                    className={`p-2 border rounded transition-colors ${
+                      isCustomSize 
+                        ? 'bg-blue-500 border-blue-600 text-white' 
+                        : 'border-white/30 hover:bg-white/10'
+                    }`}
+                    onClick={() => setIsCustomSize(true)}
+                  >
+                    Custom Size
+                  </button>
+                </div>
+              </div>
+
+              {isCustomSize && (
+                <div className="mb-4 bg-white/5 p-3 rounded-lg">
+                  <div className="flex gap-2">
+                    <div>
+                      <label className="block text-sm mb-1 text-white/80">Width (px)</label>
+                      <input
+                        type="number"
+                        value={customSize.width}
+                        onChange={(e) => setCustomSize(prev => ({ ...prev, width: parseInt(e.target.value) }))}
+                        className="border rounded p-1 w-full bg-white/10 border-white/20 text-white"
+                        min="10"
+                        max="2000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1 text-white/80">Height (px)</label>
+                      <input
+                        type="number"
+                        value={customSize.height}
+                        onChange={(e) => setCustomSize(prev => ({ ...prev, height: parseInt(e.target.value) }))}
+                        className="border rounded p-1 w-full bg-white/10 border-white/20 text-white"
+                        min="10"
+                        max="1000"
+                      />
+                    </div>
                   </div>
+                  <div className="mt-2 text-right">
+                    <span className="font-bold text-blue-300">{currentCost} {ACTIVE_PAYMENT_TOKEN}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full p-3 border-2 border-dashed border-white/30 rounded-lg hover:border-blue-400 transition-colors text-white/80 hover:text-white"
+                >
+                  {selectedFile ? selectedFile.name : 'Click to upload image'}
                 </button>
-              );
-            })}
+              </div>
+            </>
+          ) : (
+            preview && (
+              <div className="mb-4">
+                <div className="border border-white/20 rounded p-2 bg-white/5">
+                  <img
+                    src={preview.url}
+                    alt="Preview"
+                    style={{
+                      width: isCustomSize ? customSize.width : selectedSize.width,
+                      height: isCustomSize ? customSize.height : selectedSize.height,
+                      objectFit: 'cover'
+                    }}
+                    className="mx-auto"
+                  />
+                </div>
+                <div className="text-sm text-white/80 mt-2 text-center">
+                  <p>
+                    {isCustomSize ? customSize.width : selectedSize.width} x {isCustomSize ? customSize.height : selectedSize.height} pixels
+                  </p>
+                  <p className="font-bold text-blue-300 mt-1">
+                    Cost: {currentCost} {ACTIVE_PAYMENT_TOKEN}
+                  </p>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="flex justify-end border-t border-white/20 p-6">
+          {step === 'select' ? (
+            <button
+              onClick={handleNext}
+              disabled={!selectedFile}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+            >
+              Next
+            </button>
+          ) : (
+            <div className="flex gap-2">
               <button
-                className={`p-2 border rounded transition-colors ${isCustomSize ? 'bg-blue-500 text-white' : 'border-gray-200 hover:bg-gray-50'}`}
-                onClick={() => setIsCustomSize(true)}
+                onClick={handleBack}
+                className="px-4 py-2 border border-white/30 text-white rounded-md hover:bg-white/10 font-medium transition-colors"
               >
-                Custom Size
+                Back
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium transition-colors"
+              >
+                Confirm
               </button>
             </div>
-          </div>
-
-          {isCustomSize && (
-            <div className="mb-4">
-              <div className="flex gap-2">
-                <div>
-                  <label className="block text-sm mb-1">Width (px)</label>
-                  <input
-                    type="number"
-                    value={customSize.width}
-                    onChange={(e) => setCustomSize(prev => ({ ...prev, width: parseInt(e.target.value) }))}
-                    className="border rounded p-2 w-full"
-                    min="10"
-                    max="2000"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Height (px)</label>
-                  <input
-                    type="number"
-                    value={customSize.height}
-                    onChange={(e) => setCustomSize(prev => ({ ...prev, height: parseInt(e.target.value) }))}
-                    className="border rounded p-2 w-full"
-                    min="10"
-                    max="1000"
-                  />
-                </div>
-              </div>
-              <div className="mt-2 text-right">
-                <span className="font-bold text-blue-600">{currentCost} {ACTIVE_PAYMENT_TOKEN}</span>
-              </div>
-            </div>
           )}
-
-          <div className="mb-4">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              accept="image/*"
-              className="hidden"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-blue-500 transition-colors"
-            >
-              {selectedFile ? selectedFile.name : 'Click to upload image'}
-            </button>
-          </div>
-        </>
-      );
-    }
-
-    return (
-      <>
-        {preview && (
-          <div className="mb-4">
-            <div className="border rounded p-2 bg-gray-50">
-              <img
-                src={preview.url}
-                alt="Preview"
-                style={{
-                  width: isCustomSize ? customSize.width : selectedSize.width,
-                  height: isCustomSize ? customSize.height : selectedSize.height,
-                  objectFit: 'cover'
-                }}
-                className="mx-auto"
-              />
-            </div>
-            <div className="text-sm text-gray-600 mt-2 text-center">
-              <p>
-                {isCustomSize ? customSize.width : selectedSize.width} × {isCustomSize ? customSize.height : selectedSize.height} pixels
-              </p>
-              <p className="font-bold text-blue-600 mt-1">
-                Cost: {currentCost} {ACTIVE_PAYMENT_TOKEN}
-              </p>
-            </div>
-          </div>
-        )}
-      </>
-    );
-  };
-
-  const renderButtons = () => {
-    if (step === 'select') {
-      return (
-        <Button
-          className="bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={handleNext}
-          disabled={!selectedFile}
-        >
-          Next
-        </Button>
-      );
-    }
-
-    return (
-      <div className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          onClick={handleBack}
-        >
-          Back
-        </Button>
-        <Button
-          className="bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={handleConfirm}
-        >
-          Next
-        </Button>
-      </div>
-    );
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop with blur effect */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
-        onClick={onClose}
-      />
-
-      {/* Modal container */}
-      <div
-        className="relative z-50 flex flex-col w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl animate-in fade-in-0 zoom-in-95 duration-200 max-h-[85vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex flex-col space-y-1.5 p-6 pb-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold leading-none tracking-tight">{step === 'select' ? 'Upload Image' : 'Preview Image'}</h2>
-            <button
-              onClick={onClose}
-              className="inline-flex items-center justify-center rounded-full w-8 h-8 transition-colors hover:bg-gray-100"
-            >
-              <X className="h-4 w-4 text-gray-500 hover:text-gray-900" />
-              <span className="sr-only">Close</span>
-            </button>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Content with scrolling */}
-        <div className="flex-1 overflow-auto p-6 pt-4">
-          {renderContent()}
-        </div>
-
-        {/* Footer */}
-        <Separator />
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-4">
-          {renderButtons()}
         </div>
       </div>
     </div>
