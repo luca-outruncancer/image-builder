@@ -9,6 +9,16 @@ import Providers from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
 
+// Style for the gradient background that applies to the entire page
+const pageStyle = `
+  .page-gradient {
+    background: radial-gradient(circle at center, #1E40AF, #000000);
+    min-height: 100vh;
+    width: 100%;
+    position: relative;
+  }
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -16,11 +26,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
+      <head>
+        <style>{pageStyle}</style>
+      </head>
       <body className={cn(inter.className, 'relative min-h-full')}>
         <Providers>
-          <Header />
-          <main className="pb-32">{children}</main>
-          <Footer className="absolute bottom-0 w-full" />
+          <div className="page-gradient">
+            <Header />
+            <main className="pb-32">{children}</main>
+            <Footer className="absolute bottom-0 w-full" />
+          </div>
         </Providers>
       </body>
     </html>
