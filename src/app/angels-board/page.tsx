@@ -2,9 +2,11 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import Canvas from "@/components/canvas/Canvas"
 import UploadModal from "@/components/upload/UploadModal"
 import ToolsPanel from "@/components/tools/ToolsPanel"
+import { Button } from "@/components/ui/button"
 
 export default function VisionBoard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -12,6 +14,13 @@ export default function VisionBoard() {
   return (
     <div className="min-h-screen bg-white p-8">
       <div className="max-w-[1200px] mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">OUTRUN CANCER - Angels Board</h1>
+          <Link href="/">
+            <Button variant="outline">Back to Home</Button>
+          </Link>
+        </div>
+        
         <div className="flex gap-12">
           {/* Tools Panel */}
           <ToolsPanel onUploadClick={() => setIsUploadModalOpen(true)} />
