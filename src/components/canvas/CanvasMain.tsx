@@ -6,7 +6,6 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/utils/constants';
 import CanvasImageLoader from './CanvasImageLoader';
 import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
-import CanvasNavigator from './CanvasNavigator';
 import { useCanvasState } from './hooks/useCanvasState';
 
 interface CanvasMainProps {
@@ -75,11 +74,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
             {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
           </div>
           
-          {/* Minimap navigator */}
-          <CanvasNavigator 
-            containerRef={canvasContainerRef}
-            placedImages={placedImages}
-          />
         </div>
       )}
 
