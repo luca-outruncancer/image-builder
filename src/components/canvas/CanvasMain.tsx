@@ -6,6 +6,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/utils/constants';
 import CanvasImageLoader from './CanvasImageLoader';
 import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
+import CanvasNavigator from './CanvasNavigator';
 import { useCanvasState } from './hooks/useCanvasState';
 
 interface CanvasMainProps {
@@ -13,6 +14,8 @@ interface CanvasMainProps {
 }
 
 export default function CanvasMain({ className = '' }: CanvasMainProps) {
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  
   const {
     isLoadingImages,
     placedImages,
@@ -37,30 +40,46 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
   } = useCanvasState();
 
   return (
-    <>
+    <div className={`relative ${className}`}>
       {isLoadingImages ? (
         <div className="flex items-center justify-center h-full w-full">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           <span className="ml-3 text-white">Loading canvas...</span>
         </div>
       ) : (
-        <div
-          ref={canvasRef}
-          className={`relative overflow-hidden ${className}`}
+        <div 
+          ref={canvasContainerRef}
+          className="relative w-full h-[600px] overflow-auto scrollbar-thin scrollbar-thumb-blue-500/40 scrollbar-track-transparent"
           style={{
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0,0,0,0.2)',
+            maxHeight: '60vh'
           }}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
         >
-          {/* Display all placed images */}
-          <CanvasImageLoader placedImages={placedImages} />
+          <div
+            ref={canvasRef}
+            className="relative"
+            style={{
+              width: `${CANVAS_WIDTH}px`,
+              height: `${CANVAS_HEIGHT}px`,
+              background: 'rgba(0,0,0,0.2)',
+              backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
+              backgroundSize: '10px 10px'
+            }}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          >
+            {/* Display all placed images */}
+            <CanvasImageLoader placedImages={placedImages} />
 
-          {/* Handle temporary image positioning */}
-          {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
+            {/* Handle temporary image positioning */}
+            {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
+          </div>
+          
+          {/* Minimap navigator */}
+          <CanvasNavigator 
+            containerRef={canvasContainerRef}
+            placedImages={placedImages}
+          />
         </div>
       )}
 
@@ -77,6 +96,6 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
           onDone={handleDone}
         />
       )}
-    </>
+    </div>
   );
 }
