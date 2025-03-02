@@ -30,6 +30,25 @@ const backgroundStyle = `
     position: relative;
     z-index: 2;
   }
+  
+  /* Custom scrollbar styles */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.4);
+    border-radius: 4px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.6);
+  }
 `
 
 export default function AngelsBoard() {
@@ -84,11 +103,9 @@ export default function AngelsBoard() {
             </div>
           </div>
           
-          {/* Canvas container with fixed dimensions */}
-          <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-2 shadow-lg">
-            <div style={{ position: 'relative', width: '100%', height: '600px' }}>
-              <Canvas className="w-full h-full" />
-            </div>
+          {/* Canvas container with scrolling */}
+          <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-1 shadow-lg">
+            <Canvas className="w-full" />
           </div>
           
           <div className="mt-4 text-center text-sm text-white/60">
