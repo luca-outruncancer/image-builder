@@ -64,10 +64,10 @@ export default function AngelsBoard() {
       <div className="bg-pattern"></div>
       
       <div className="content w-full mx-auto">
-        {/* Centered container with same styling as about page */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl text-white max-w-[calc(100vw-2rem)] mx-auto">
+        {/* Container - matching width/styles with about page */}
+        <div className="w-full max-w-4xl mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
           <div className="p-4 sm:p-6 md:p-8">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
               <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
               
               <div className="flex gap-2 items-center self-end sm:self-auto">
@@ -97,21 +97,9 @@ export default function AngelsBoard() {
               </div>
             </div>
             
-            <div className="mb-3 flex justify-between">
-              <div className="text-sm text-blue-300">
-                <span className="font-bold">$1 per 10 pixels</span>
-                <span className="mx-2 text-white/60">|</span>
-                <span className="text-white/80">Upload an image to secure your spot</span>
-              </div>
-            </div>
-            
             {/* Canvas container with scrolling */}
             <div className="relative w-full bg-black/20 backdrop-blur-sm rounded-lg border border-white/10 p-1 shadow-lg">
               <Canvas className="w-full" />
-            </div>
-            
-            <div className="mt-4 text-center text-sm text-white/60">
-              Images are permanently stored on this page and the Solana blockchain
             </div>
           </div>
         </div>
