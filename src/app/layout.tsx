@@ -16,6 +16,21 @@ const pageStyle = `
     min-height: 100vh;
     width: 100%;
     position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 4rem; /* Reduced space for footer */
+  }
+
+  @media (max-width: 640px) {
+    .main-content {
+      padding-bottom: 8rem; /* More space on mobile for stacked footer */
+    }
   }
 `;
 
@@ -33,8 +48,8 @@ export default function RootLayout({
         <Providers>
           <div className="page-gradient">
             <Header />
-            <main className="pb-32">{children}</main>
-            <Footer className="absolute bottom-0 w-full" />
+            <div className="main-content">{children}</div>
+            <Footer className="w-full mt-auto" />
           </div>
         </Providers>
       </body>
