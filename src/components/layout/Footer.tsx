@@ -6,11 +6,10 @@ import { Twitter, Globe } from 'lucide-react';
 
 export default function Footer({ className }: { className?: string }) {
   return (
-    // Changed from bg-white to bg-transparent and border-gray-200 to border-gray-500
     <footer className={`border-t border-gray-500/30 bg-transparent ${className || ''}`}>
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
-          {/* Social Links - updated colors */}
+      <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+          {/* Social Links */}
           <div className="flex items-center space-x-6">
             <Link 
               href="https://x.com/outruncancer" 
@@ -19,7 +18,7 @@ export default function Footer({ className }: { className?: string }) {
               className="text-gray-300 transition hover:text-white"
             >
               <span className="sr-only">Twitter</span>
-              <Twitter size={22} className="h-6 w-6" />
+              <Twitter size={20} className="h-5 w-5" />
             </Link>
             <Link 
               href="https://www.outruncancer.com" 
@@ -28,12 +27,12 @@ export default function Footer({ className }: { className?: string }) {
               className="text-gray-300 transition hover:text-white"
             >
               <span className="sr-only">Website</span>
-              <Globe size={22} className="h-6 w-6" />
+              <Globe size={20} className="h-5 w-5" />
             </Link>
           </div>
 
-          {/* Navigation Links - updated colors */}
-          <nav className="flex space-x-8">
+          {/* Navigation Links */}
+          <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2">
             <Link 
               href="/"
               className="text-sm font-medium text-gray-300 transition hover:text-white"
@@ -56,13 +55,13 @@ export default function Footer({ className }: { className?: string }) {
               href="/terms"
               className="text-sm font-medium text-gray-300 transition hover:text-white"
             >
-              Terms and Conditions
+              Terms
             </Link>
           </nav>
 
-          {/* Copyright - updated colors */}
+          {/* Copyright */}
           <div className="text-sm text-gray-300">
-            © {new Date().getFullYear()} Outrun Cancer. All rights reserved.
+            © {new Date().getFullYear()} Outrun Cancer
           </div>
         </div>
       </div>
