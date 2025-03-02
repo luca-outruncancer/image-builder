@@ -3,6 +3,7 @@
 
 import { useWallet } from '@solana/wallet-adapter-react';
 import ModalLayout from '../shared/ModalLayout';
+import { Button } from '@/components/ui/button';
 import { RECIPIENT_WALLET_ADDRESS, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 
 interface ConfirmPlacementProps {
@@ -30,20 +31,20 @@ export default function ConfirmPlacement({
       title="Confirm Placement"
       onClose={onCancel}
       customButtons={
-        <div className="flex justify-end items-center gap-2 mt-6">
-          <button
+        <div className="flex justify-end items-center gap-2 mt-2">
+          <Button
+            variant="outline"
             onClick={onReposition}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
           >
             Reposition
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={onConfirm}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             disabled={!connected}
           >
             Next
-          </button>
+          </Button>
         </div>
       }
     >
