@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { X } from "lucide-react"
 import { useEffect } from "react"
 import { cn } from "@/lib/utils"
@@ -61,7 +60,7 @@ export default function ModalLayout({
 
     document.addEventListener("keydown", handleEscapeKey)
     return () => document.removeEventListener("keydown", handleEscapeKey)
-  }, [isOpen, handleClose]) // Added handleClose to dependencies
+  }, [isOpen, handleClose])
 
   if (!isOpen) return null
 
@@ -77,14 +76,14 @@ export default function ModalLayout({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop with blur effect */}
       <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm transition-all duration-300"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
         onClick={handleClose}
       />
 
       {/* Modal container */}
       <div
         className={cn(
-          "relative z-50 flex flex-col w-full rounded-lg border bg-background text-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-200",
+          "relative z-50 flex flex-col w-full rounded-xl border bg-white shadow-xl animate-in fade-in-0 zoom-in-95 duration-200",
           sizeClasses[size],
           "max-h-[85vh]",
         )}
@@ -96,13 +95,13 @@ export default function ModalLayout({
             <h2 className="text-2xl font-semibold leading-none tracking-tight text-foreground">{title}</h2>
             <button
               onClick={handleClose}
-              className="inline-flex items-center justify-center rounded-full w-8 h-8 transition-colors hover:bg-muted"
+              className="inline-flex items-center justify-center rounded-full w-8 h-8 transition-colors hover:bg-gray-100"
             >
-              <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              <X className="h-4 w-4 text-gray-500 hover:text-gray-900" />
               <span className="sr-only">Close</span>
             </button>
           </div>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          {description && <p className="text-sm text-gray-500">{description}</p>}
         </div>
 
         <Separator />
@@ -120,12 +119,12 @@ export default function ModalLayout({
                   <Button
                     variant="outline"
                     onClick={handleClose}
-                    className="bg-muted text-muted-foreground hover:bg-muted/90"
+                    className="mt-2 sm:mt-0"
                   >
                     Cancel
                   </Button>
                   {onNext && (
-                    <Button onClick={onNext} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    <Button onClick={onNext} className="bg-primary text-primary-foreground">
                       {nextLabel}
                     </Button>
                   )}
@@ -138,4 +137,3 @@ export default function ModalLayout({
     </div>
   )
 }
-
