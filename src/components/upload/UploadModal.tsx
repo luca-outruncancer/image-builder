@@ -73,7 +73,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div className="fixed inset-0 z-50 flex items-center backdrop-blur-md justify-center bg-black/70">
       <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
         <button 
           onClick={onClose}
