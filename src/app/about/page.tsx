@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 export default function AboutPage() {
   return (
     <div className="flex-1 flex items-center justify-center px-4 py-4 sm:py-6">
-      <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
+      <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
         <div className="p-4 sm:p-6 md:p-8">
           <div className="mb-4 flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold">About OUTRUN CANCER</h1>
@@ -48,7 +48,7 @@ export default function AboutPage() {
               </p>
               <div className="mt-4">
                 <Link href="/angels-board">
-                  <Button className="bg-blue-700 hover:bg-blue-600">
+                  <Button className="bg-[#004E32] hover:bg-[#003D27]">
                     Visit the Angels Board
                   </Button>
                 </Link>
