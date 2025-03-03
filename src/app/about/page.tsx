@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button"
 
 export default function AboutPage() {
   return (
-    <div className="flex-1 flex items-center justify-center px-4 py-4 sm:py-8">
-      <div className="w-full max-w-4xl mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
+    <div className="flex-1 flex items-center justify-center px-4 py-4 sm:py-6">
+      <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
         <div className="p-4 sm:p-6 md:p-8">
-          <div className="mb-6 flex justify-between items-center">
+          <div className="mb-4 flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold">About OUTRUN CANCER</h1>
           </div>
           
