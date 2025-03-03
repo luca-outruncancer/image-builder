@@ -73,8 +73,8 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center backdrop-blur-md justify-center bg-black/70">
-      <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
         <button 
           onClick={onClose}
           className="absolute top-3 right-3 text-white/70 hover:text-white"
@@ -99,7 +99,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                         key={`${size.width}x${size.height}`}
                         className={`p-2 border rounded transition-colors ${
                           !isCustomSize && selectedSize === size 
-                            ? 'bg-blue-500 border-blue-600 text-white' 
+                            ? 'bg-[#004E32] border-[#005E42] text-white' 
                             : 'border-white/30 hover:bg-white/10'
                         }`}
                         onClick={() => {
@@ -108,7 +108,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                         }}
                       >
                         {size.width} x {size.height}
-                        <div className="mt-1 text-xs font-semibold text-blue-300">
+                        <div className="mt-1 text-xs font-semibold text-emerald-300">
                           {cost} {ACTIVE_PAYMENT_TOKEN}
                         </div>
                       </button>
@@ -117,7 +117,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   <button
                     className={`p-2 border rounded transition-colors ${
                       isCustomSize 
-                        ? 'bg-blue-500 border-blue-600 text-white' 
+                        ? 'bg-[#004E32] border-[#005E42] text-white' 
                         : 'border-white/30 hover:bg-white/10'
                     }`}
                     onClick={() => setIsCustomSize(true)}
@@ -128,7 +128,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
               </div>
 
               {isCustomSize && (
-                <div className="mb-4 bg-white/5 p-3 rounded-lg">
+                <div className="mb-4 bg-[#004E32]/20 p-3 rounded-lg">
                   <div className="flex gap-2">
                     <div>
                       <label className="block text-sm mb-1 text-white/80">Width (px)</label>
@@ -154,7 +154,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     </div>
                   </div>
                   <div className="mt-2 text-right">
-                    <span className="font-bold text-blue-300">{currentCost} {ACTIVE_PAYMENT_TOKEN}</span>
+                    <span className="font-bold text-emerald-300">{currentCost} {ACTIVE_PAYMENT_TOKEN}</span>
                   </div>
                 </div>
               )}
@@ -169,7 +169,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                 />
                 <button 
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full p-3 border-2 border-dashed border-white/30 rounded-lg hover:border-blue-400 transition-colors text-white/80 hover:text-white"
+                  className="w-full p-3 border-2 border-dashed border-white/30 rounded-lg hover:border-emerald-400 transition-colors text-white/80 hover:text-white"
                 >
                   {selectedFile ? selectedFile.name : 'Click to upload image'}
                 </button>
@@ -194,7 +194,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   <p>
                     {isCustomSize ? customSize.width : selectedSize.width} x {isCustomSize ? customSize.height : selectedSize.height} pixels
                   </p>
-                  <p className="font-bold text-blue-300 mt-1">
+                  <p className="font-bold text-emerald-300 mt-1">
                     Cost: {currentCost} {ACTIVE_PAYMENT_TOKEN}
                   </p>
                 </div>
@@ -208,7 +208,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
             <button
               onClick={handleNext}
               disabled={!selectedFile}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
             >
               Next
             </button>
@@ -222,7 +222,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
               </button>
               <button
                 onClick={handleConfirm}
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium transition-colors"
+                className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
               >
                 Confirm
               </button>
