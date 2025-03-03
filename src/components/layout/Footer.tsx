@@ -4,58 +4,64 @@
 import Link from 'next/link';
 import { Twitter, Globe } from 'lucide-react';
 
-export default function Footer() {
+export default function Footer({ className }: { className?: string }) {
   return (
-    <footer className="border-t border-gray-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
+    <footer className={`border-t border-gray-500/30 bg-transparent ${className || ''}`}>
+      <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
           {/* Social Links */}
           <div className="flex items-center space-x-6">
             <Link 
               href="https://x.com/outruncancer" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-gray-500 transition hover:text-blue-500"
+              className="text-gray-300 transition hover:text-white"
             >
               <span className="sr-only">Twitter</span>
-              <Twitter size={22} className="h-6 w-6" />
+              <Twitter size={20} className="h-5 w-5" />
             </Link>
             <Link 
               href="https://www.outruncancer.com" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-gray-500 transition hover:text-blue-500"
+              className="text-gray-300 transition hover:text-white"
             >
               <span className="sr-only">Website</span>
-              <Globe size={22} className="h-6 w-6" />
+              <Globe size={20} className="h-5 w-5" />
             </Link>
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex space-x-8">
+          <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2">
             <Link 
               href="/"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
             >
               Home
             </Link>
             <Link 
+              href="/angels-board"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
+            >
+              Angels' Board
+            </Link>
+            <Link 
               href="/about"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
             >
               About
             </Link>
             <Link 
               href="/terms"
-              className="text-sm font-medium text-gray-700 transition hover:text-blue-500"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
             >
-              Terms and Conditions
+              Terms
             </Link>
           </nav>
 
           {/* Copyright */}
-          <div className="text-sm text-gray-500">
-            © {new Date().getFullYear()} Outrun Cancer. All rights reserved.
+          <div className="text-sm text-gray-300">
+            © {new Date().getFullYear()} Outrun Cancer
           </div>
         </div>
       </div>
