@@ -34,7 +34,8 @@ export default function Home() {
       </style>
       <div className="bg-pattern"></div>
       
-      <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
+      {/* Container with no background (made invisible) but same dimensions */}
+      <div className="w-full max-w-[1200px] min-w-[600px] mx-auto rounded-xl text-white">
         <div className="p-4 sm:p-6 md:p-8">
           <div className="flex flex-col items-center justify-center space-y-6 text-center">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
