@@ -64,8 +64,8 @@ export default function AngelsBoard() {
       <div className="bg-pattern"></div>
       
       <div className="content w-full mx-auto">
-        {/* Container - matching width/styles with about page */}
-        <div className="w-full max-w-4xl mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
+        {/* Container - max width 1200px, min width 600px */}
+        <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
           <div className="p-4 sm:p-6 md:p-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
               <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
