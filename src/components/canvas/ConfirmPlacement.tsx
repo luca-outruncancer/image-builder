@@ -26,7 +26,7 @@ export default function ConfirmPlacement({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+      <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
         <button 
           onClick={onCancel}
           className="absolute top-3 right-3 text-white/70 hover:text-white"
@@ -44,9 +44,9 @@ export default function ConfirmPlacement({
               Confirm image placement ({position.x}, {position.y})?
             </p>
             
-            <div className="bg-blue-500/10 p-4 rounded-lg border border-blue-500/20">
+            <div className="bg-[#004E32]/20 p-4 rounded-lg border border-[#00A86B]/20">
               <h3 className="font-semibold text-lg mb-2 text-white">Payment Details</h3>
-              <p className="text-sm mb-2 text-white/90">Cost: <span className="font-bold text-blue-300">{cost} {ACTIVE_PAYMENT_TOKEN}</span></p>
+              <p className="text-sm mb-2 text-white/90">Cost: <span className="font-bold text-emerald-300">{cost} {ACTIVE_PAYMENT_TOKEN}</span></p>
               <p className="text-sm mb-2 text-white/90">Recipient: <span className="text-xs font-mono text-white/70">{RECIPIENT_WALLET_ADDRESS}</span></p>
               
               {!connected && (
@@ -67,7 +67,7 @@ export default function ConfirmPlacement({
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium transition-colors"
+            className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
             disabled={!connected}
           >
             Next

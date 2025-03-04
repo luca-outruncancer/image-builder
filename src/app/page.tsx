@@ -54,14 +54,14 @@ export default function Home() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md mt-4">
               <Link href="/angels-board" className="w-full">
                 <Button 
-                  className="w-full h-12 sm:h-14 text-base sm:text-lg bg-blue-700 hover:bg-blue-600 text-white"
+                  className="w-full h-12 sm:h-14 text-base sm:text-lg bg-[#004E32] hover:bg-[#003D27] text-white"
                 >
                   Angels' Board
                 </Button>
               </Link>
               <Link href="/about" className="w-full">
                 <Button 
-                  className="w-full h-12 sm:h-14 text-base sm:text-lg bg-blue-700 hover:bg-blue-600 text-white"
+                  className="w-full h-12 sm:h-14 text-base sm:text-lg bg-[#004E32] hover:bg-[#003D27] text-white"
                 >
                   About Us
                 </Button>
