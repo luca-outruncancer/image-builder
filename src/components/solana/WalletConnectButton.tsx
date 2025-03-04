@@ -48,13 +48,13 @@ export const WalletConnectButton: React.FC = () => {
         <Button
           onClick={handleConnect}
           disabled={connecting}
-          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white font-semibold rounded-lg shadow-lg transition-all border border-blue-400/30"
+          className="px-4 py-2 bg-gradient-to-r from-[#004E32] to-[#00A86B] hover:from-[#003D27] hover:to-[#00835C] text-white font-semibold rounded-lg shadow-lg transition-all border border-emerald-400/30"
         >
           {connecting ? 'Connecting...' : 'Connect Wallet'}
         </Button>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline px-3 py-1 bg-blue-900/70 text-blue-200 border border-blue-500/30 rounded-full text-sm font-medium shadow-md">
+          <span className="hidden sm:inline px-3 py-1 bg-[#004E32]/70 text-emerald-200 border border-emerald-500/30 rounded-full text-sm font-medium shadow-md">
             {shortenAddress(publicKey.toString())}
           </span>
           <Button
