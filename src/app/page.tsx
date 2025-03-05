@@ -37,17 +37,13 @@ export default function Home() {
       {/* Container with no background (made invisible) but same dimensions */}
       <div className="w-full max-w-[1200px] min-w-[600px] mx-auto rounded-xl text-white">
         <div className="p-4 sm:p-6 md:p-8">
-          <div className="flex flex-col items-center justify-center space-y-6 text-center">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
-              OUTRUN CANCER
-            </h1>
-            
-            <p className="text-sm sm:text-base md:text-lg text-white/90 max-w-2xl">
+          <div className="flex flex-col items-center justify-center space-y-6 text-center">            
+            <p className="text-sm text-base md:text-lg text-white">
               Every dollar raised through our Angel Board funds the creation of OUTRUNCANCER 3.0, 
               an innovative, blockchain-powered platform that empowers individuals to drive cancer prevention.
             </p>
             
-            <p className="text-sm sm:text-base text-white/80 max-w-2xl mb-4">
+            <p className="text-sm sm:text-base md:text-lg text-white">
               From transparent donation tracking to community-driven project support, this is the future of fundraising.
             </p>
             
