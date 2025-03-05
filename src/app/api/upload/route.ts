@@ -4,7 +4,7 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
-import { createImageRecordServer, IMAGE_STATUS } from '@/lib/server/imageStorageServer';
+import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
 import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 
 export async function POST(request: NextRequest) {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       let initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
       
       // Create the image record
-      const { success, data: imageRecord, error } = await createImageRecordServer({
+      const { success, data: imageRecord, error } = await createImageRecord({
         image_location: url,
         start_position_x: position.x,
         start_position_y: position.y,
