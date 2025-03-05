@@ -94,7 +94,7 @@ export default function CanvasPaymentHandler({
       {/* Payment error modal */}
       {isErrorStep && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+          <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
             <button 
               onClick={onCloseError}
               className="absolute top-3 right-3 text-white/70 hover:text-white"
@@ -137,7 +137,7 @@ export default function CanvasPaymentHandler({
               </button>
               <button
                 onClick={onRetry}
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium transition-colors"
+                className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
               >
                 Try Again
               </button>
@@ -149,14 +149,14 @@ export default function CanvasPaymentHandler({
       {/* Payment processing modal */}
       {isProcessingStep && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+          <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
             <h2 className="text-xl font-bold p-6 border-b border-white/20">
               Processing Payment
             </h2>
 
             <div className="p-6">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-2 border-transparent border-b-blue-400 mx-auto mb-4"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-2 border-transparent border-b-emerald-400 mx-auto mb-4"></div>
                 <p className="text-white">Please approve the transaction in your wallet...</p>
                 <p className="text-sm text-white/70 mt-2">Do not close this window until the transaction is complete</p>
                 <p className="text-sm text-white/70 mt-2">Payment will time out after 3 minutes if not completed</p>
@@ -169,7 +169,7 @@ export default function CanvasPaymentHandler({
       {/* Success modal */}
       {isSuccessStep && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="relative w-full max-w-lg bg-white/10 backdrop-blur-md rounded-xl text-white">
+          <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
             <button 
               onClick={onDone}
               className="absolute top-3 right-3 text-white/70 hover:text-white"
@@ -183,7 +183,7 @@ export default function CanvasPaymentHandler({
 
             <div className="p-6">
               <div className="text-center">
-                <p className="text-lg font-semibold text-green-400">Image uploaded successfully!</p>
+                <p className="text-lg font-semibold text-emerald-300">Image uploaded successfully!</p>
                 <div className="mt-4 text-left text-sm text-white/90">
                   <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
                   <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
@@ -191,7 +191,7 @@ export default function CanvasPaymentHandler({
                   {successInfo?.transactionHash && (
                     <div className="mt-2">
                       <p className="font-semibold text-white/90">Transaction Hash:</p>
-                      <p className="text-xs font-mono break-all bg-white/5 p-2 rounded text-white/80">
+                      <p className="text-xs font-mono break-all bg-[#004E32]/30 p-2 rounded text-white/80">
                         {successInfo.transactionHash}
                       </p>
                       <p className="mt-2 text-sm text-white/70">
@@ -200,7 +200,7 @@ export default function CanvasPaymentHandler({
                           href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-300 hover:underline"
+                          className="text-emerald-300 hover:underline"
                         >
                           Solana Explorer
                         </a>
@@ -214,7 +214,7 @@ export default function CanvasPaymentHandler({
             <div className="flex justify-end border-t border-white/20 p-6">
               <button
                 onClick={onDone}
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium transition-colors"
+                className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
               >
                 Done
               </button>

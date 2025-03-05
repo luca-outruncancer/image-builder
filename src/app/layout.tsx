@@ -12,7 +12,7 @@ const inter = Inter({ subsets: ['latin'] });
 // Style for the gradient background that applies to the entire page
 const pageStyle = `
   .page-gradient {
-    background: radial-gradient(circle at center, #1E40AF, #000000);
+    background: radial-gradient(circle at center, #00F49C, #00A86B);
     min-height: 100vh;
     width: 100%;
     position: relative;

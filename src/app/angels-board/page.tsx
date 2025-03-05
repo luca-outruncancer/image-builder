@@ -42,12 +42,12 @@ const backgroundStyle = `
   }
   
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgba(59, 130, 246, 0.4);
+    background: rgba(0, 168, 107, 0.4);
     border-radius: 4px;
   }
   
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: rgba(59, 130, 246, 0.6);
+    background: rgba(0, 168, 107, 0.6);
   }
 `
 
@@ -65,7 +65,7 @@ export default function AngelsBoard() {
       
       <div className="content w-full mx-auto">
         {/* Container - max width 1200px, min width 600px */}
-        <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-white/10 backdrop-blur-md rounded-xl text-white">
+        <div className="w-full max-w-[1200px] min-w-[600px] mx-auto bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
           <div className="p-4 sm:p-6 md:p-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
               <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">OUTRUN CANCER - Angels' Board</h1>
@@ -84,7 +84,7 @@ export default function AngelsBoard() {
                 {connected ? (
                   <Button
                     onClick={() => setIsUploadModalOpen(true)}
-                    className="flex items-center gap-1 bg-blue-700 hover:bg-blue-600 text-white"
+                    className="flex items-center gap-1 bg-[#004E32] hover:bg-[#003D27] text-white"
                     size="sm"
                   >
                     <Upload className="w-4 h-4" />
