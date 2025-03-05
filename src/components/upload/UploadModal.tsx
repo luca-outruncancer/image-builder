@@ -2,9 +2,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, FileImage, Info } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
+
+interface ImageInfo {
+  width?: number;
+  height?: number;
+  format?: string;
+  size?: number;
+  resizeRatio?: number;
+  estimatedNewSize?: number;
+}
 
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [selectedSize, setSelectedSize] = useState(PRESET_SIZES[0]);
@@ -13,21 +22,64 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [step, setStep] = useState<'select' | 'preview'>('select');
+  const [imageInfo, setImageInfo] = useState<ImageInfo>({});
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1024 * 1024) {
-        alert('File size must be less than 1MB');
+      // Increase size limit to 5MB but display warning for large files
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File size must be less than 5MB');
         return;
       }
       if (!file.type.startsWith('image/')) {
         alert('Only image files are allowed');
         return;
       }
+      
       setSelectedFile(file);
+      setIsLoadingMetadata(true);
+      
+      try {
+        // Get image metadata from server
+        const response = await fetch('/api/image-metadata', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            filename: file.name,
+            size: file.size 
+          })
+        });
+        
+        if (response.ok) {
+          const metadata = await response.json();
+          if (metadata.success) {
+            const dimensions = isCustomSize ? customSize : selectedSize;
+            const resizeRatio = Math.max(
+              dimensions.width / metadata.width,
+              dimensions.height / metadata.height
+            );
+            
+            setImageInfo({
+              width: metadata.width,
+              height: metadata.height,
+              format: metadata.format,
+              size: file.size,
+              resizeRatio,
+              estimatedNewSize: Math.round(file.size * Math.min(1, resizeRatio * resizeRatio))
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to get image metadata:", error);
+      } finally {
+        setIsLoadingMetadata(false);
+      }
     }
   };
 
@@ -37,6 +89,25 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     setPreview({ url: objectUrl });
     return () => URL.revokeObjectURL(objectUrl);
   }, [selectedFile]);
+
+  // Update resize ratio when selected size changes
+  useEffect(() => {
+    if (imageInfo.width && imageInfo.height) {
+      const dimensions = isCustomSize ? customSize : selectedSize;
+      const resizeRatio = Math.max(
+        dimensions.width / imageInfo.width,
+        dimensions.height / imageInfo.height
+      );
+      
+      setImageInfo(prev => ({
+        ...prev,
+        resizeRatio,
+        estimatedNewSize: prev.size 
+          ? Math.round(prev.size * Math.min(1, resizeRatio * resizeRatio))
+          : undefined
+      }));
+    }
+  }, [selectedSize, customSize, isCustomSize, imageInfo.width, imageInfo.height, imageInfo.size]);
 
   const handleNext = () => {
     if (selectedFile) setStep('preview');
@@ -60,7 +131,10 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       width: dimensions.width,
       height: dimensions.height,
       previewUrl: preview.url,
-      cost: cost
+      cost: cost,
+      originalWidth: imageInfo.width,
+      originalHeight: imageInfo.height,
+      originalSize: imageInfo.size
     });
     onClose();
   };
@@ -69,6 +143,19 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const currentCost = isCustomSize 
     ? calculateCost(customSize.width, customSize.height) 
     : calculateCost(selectedSize.width, selectedSize.height);
+
+  // Format file size for display
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return "Unknown";
+    if (bytes < 1024) return `${bytes} bytes`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Calculate compression ratio
+  const compressionRatio = imageInfo.size && imageInfo.estimatedNewSize 
+    ? imageInfo.size / imageInfo.estimatedNewSize
+    : 1;
 
   if (!isOpen) return null;
 
@@ -171,8 +258,49 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   onClick={() => fileInputRef.current?.click()}
                   className="w-full p-3 border-2 border-dashed border-white/30 rounded-lg hover:border-emerald-400 transition-colors text-white/80 hover:text-white"
                 >
-                  {selectedFile ? selectedFile.name : 'Click to upload image'}
+                  {selectedFile ? (
+                    <div className="flex items-center justify-center">
+                      <FileImage className="mr-2" size={20} />
+                      <span>{selectedFile.name}</span>
+                    </div>
+                  ) : 'Click to upload image'}
                 </button>
+                
+                {isLoadingMetadata && (
+                  <div className="mt-2 text-xs text-white/70 text-center">
+                    <div className="animate-pulse">Analyzing image dimensions...</div>
+                  </div>
+                )}
+                
+                {selectedFile && imageInfo.width && imageInfo.height && (
+                  <div className="mt-2 text-xs text-white/70 bg-[#004E32]/20 p-2 rounded">
+                    <div className="flex items-center justify-between mb-1">
+                      <span>Original size:</span>
+                      <span>{imageInfo.width} × {imageInfo.height} pixels</span>
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span>File size:</span>
+                      <span>{formatFileSize(imageInfo.size)}</span>
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span>Target size:</span>
+                      <span>
+                        {isCustomSize ? customSize.width : selectedSize.width} × {isCustomSize ? customSize.height : selectedSize.height} pixels
+                      </span>
+                    </div>
+                    {imageInfo.estimatedNewSize && (
+                      <div className="flex items-center justify-between">
+                        <span>Estimated file size after resize:</span>
+                        <span>{formatFileSize(imageInfo.estimatedNewSize)}</span>
+                      </div>
+                    )}
+                    {compressionRatio > 1.2 && (
+                      <div className="mt-1 text-emerald-300 font-semibold text-right">
+                        ~{Math.round((1 - 1/compressionRatio) * 100)}% smaller
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -197,6 +325,32 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   <p className="font-bold text-emerald-300 mt-1">
                     Cost: {currentCost} {ACTIVE_PAYMENT_TOKEN}
                   </p>
+                  
+                  {imageInfo.size && imageInfo.estimatedNewSize && (
+                    <div className="mt-2 p-2 bg-[#004E32]/20 rounded text-xs">
+                      <div className="flex justify-between mb-1">
+                        <span>Original file:</span>
+                        <span>{formatFileSize(imageInfo.size)}</span>
+                      </div>
+                      <div className="flex justify-between mb-1">
+                        <span>After resizing:</span>
+                        <span>
+                          ~{formatFileSize(imageInfo.estimatedNewSize)}
+                          {compressionRatio > 1.2 && (
+                            <span className="text-emerald-300 ml-1">
+                              ({Math.round((1 - 1/compressionRatio) * 100)}% smaller)
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="text-xs mt-1 flex items-start text-left">
+                        <Info size={12} className="mr-1 mt-0.5 text-white/70" />
+                        <span className="text-white/70">
+                          The image will be optimized during upload to save space and improve loading times
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )
