@@ -1,4 +1,6 @@
 // src/components/canvas/Magnifier.tsx
+// DEPRECATED: This has been replaced with SelectionMagnifier.tsx
+// This file is kept for reference but is no longer used
 'use client';
 
 import { useRef, useEffect } from 'react';
@@ -15,15 +17,8 @@ interface MagnifierProps {
 }
 
 /**
+ * DEPRECATED: Use SelectionMagnifier instead
  * Magnifier component provides zoomed view of canvas content at mouse position
- * 
- * @param mousePosition - Current mouse coordinates on canvas
- * @param canvasRef - Reference to the canvas container element
- * @param visible - Whether the magnifier should be displayed
- * @param zoomFactor - Level of magnification (default from MAGNIFIER.ZOOM_FACTOR)
- * @param size - Size of the magnifier in pixels (default from MAGNIFIER.SIZE)
- * @param borderWidth - Width of the border in pixels (default from MAGNIFIER.BORDER_WIDTH)
- * @param borderColor - Color of the border (default from MAGNIFIER.BORDER_COLOR)
  */
 const Magnifier: React.FC<MagnifierProps> = ({
   mousePosition,
@@ -135,10 +130,6 @@ const getCanvasBackground = (canvas: HTMLElement): string => {
         ctx.stroke();
       }
     }
-    
-    // Convert all children to an image and draw them
-    // This is a complex process and may need HTML2Canvas for accuracy
-    // For now we just capture the basic structure
     
     // Convert to data URL
     return tempCanvas.toDataURL();
