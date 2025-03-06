@@ -2,9 +2,15 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
+
+interface ImageInfo {
+  width?: number;
+  height?: number;
+  format?: string;
+}
 
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [selectedSize, setSelectedSize] = useState(PRESET_SIZES[0]);
@@ -13,21 +19,55 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [step, setStep] = useState<'select' | 'preview'>('select');
+  const [imageInfo, setImageInfo] = useState<ImageInfo>({});
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1024 * 1024) {
-        alert('File size must be less than 1MB');
+      // Increase size limit to 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File size must be less than 5MB');
         return;
       }
       if (!file.type.startsWith('image/')) {
         alert('Only image files are allowed');
         return;
       }
+      
       setSelectedFile(file);
+      setIsLoadingMetadata(true);
+      
+      try {
+        // Get basic image metadata from server (just dimensions and format)
+        const response = await fetch('/api/image-metadata', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            filename: file.name,
+            size: file.size 
+          })
+        });
+        
+        if (response.ok) {
+          const metadata = await response.json();
+          if (metadata.success) {
+            setImageInfo({
+              width: metadata.width,
+              height: metadata.height,
+              format: metadata.format
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to get image metadata:", error);
+      } finally {
+        setIsLoadingMetadata(false);
+      }
     }
   };
 
@@ -60,7 +100,10 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       width: dimensions.width,
       height: dimensions.height,
       previewUrl: preview.url,
-      cost: cost
+      cost: cost,
+      originalWidth: imageInfo.width,
+      originalHeight: imageInfo.height,
+      originalSize: selectedFile.size // Just pass the original file size for reference
     });
     onClose();
   };
@@ -171,8 +214,19 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   onClick={() => fileInputRef.current?.click()}
                   className="w-full p-3 border-2 border-dashed border-white/30 rounded-lg hover:border-emerald-400 transition-colors text-white/80 hover:text-white"
                 >
-                  {selectedFile ? selectedFile.name : 'Click to upload image'}
+                  {selectedFile ? (
+                    <div className="flex items-center justify-center">
+                      <FileImage className="mr-2" size={20} />
+                      <span>{selectedFile.name}</span>
+                    </div>
+                  ) : 'Click to upload image'}
                 </button>
+                
+                {isLoadingMetadata && (
+                  <div className="mt-2 text-xs text-white/70 text-center">
+                    <div className="animate-pulse">Analyzing image dimensions...</div>
+                  </div>
+                )}
               </div>
             </>
           ) : (
