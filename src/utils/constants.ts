@@ -9,7 +9,8 @@ export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
 // Feature flags
 export const FEATURES = {
-  IMAGE_MAGNIFIER_ENABLED: true, // Toggle magnifier functionality
+  IMAGE_MAGNIFIER_ENABLED: true,     // Toggle magnifier functionality
+  SHOW_OWNER_WALLET: true,           // Show owner wallet address in magnifier
 };
 
 // Magnifier settings
