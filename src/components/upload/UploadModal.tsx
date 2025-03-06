@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X, FileImage, Info } from 'lucide-react';
+import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 
@@ -10,9 +10,6 @@ interface ImageInfo {
   width?: number;
   height?: number;
   format?: string;
-  size?: number;
-  resizeRatio?: number;
-  estimatedNewSize?: number;
 }
 
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -30,7 +27,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Increase size limit to 5MB but display warning for large files
+      // Increase size limit to 5MB
       if (file.size > 5 * 1024 * 1024) {
         alert('File size must be less than 5MB');
         return;
@@ -44,7 +41,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       setIsLoadingMetadata(true);
       
       try {
-        // Get image metadata from server
+        // Get basic image metadata from server (just dimensions and format)
         const response = await fetch('/api/image-metadata', {
           method: 'POST',
           headers: {
@@ -59,19 +56,10 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
         if (response.ok) {
           const metadata = await response.json();
           if (metadata.success) {
-            const dimensions = isCustomSize ? customSize : selectedSize;
-            const resizeRatio = Math.max(
-              dimensions.width / metadata.width,
-              dimensions.height / metadata.height
-            );
-            
             setImageInfo({
               width: metadata.width,
               height: metadata.height,
-              format: metadata.format,
-              size: file.size,
-              resizeRatio,
-              estimatedNewSize: Math.round(file.size * Math.min(1, resizeRatio * resizeRatio))
+              format: metadata.format
             });
           }
         }
@@ -89,25 +77,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     setPreview({ url: objectUrl });
     return () => URL.revokeObjectURL(objectUrl);
   }, [selectedFile]);
-
-  // Update resize ratio when selected size changes
-  useEffect(() => {
-    if (imageInfo.width && imageInfo.height) {
-      const dimensions = isCustomSize ? customSize : selectedSize;
-      const resizeRatio = Math.max(
-        dimensions.width / imageInfo.width,
-        dimensions.height / imageInfo.height
-      );
-      
-      setImageInfo(prev => ({
-        ...prev,
-        resizeRatio,
-        estimatedNewSize: prev.size 
-          ? Math.round(prev.size * Math.min(1, resizeRatio * resizeRatio))
-          : undefined
-      }));
-    }
-  }, [selectedSize, customSize, isCustomSize, imageInfo.width, imageInfo.height, imageInfo.size]);
 
   const handleNext = () => {
     if (selectedFile) setStep('preview');
@@ -134,7 +103,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
       cost: cost,
       originalWidth: imageInfo.width,
       originalHeight: imageInfo.height,
-      originalSize: imageInfo.size
+      originalSize: selectedFile.size // Just pass the original file size for reference
     });
     onClose();
   };
@@ -143,14 +112,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const currentCost = isCustomSize 
     ? calculateCost(customSize.width, customSize.height) 
     : calculateCost(selectedSize.width, selectedSize.height);
-
-  // Format file size for display
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return "Unknown";
-    if (bytes < 1024) return `${bytes} bytes`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
   if (!isOpen) return null;
 
