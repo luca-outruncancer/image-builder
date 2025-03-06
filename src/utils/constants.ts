@@ -14,10 +14,11 @@ export const FEATURES = {
 
 // Magnifier settings
 export const MAGNIFIER = {
-  SIZE: 150,         // Default size in pixels
-  ZOOM_FACTOR: 2.0,  // Default zoom level
-  BORDER_WIDTH: 2,   // Border width in pixels
+  DEFAULT_SIZE: 150,     // Initial size when created
+  ZOOM_FACTOR: 2.0,      // Default zoom level
+  BORDER_WIDTH: 2,       // Border width in pixels
   BORDER_COLOR: '#3B82F6', // Border color (blue)
+  MIN_SIZE: 40,          // Minimum magnifier size
 };
 
 // Network configuration
