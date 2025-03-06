@@ -7,9 +7,7 @@ import CanvasImageLoader from './CanvasImageLoader';
 import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
-import Magnifier from './Magnifier';
-import MagnifierToggle from './MagnifierToggle';
-import useMagnifier from './hooks/useMagnifier';
+import SelectionMagnifier from './SelectionMagnifier';
 
 interface CanvasMainProps {
   className?: string;
@@ -18,14 +16,6 @@ interface CanvasMainProps {
 export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [canvasScale, setCanvasScale] = useState(1);
-  
-  // Initialize magnifier functionality
-  const {
-    magnifierState,
-    isEnabled: isMagnifierEnabled,
-    isActive: isMagnifierActive,
-    toggleMagnifier
-  } = useMagnifier();
   
   const {
     isLoadingImages,
@@ -70,34 +60,12 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     };
   }, []);
 
-  // Handle mouse movement with additional logging for magnifier
-  const handleEnhancedMouseMove = (e: React.MouseEvent) => {
-    // Call the original handler
-    handleMouseMove(e);
-    
-    // Add logging for debugging magnifier position
-    if (FEATURES.IMAGE_MAGNIFIER_ENABLED && magnifierState.active) {
-      console.log('Magnifier tracking mouse position:', mousePosition);
-    }
-  };
-
   // Calculate scaled dimensions
   const scaledWidth = CANVAS_WIDTH * canvasScale;
   const scaledHeight = CANVAS_HEIGHT * canvasScale;
 
   return (
     <div className={`relative ${className}`}>
-      {/* Magnifier Toggle Button - Only show if feature is enabled */}
-      {FEATURES.IMAGE_MAGNIFIER_ENABLED && (
-        <div className="absolute top-2 right-2 z-10">
-          <MagnifierToggle 
-            isActive={isMagnifierActive}
-            isEnabled={isMagnifierEnabled}
-            onToggle={toggleMagnifier}
-          />
-        </div>
-      )}
-      
       {isLoadingImages ? (
         <div className="flex items-center justify-center h-[50vh] w-full">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -124,7 +92,7 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
               transform: `scale(${canvasScale})`,
               transformOrigin: 'top left'
             }}
-            onMouseMove={handleEnhancedMouseMove}
+            onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
@@ -134,16 +102,12 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
             {/* Handle temporary image positioning */}
             {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
             
-            {/* Magnifier component - Only show when active and not in placement confirmation mode */}
-            {FEATURES.IMAGE_MAGNIFIER_ENABLED && !pendingConfirmation && (
-              <Magnifier
-                mousePosition={mousePosition}
+            {/* Magnifier Component - Only show when not in placement confirmation mode */}
+            {FEATURES.IMAGE_MAGNIFIER_ENABLED && !tempImage && !pendingConfirmation && (
+              <SelectionMagnifier
                 canvasRef={canvasRef}
-                visible={magnifierState.active}
-                zoomFactor={magnifierState.zoomFactor}
-                size={magnifierState.size}
-                borderWidth={magnifierState.borderWidth}
-                borderColor={magnifierState.borderColor}
+                containerRef={canvasRef}
+                isEnabled={true}
               />
             )}
           </div>
