@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
 /**
- * API endpoint to get metadata for an image file
- * Used by UploadModal to show original dimensions and estimate resizing impact
+ * Simplified API endpoint to get basic metadata for an image file
+ * Used by UploadModal to get original dimensions
  */
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +29,7 @@ export async function POST(request: NextRequest) {
           filename: body.filename,
           width: metadata.width,
           height: metadata.height,
-          format: metadata.format,
-          size: imageBuffer.length
+          format: metadata.format
         });
       } catch (error) {
         console.error('[Image Metadata] Error processing image data:', error);
@@ -99,7 +98,6 @@ function estimateDimensions(extension: string | undefined, fileSize: number) {
   return {
     width: estimatedWidth,
     height: estimatedHeight,
-    format,
-    size: fileSize
+    format
   };
 }
