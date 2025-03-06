@@ -28,16 +28,59 @@ export async function POST(request: NextRequest) {
     
     console.log(`[WalletInfo] Looking up position (${x}, ${y})`);
     
-    // Find images at this position
-    let query = supabase
-      .from('images')
-      .select('*')
-      .in('image_status', [1, 2]) // Status 1 = confirmed, 2 = pending payment
-      .lte('start_position_x', x)
-      .lte('start_position_y', y)
-      .order('created_at', { ascending: false });
+    // Execute the exact SQL query to find images at this position
+    const { data, error } = await supabase.rpc('find_image_at_position', { 
+      x_pos: x, 
+      y_pos: y 
+    });
     
-    const { data, error } = await query;
+    // If RPC function isn't set up, fallback to raw query
+    if (error && error.message.includes('does not exist')) {
+      console.log('[WalletInfo] RPC not found, using raw query');
+      
+      // Use raw SQL query to find the image at this position
+      const { data: rawData, error: rawError } = await supabase
+        .from('images')
+        .select('*')
+        .lte('start_position_x', x)
+        .lt(`${x}`, `start_position_x + size_x`)
+        .lte('start_position_y', y)
+        .lt(`${y}`, `start_position_y + size_y`)
+        .in('image_status', [1, 2])  // Only confirmed or pending images
+        .order('created_at', { ascending: false });
+        
+      if (rawError) {
+        console.error('[WalletInfo] Raw query error:', rawError);
+        return NextResponse.json(
+          { error: 'Database error while retrieving wallet information' },
+          { status: 500 }
+        );
+      }
+      
+      if (rawData && rawData.length > 0) {
+        const matchingImage = rawData[0]; // Get the most recent one if multiple
+        const { sender_wallet, image_id, start_position_x, start_position_y, size_x, size_y, image_status } = matchingImage;
+        
+        return NextResponse.json({
+          success: true,
+          imageId: image_id,
+          wallet: sender_wallet || "Unknown",
+          position: {
+            x: start_position_x,
+            y: start_position_y,
+            width: size_x,
+            height: size_y
+          },
+          status: image_status === 1 ? 'confirmed' : 'pending'
+        });
+      }
+      
+      // No image found
+      return NextResponse.json({
+        success: false,
+        message: 'No image found at this position'
+      });
+    }
     
     if (error) {
       console.error('[WalletInfo] Database query error:', error);
@@ -47,15 +90,8 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Filter to find exact match - we need to check if position is within image bounds
-    const matchingImage = data.find(img => 
-      x >= img.start_position_x && 
-      x < (img.start_position_x + img.size_x) &&
-      y >= img.start_position_y && 
-      y < (img.start_position_y + img.size_y)
-    );
-    
-    if (matchingImage) {
+    if (data && data.length > 0) {
+      const matchingImage = data[0]; // Get the most recent one if multiple
       const { sender_wallet, image_id, start_position_x, start_position_y, size_x, size_y, image_status } = matchingImage;
       
       return NextResponse.json({
