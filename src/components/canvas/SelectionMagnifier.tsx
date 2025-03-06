@@ -39,6 +39,12 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
+    // Make sure coordinates are within canvas bounds
+    if (x < 0 || y < 0 || x > CANVAS_WIDTH || y > CANVAS_HEIGHT) {
+      if (isVisible) setIsVisible(false);
+      return;
+    }
+    
     // Update mouse position state
     setMousePosition({ x, y });
     
@@ -60,15 +66,15 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
       // Update current cell
       setCurrentCell({ x: cellX, y: cellY });
       
-      // Set timer for hover delay (500ms)
+      // Set timer for hover delay
       timerRef.current = setTimeout(() => {
         setIsVisible(true);
-      }, 500);
+      }, MAGNIFIER.HOVER_DELAY_MS);
     }
     
     // Update last mouse move time
     lastMouseMoveRef.current = Date.now();
-  }, [canvasRef, isEnabled, currentCell.x, currentCell.y]);
+  }, [canvasRef, isEnabled, currentCell.x, currentCell.y, isVisible]);
 
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
@@ -88,6 +94,22 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
     };
   }, []);
 
+  // Handle mouse out of canvas cells
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (now - lastMouseMoveRef.current > 100 && isVisible) {
+        const x = mousePosition.x;
+        const y = mousePosition.y;
+        if (x < 0 || y < 0 || x > CANVAS_WIDTH || y > CANVAS_HEIGHT) {
+          setIsVisible(false);
+        }
+      }
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [isVisible, mousePosition.x, mousePosition.y]);
+
   // Early return if feature is disabled
   if (!isEnabled) return null;
 
@@ -97,15 +119,20 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
       {/* Magnifier */}
       {isVisible && (
         <div 
-          className="absolute rounded-lg overflow-hidden border-2 border-blue-500 pointer-events-none z-50 bg-white shadow-lg"
+          className="absolute rounded-lg overflow-hidden pointer-events-none z-50 bg-white shadow-lg"
           style={{
-            width: GRID_SIZE * 10, // 10x magnification of a grid cell
-            height: GRID_SIZE * 10,
+            width: GRID_SIZE * MAGNIFIER.ZOOM_FACTOR,
+            height: GRID_SIZE * MAGNIFIER.ZOOM_FACTOR,
             left: currentCell.x + GRID_SIZE + 10, // Position to the right of the cell
             top: currentCell.y,
+            border: `${MAGNIFIER.BORDER_WIDTH}px solid ${MAGNIFIER.BORDER_COLOR}`,
             // Ensure magnifier stays within canvas bounds
-            ...(currentCell.x + GRID_SIZE * 11 > CANVAS_WIDTH && { left: currentCell.x - GRID_SIZE * 10 - 10 }),
-            ...(currentCell.y + GRID_SIZE * 10 > CANVAS_HEIGHT && { top: CANVAS_HEIGHT - GRID_SIZE * 10 }),
+            ...(currentCell.x + GRID_SIZE * (MAGNIFIER.ZOOM_FACTOR + 1) + 10 > CANVAS_WIDTH && { 
+              left: currentCell.x - GRID_SIZE * MAGNIFIER.ZOOM_FACTOR - 10 
+            }),
+            ...(currentCell.y + GRID_SIZE * MAGNIFIER.ZOOM_FACTOR > CANVAS_HEIGHT && { 
+              top: CANVAS_HEIGHT - GRID_SIZE * MAGNIFIER.ZOOM_FACTOR 
+            }),
           }}
         >
           {/* Grid background */}
@@ -115,56 +142,90 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
               backgroundColor: 'rgba(0,0,0,0.2)', // Match canvas background
               backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
               backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`, // Keep grid size the same
-              backgroundPosition: `${-currentCell.x * 10 + GRID_SIZE * 5}px ${-currentCell.y * 10 + GRID_SIZE * 5}px` // Center on the current cell
+              backgroundPosition: `${-currentCell.x * MAGNIFIER.ZOOM_FACTOR + GRID_SIZE * MAGNIFIER.ZOOM_FACTOR/2}px ${-currentCell.y * MAGNIFIER.ZOOM_FACTOR + GRID_SIZE * MAGNIFIER.ZOOM_FACTOR/2}px` // Center on the current cell
             }}
           >
-            {/* If we want to render placed images here, we would need to clone and scale them */}
+            {/* Try to render placed images in the magnified view */}
             {canvasRef.current && 
               Array.from(canvasRef.current.querySelectorAll('img, [style*="background-image"]')).map((element, index) => {
-                const elementStyle = window.getComputedStyle(element as HTMLElement);
-                const rect = (element as HTMLElement).getBoundingClientRect();
-                const canvasRect = canvasRef.current!.getBoundingClientRect();
-                
-                // Calculate position relative to canvas
-                const elementX = rect.left - canvasRect.left;
-                const elementY = rect.top - canvasRect.top;
-                
-                // Calculate position within magnifier view
-                const relativeX = (elementX - currentCell.x) * 10;
-                const relativeY = (elementY - currentCell.y) * 10;
-                
-                // Only show if element is visible within the magnified area
-                const isInView = 
-                  relativeX < GRID_SIZE * 10 && 
-                  relativeY < GRID_SIZE * 10 && 
-                  relativeX + rect.width * 10 > 0 && 
-                  relativeY + rect.height * 10 > 0;
-                
-                if (!isInView) return null;
-                
-                return (
-                  <div
-                    key={index}
-                    className="absolute"
-                    style={{
-                      left: `${relativeX}px`,
-                      top: `${relativeY}px`,
-                      width: `${rect.width * 10}px`,
-                      height: `${rect.height * 10}px`,
-                      backgroundImage: elementStyle.backgroundImage,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      // Handle both background images and actual images
-                      ...(element.tagName === 'IMG' && {
-                        backgroundImage: `url(${(element as HTMLImageElement).src})`,
-                      })
-                    }}
-                  />
-                );
+                try {
+                  const elementStyle = window.getComputedStyle(element as HTMLElement);
+                  const rect = (element as HTMLElement).getBoundingClientRect();
+                  const canvasRect = canvasRef.current!.getBoundingClientRect();
+                  
+                  // Calculate position relative to canvas
+                  const elementX = rect.left - canvasRect.left;
+                  const elementY = rect.top - canvasRect.top;
+                  
+                  // Calculate position within magnifier view
+                  const relativeX = (elementX - currentCell.x) * MAGNIFIER.ZOOM_FACTOR;
+                  const relativeY = (elementY - currentCell.y) * MAGNIFIER.ZOOM_FACTOR;
+                  
+                  // Calculate magnifier viewport
+                  const viewportWidth = GRID_SIZE * MAGNIFIER.ZOOM_FACTOR;
+                  const viewportHeight = GRID_SIZE * MAGNIFIER.ZOOM_FACTOR;
+                  
+                  // Only show if element is visible within the magnified area
+                  const isInView = 
+                    relativeX < viewportWidth && 
+                    relativeY < viewportHeight && 
+                    relativeX + rect.width * MAGNIFIER.ZOOM_FACTOR > 0 && 
+                    relativeY + rect.height * MAGNIFIER.ZOOM_FACTOR > 0;
+                  
+                  if (!isInView) return null;
+                  
+                  // Render the element in the magnifier
+                  return (
+                    <div
+                      key={index}
+                      className="absolute"
+                      style={{
+                        left: `${relativeX}px`,
+                        top: `${relativeY}px`,
+                        width: `${rect.width * MAGNIFIER.ZOOM_FACTOR}px`,
+                        height: `${rect.height * MAGNIFIER.ZOOM_FACTOR}px`,
+                        backgroundImage: elementStyle.backgroundImage,
+                        backgroundSize: 'cover',
+                        backgroundPosition: elementStyle.backgroundPosition,
+                        // Handle both background images and actual images
+                        ...(element.tagName === 'IMG' && {
+                          backgroundImage: `url(${(element as HTMLImageElement).src})`,
+                        })
+                      }}
+                    />
+                  );
+                } catch (error) {
+                  console.error('Error rendering element in magnifier:', error);
+                  return null;
+                }
               })
             }
+            
+            {/* Add a highlight for the current cell */}
+            <div
+              className="absolute border-2 border-yellow-400 bg-yellow-100 bg-opacity-20"
+              style={{
+                width: GRID_SIZE * MAGNIFIER.ZOOM_FACTOR,
+                height: GRID_SIZE * MAGNIFIER.ZOOM_FACTOR,
+                left: 0,
+                top: 0,
+              }}
+            />
           </div>
         </div>
+      )}
+      
+      {/* Highlight for the current cell in the main view */}
+      {isVisible && (
+        <div
+          className="absolute border border-yellow-400 bg-yellow-100 bg-opacity-10 pointer-events-none"
+          style={{
+            width: GRID_SIZE,
+            height: GRID_SIZE,
+            left: currentCell.x,
+            top: currentCell.y,
+          }}
+        />
       )}
       
       {/* Transparent overlay to capture mouse events */}
