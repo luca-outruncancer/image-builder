@@ -1,8 +1,9 @@
 // src/components/canvas/SelectionMagnifier.tsx
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { MAGNIFIER } from '@/utils/constants';
+import html2canvas from 'html2canvas';
 
 interface MagnifierPosition {
   x: number;
@@ -54,49 +55,64 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
     startMagnifierX: number;
     startMagnifierY: number;
   } | null>(null);
+
+  // Canvas screenshot for magnifier
+  const [canvasImage, setCanvasImage] = useState<string | null>(null);
+  const [lastCaptureTime, setLastCaptureTime] = useState(0);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   
   // Refs
   const magnifierRef = useRef<HTMLDivElement>(null);
   const resizeHandleRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
   
-  // State to store canvas properties
-  const [canvasStyle, setCanvasStyle] = useState({
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    gridSize: 10,
-    gridColor: 'rgba(255,255,255,0.05)'
-  });
-  
-  // Update canvas style information when component mounts
-  useEffect(() => {
+  // Function to capture canvas as image
+  const captureCanvas = useCallback(async () => {
     if (!canvasRef.current) return;
     
     try {
-      const computedStyle = window.getComputedStyle(canvasRef.current);
-      const bgColor = computedStyle.backgroundColor || 'rgba(0,0,0,0.2)';
-      let gridSize = 10;
-      
-      // Extract grid size from backgroundSize if possible
-      if (computedStyle.backgroundSize) {
-        const match = computedStyle.backgroundSize.match(/(\d+)px/);
-        if (match && match[1]) {
-          gridSize = parseInt(match[1], 10);
-        }
+      // Limit captures to avoid performance issues (max once per second)
+      const now = Date.now();
+      if (now - lastCaptureTime < 1000 && canvasImage) {
+        return;
       }
       
-      setCanvasStyle({
-        backgroundColor: bgColor,
-        gridSize: gridSize,
-        gridColor: 'rgba(255,255,255,0.05)'
+      const canvas = await html2canvas(canvasRef.current, {
+        backgroundColor: null,
+        scale: 1,
+        logging: false,
+        allowTaint: true,
+        useCORS: true
       });
       
-      console.log('Canvas styles captured:', {
-        backgroundColor: bgColor,
-        gridSize: gridSize
+      setCanvasImage(canvas.toDataURL());
+      setCanvasSize({
+        width: canvasRef.current.clientWidth,
+        height: canvasRef.current.clientHeight
+      });
+      setLastCaptureTime(now);
+      
+      console.log('Canvas captured:', {
+        width: canvasRef.current.clientWidth,
+        height: canvasRef.current.clientHeight
       });
     } catch (error) {
-      console.error('Error capturing canvas styles:', error);
+      console.error('Error capturing canvas:', error);
     }
-  }, [canvasRef]);
+  }, [canvasRef, lastCaptureTime, canvasImage]);
+  
+  // Capture canvas when component mounts
+  useEffect(() => {
+    if (isEnabled && canvasRef.current) {
+      captureCanvas();
+    }
+  }, [isEnabled, canvasRef, captureCanvas]);
+
+  // Update canvas capture when magnifier moves
+  useEffect(() => {
+    if (magnifier && !isResizingMagnifier && !isDraggingMagnifier) {
+      captureCanvas();
+    }
+  }, [magnifier?.x, magnifier?.y, isResizingMagnifier, isDraggingMagnifier, captureCanvas]);
   
   // Handle key press for deleting magnifier
   useEffect(() => {
@@ -262,6 +278,7 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
     // Handle finishing dragging
     if (isDraggingMagnifier) {
       setIsDraggingMagnifier(false);
+      captureCanvas(); // Update canvas capture
       return;
     }
     
@@ -270,6 +287,7 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
       setIsResizingMagnifier(false);
       setResizeCorner(null);
       setResizeStartData(null);
+      captureCanvas(); // Update canvas capture
       return;
     }
     
@@ -293,6 +311,9 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
           borderColor: MAGNIFIER.BORDER_COLOR,
           borderWidth: MAGNIFIER.BORDER_WIDTH
         });
+        
+        // Capture canvas after creating magnifier
+        setTimeout(captureCanvas, 100);
       }
     }
   };
@@ -364,73 +385,20 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
               boxShadow: magnifier.selected ? "0 0 0 1px #3b82f6" : "none"
             }}
           >
-            {/* Magnified content - using direct background styling instead of trying to clone elements */}
+            {/* Magnified content using canvas screenshot */}
             <div 
               className="w-full h-full relative overflow-hidden rounded-full"
               style={{
-                backgroundColor: canvasStyle.backgroundColor,
-                backgroundImage: `linear-gradient(to right, ${canvasStyle.gridColor} 1px, transparent 1px), 
-                                linear-gradient(to bottom, ${canvasStyle.gridColor} 1px, transparent 1px)`,
-                backgroundSize: `${canvasStyle.gridSize * magnifier.zoomFactor}px ${canvasStyle.gridSize * magnifier.zoomFactor}px`,
-                backgroundPosition: `-${(magnifier.x * magnifier.zoomFactor) - magnifier.size / 2}px -${(magnifier.y * magnifier.zoomFactor) - magnifier.size / 2}px`
+                backgroundColor: 'rgba(0,0,0,0.2)', // Fallback
+                backgroundImage: canvasImage ? `url(${canvasImage})` : 'none',
+                backgroundSize: canvasImage ? 
+                  `${canvasSize.width * magnifier.zoomFactor}px ${canvasSize.height * magnifier.zoomFactor}px` : 
+                  'auto',
+                backgroundPosition: canvasImage ? 
+                  `-${(magnifier.x * magnifier.zoomFactor) - magnifier.size / 2}px -${(magnifier.y * magnifier.zoomFactor) - magnifier.size / 2}px` : 
+                  'center'
               }}
-            >
-              {/* Child elements like images would be rendered here if we were to implement a full clone */}
-              {/* For now, we're just showing the grid */}
-              
-              {/* Try to render images from the canvas at their magnified positions */}
-              {canvasRef.current && 
-                Array.from(canvasRef.current.querySelectorAll('[style*="background-image"]')).map((element, index) => {
-                  const elementStyle = window.getComputedStyle(element as HTMLElement);
-                  const rect = (element as HTMLElement).getBoundingClientRect();
-                  const canvasRect = canvasRef.current!.getBoundingClientRect();
-                  
-                  // Calculate position relative to canvas
-                  const elementX = rect.left - canvasRect.left;
-                  const elementY = rect.top - canvasRect.top;
-                  const elementWidth = rect.width;
-                  const elementHeight = rect.height;
-                  
-                  // Only show elements that are in or near the magnifier's view
-                  const magnifierViewX = magnifier.x - magnifier.size / (2 * magnifier.zoomFactor);
-                  const magnifierViewY = magnifier.y - magnifier.size / (2 * magnifier.zoomFactor);
-                  const magnifierViewWidth = magnifier.size / magnifier.zoomFactor;
-                  const magnifierViewHeight = magnifier.size / magnifier.zoomFactor;
-                  
-                  // Check if element is in view
-                  const isInView = !(
-                    elementX + elementWidth < magnifierViewX ||
-                    elementX > magnifierViewX + magnifierViewWidth ||
-                    elementY + elementHeight < magnifierViewY ||
-                    elementY > magnifierViewY + magnifierViewHeight
-                  );
-                  
-                  if (!isInView) return null;
-                  
-                  // Calculate position within magnifier
-                  const posX = (elementX - magnifierViewX) * magnifier.zoomFactor;
-                  const posY = (elementY - magnifierViewY) * magnifier.zoomFactor;
-                  
-                  return (
-                    <div
-                      key={index}
-                      className="absolute"
-                      style={{
-                        left: posX,
-                        top: posY,
-                        width: elementWidth * magnifier.zoomFactor,
-                        height: elementHeight * magnifier.zoomFactor,
-                        backgroundImage: elementStyle.backgroundImage,
-                        backgroundSize: elementStyle.backgroundSize 
-                          ? `${parseInt(elementStyle.backgroundSize) * magnifier.zoomFactor}px` 
-                          : 'cover',
-                        backgroundPosition: elementStyle.backgroundPosition
-                      }}
-                    />
-                  );
-                })
-              }
-            </div>
+            />
           </div>
           
           {/* Resize handles when selected */}
