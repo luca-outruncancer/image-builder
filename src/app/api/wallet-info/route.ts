@@ -1,23 +1,6 @@
 // src/app/api/wallet-info/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-let supabase: any = null;
-
-try {
-  if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("Supabase client initialized in wallet-info API");
-  } else {
-    console.error("Unable to initialize Supabase client due to missing environment variables in wallet-info API");
-  }
-} catch (error) {
-  console.error("Error initializing Supabase client in wallet-info API:", error);
-}
+import { supabase } from '@/lib/supabase';
 
 /**
  * API to fetch wallet information for a specific position on the canvas
