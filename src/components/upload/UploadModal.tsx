@@ -152,11 +152,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Calculate compression ratio
-  const compressionRatio = imageInfo.size && imageInfo.estimatedNewSize 
-    ? imageInfo.size / imageInfo.estimatedNewSize
-    : 1;
-
   if (!isOpen) return null;
 
   return (
@@ -271,36 +266,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     <div className="animate-pulse">Analyzing image dimensions...</div>
                   </div>
                 )}
-                
-                {selectedFile && imageInfo.width && imageInfo.height && (
-                  <div className="mt-2 text-xs text-white/70 bg-[#004E32]/20 p-2 rounded">
-                    <div className="flex items-center justify-between mb-1">
-                      <span>Original size:</span>
-                      <span>{imageInfo.width} × {imageInfo.height} pixels</span>
-                    </div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span>File size:</span>
-                      <span>{formatFileSize(imageInfo.size)}</span>
-                    </div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span>Target size:</span>
-                      <span>
-                        {isCustomSize ? customSize.width : selectedSize.width} × {isCustomSize ? customSize.height : selectedSize.height} pixels
-                      </span>
-                    </div>
-                    {imageInfo.estimatedNewSize && (
-                      <div className="flex items-center justify-between">
-                        <span>Estimated file size after resize:</span>
-                        <span>{formatFileSize(imageInfo.estimatedNewSize)}</span>
-                      </div>
-                    )}
-                    {compressionRatio > 1.2 && (
-                      <div className="mt-1 text-emerald-300 font-semibold text-right">
-                        ~{Math.round((1 - 1/compressionRatio) * 100)}% smaller
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </>
           ) : (
@@ -325,32 +290,6 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   <p className="font-bold text-emerald-300 mt-1">
                     Cost: {currentCost} {ACTIVE_PAYMENT_TOKEN}
                   </p>
-                  
-                  {imageInfo.size && imageInfo.estimatedNewSize && (
-                    <div className="mt-2 p-2 bg-[#004E32]/20 rounded text-xs">
-                      <div className="flex justify-between mb-1">
-                        <span>Original file:</span>
-                        <span>{formatFileSize(imageInfo.size)}</span>
-                      </div>
-                      <div className="flex justify-between mb-1">
-                        <span>After resizing:</span>
-                        <span>
-                          ~{formatFileSize(imageInfo.estimatedNewSize)}
-                          {compressionRatio > 1.2 && (
-                            <span className="text-emerald-300 ml-1">
-                              ({Math.round((1 - 1/compressionRatio) * 100)}% smaller)
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="text-xs mt-1 flex items-start text-left">
-                        <Info size={12} className="mr-1 mt-0.5 text-white/70" />
-                        <span className="text-white/70">
-                          The image will be optimized during upload to save space and improve loading times
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )
