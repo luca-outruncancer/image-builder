@@ -1,4 +1,6 @@
 // src/components/canvas/MagnifierToggle.tsx
+// DEPRECATED: This file is no longer used as we've switched to selection-based magnifier
+// This file is kept for reference only
 'use client';
 
 import { Search } from 'lucide-react';
@@ -12,12 +14,8 @@ interface MagnifierToggleProps {
 }
 
 /**
+ * DEPRECATED: No longer used with the selection-based magnifier approach
  * Toggle button for the magnifier functionality
- * 
- * @param isActive - Whether the magnifier is currently active
- * @param isEnabled - Whether the magnifier feature is enabled in the app
- * @param onToggle - Function to call when the button is clicked
- * @param className - Additional CSS classes
  */
 const MagnifierToggle: React.FC<MagnifierToggleProps> = ({
   isActive,
