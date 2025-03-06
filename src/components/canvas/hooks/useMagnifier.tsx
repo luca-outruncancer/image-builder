@@ -1,4 +1,6 @@
 // src/components/canvas/hooks/useMagnifier.tsx
+// DEPRECATED: This hook is no longer used as we've switched to selection-based magnifier
+// This file is kept for reference only
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -13,8 +15,8 @@ export interface MagnifierState {
 }
 
 /**
+ * DEPRECATED: No longer used with selection-based magnifier
  * Custom hook to manage magnifier state
- * @returns Magnifier state and control functions
  */
 export function useMagnifier() {
   // State to track if magnifier is enabled
@@ -26,7 +28,7 @@ export function useMagnifier() {
   // Magnifier configuration settings
   const [config, setConfig] = useState<Omit<MagnifierState, 'active'>>({
     zoomFactor: MAGNIFIER.ZOOM_FACTOR,
-    size: MAGNIFIER.SIZE,
+    size: MAGNIFIER.DEFAULT_SIZE,
     borderWidth: MAGNIFIER.BORDER_WIDTH,
     borderColor: MAGNIFIER.BORDER_COLOR
   });
