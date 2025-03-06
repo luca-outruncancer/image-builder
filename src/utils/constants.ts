@@ -7,6 +7,19 @@ export const CANVAS_HEIGHT = 1000;
 export const GRID_SIZE = 10;
 export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
+// Feature flags
+export const FEATURES = {
+  IMAGE_MAGNIFIER_ENABLED: true, // Toggle magnifier functionality
+};
+
+// Magnifier settings
+export const MAGNIFIER = {
+  SIZE: 150,         // Default size in pixels
+  ZOOM_FACTOR: 2.0,  // Default zoom level
+  BORDER_WIDTH: 2,   // Border width in pixels
+  BORDER_COLOR: '#3B82F6', // Border color (blue)
+};
+
 // Network configuration
 export const ACTIVE_NETWORK = WalletAdapterNetwork.Devnet; // Change to Mainnet when going live
 
