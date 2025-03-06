@@ -3,7 +3,19 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { MAGNIFIER, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, FEATURES } from '@/utils/constants';
-import { getImageRecords, ImageRecord } from '@/lib/imageStorage';
+
+interface WalletInfo {
+  success: boolean;
+  wallet?: string;
+  imageId?: number;
+  position?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  status?: string;
+}
 
 interface HoverMagnifierProps {
   canvasRef: React.RefObject<HTMLDivElement>;
@@ -30,47 +42,52 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   // Last time mouse moved
   const lastMouseMoveRef = useRef(Date.now());
-  // Store all placed images
-  const [placedImages, setPlacedImages] = useState<ImageRecord[]>([]);
   // Current cell owner address
   const [cellOwner, setCellOwner] = useState<string | null>(null);
+  // Loading state for wallet info
+  const [isLoading, setIsLoading] = useState(false);
+  // Last queried cell
+  const lastQueriedCellRef = useRef({ x: -1, y: -1 });
 
-  // Load placed images from database
-  useEffect(() => {
-    const loadImages = async () => {
-      try {
-        const images = await getImageRecords();
-        setPlacedImages(images);
-      } catch (error) {
-        console.error('Error loading image records:', error);
+  // Fetch wallet info for current cell
+  const fetchWalletInfo = useCallback(async (x: number, y: number) => {
+    if (!FEATURES.SHOW_OWNER_WALLET) return;
+    
+    // Skip if we've already queried this cell
+    if (lastQueriedCellRef.current.x === x && lastQueriedCellRef.current.y === y) return;
+    
+    // Update last queried cell
+    lastQueriedCellRef.current = { x, y };
+    
+    try {
+      setIsLoading(true);
+      
+      const response = await fetch('/api/wallet-info', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ x, y }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
-    };
-
-    if (FEATURES.SHOW_OWNER_WALLET) {
-      loadImages();
+      
+      const data: WalletInfo = await response.json();
+      
+      if (data.success && data.wallet) {
+        setCellOwner(data.wallet);
+      } else {
+        setCellOwner(null);
+      }
+    } catch (error) {
+      console.error('Error fetching wallet info:', error);
+      setCellOwner(null);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
-
-  // Determine owner of the current cell
-  useEffect(() => {
-    if (!FEATURES.SHOW_OWNER_WALLET || placedImages.length === 0) {
-      setCellOwner(null);
-      return;
-    }
-
-    // Find image that contains this cell
-    const owner = placedImages.find(img => {
-      // Check if current cell is within this image
-      return (
-        currentCell.x >= img.start_position_x &&
-        currentCell.y >= img.start_position_y &&
-        currentCell.x < img.start_position_x + img.size_x &&
-        currentCell.y < img.start_position_y + img.size_y
-      );
-    });
-
-    setCellOwner(owner?.sender_wallet || null);
-  }, [currentCell.x, currentCell.y, placedImages]);
 
   // Handle mouse movement
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -111,12 +128,14 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
       // Set timer for hover delay
       timerRef.current = setTimeout(() => {
         setIsVisible(true);
+        // Fetch wallet info when we hover on a cell
+        fetchWalletInfo(cellX, cellY);
       }, MAGNIFIER.HOVER_DELAY_MS);
     }
     
     // Update last mouse move time
     lastMouseMoveRef.current = Date.now();
-  }, [canvasRef, isEnabled, currentCell.x, currentCell.y, isVisible]);
+  }, [canvasRef, isEnabled, currentCell.x, currentCell.y, isVisible, fetchWalletInfo]);
 
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
@@ -154,9 +173,9 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
 
   // Format wallet address for display
   const formatWalletAddress = (address: string | null): string => {
-    if (!address) return 'No owner';
+    if (!address || address === 'Unknown') return 'No owner';
     
-    // Format as first 6...last 4 characters
+    // Format as first 6...last 4 characters for display
     if (address.length > 12) {
       return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
     }
@@ -271,12 +290,16 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
           {/* Wallet address display */}
           {FEATURES.SHOW_OWNER_WALLET && (
             <div className="absolute bottom-0 left-0 right-0 h-5 bg-black bg-opacity-75 text-white text-xs flex items-center justify-center overflow-hidden">
-              <div 
-                className="w-full text-center whitespace-nowrap overflow-hidden text-ellipsis px-1" 
-                title={cellOwner || 'No owner'}
-              >
-                {cellOwner ? cellOwner : 'No owner'}
-              </div>
+              {isLoading ? (
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-1"></div>
+              ) : (
+                <div 
+                  className="w-full text-center whitespace-nowrap overflow-hidden text-ellipsis px-1" 
+                  title={cellOwner || 'No owner'}
+                >
+                  {cellOwner ? cellOwner : 'No owner'}
+                </div>
+              )}
             </div>
           )}
         </div>
