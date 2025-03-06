@@ -2,457 +2,177 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MAGNIFIER } from '@/utils/constants';
-import html2canvas from 'html2canvas';
+import { MAGNIFIER, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/utils/constants';
 
-interface MagnifierPosition {
-  x: number;
-  y: number;
-}
-
-interface MagnifierState {
-  x: number;
-  y: number;
-  size: number;
-  selected: boolean;
-  zoomFactor: number;
-  borderColor: string;
-  borderWidth: number;
-}
-
-interface SelectionMagnifierProps {
+interface HoverMagnifierProps {
   canvasRef: React.RefObject<HTMLDivElement>;
   containerRef: React.RefObject<HTMLDivElement>;
   isEnabled: boolean;
 }
 
 /**
- * SelectionMagnifier component allows users to draw a selection rectangle
- * that becomes a magnifier for that area of the canvas
+ * HoverMagnifier component shows a magnification of a grid cell when
+ * the mouse hovers over it for a specified duration
  */
-const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
+const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
   canvasRef,
   containerRef,
   isEnabled
 }) => {
-  // States for drawing selection
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [startPoint, setStartPoint] = useState<MagnifierPosition>({ x: 0, y: 0 });
-  const [endPoint, setEndPoint] = useState<MagnifierPosition>({ x: 0, y: 0 });
-  
-  // State for magnifier 
-  const [magnifier, setMagnifier] = useState<MagnifierState | null>(null);
-  
-  // States for magnifier interactions
-  const [isDraggingMagnifier, setIsDraggingMagnifier] = useState(false);
-  const [isResizingMagnifier, setIsResizingMagnifier] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [resizeCorner, setResizeCorner] = useState<string | null>(null);
-  const [resizeStartData, setResizeStartData] = useState<{
-    startX: number;
-    startY: number;
-    startSize: number;
-    startMagnifierX: number;
-    startMagnifierY: number;
-  } | null>(null);
+  // Current mouse position
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  // Current grid cell (snapped)
+  const [currentCell, setCurrentCell] = useState({ x: 0, y: 0 });
+  // Timer for hover delay
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Whether magnifier is visible
+  const [isVisible, setIsVisible] = useState(false);
+  // Last time mouse moved
+  const lastMouseMoveRef = useRef(Date.now());
 
-  // Canvas screenshot for magnifier
-  const [canvasImage, setCanvasImage] = useState<string | null>(null);
-  const [lastCaptureTime, setLastCaptureTime] = useState(0);
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  
-  // Refs
-  const magnifierRef = useRef<HTMLDivElement>(null);
-  const resizeHandleRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
-  
-  // Function to capture canvas as image
-  const captureCanvas = useCallback(async () => {
-    if (!canvasRef.current) return;
+  // Handle mouse movement
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!canvasRef.current || !isEnabled) return;
     
-    try {
-      // Limit captures to avoid performance issues (max once per second)
-      const now = Date.now();
-      if (now - lastCaptureTime < 1000 && canvasImage) {
-        return;
+    // Get mouse position relative to canvas
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Update mouse position state
+    setMousePosition({ x, y });
+    
+    // Calculate grid cell (snapped to GRID_SIZE)
+    const cellX = Math.floor(x / GRID_SIZE) * GRID_SIZE;
+    const cellY = Math.floor(y / GRID_SIZE) * GRID_SIZE;
+    
+    // Check if we moved to a new cell
+    if (cellX !== currentCell.x || cellY !== currentCell.y) {
+      // Clear existing timer
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
       
-      const canvas = await html2canvas(canvasRef.current, {
-        backgroundColor: null,
-        scale: 1,
-        logging: false,
-        allowTaint: true,
-        useCORS: true
-      });
+      // Hide magnifier during movement
+      setIsVisible(false);
       
-      setCanvasImage(canvas.toDataURL());
-      setCanvasSize({
-        width: canvasRef.current.clientWidth,
-        height: canvasRef.current.clientHeight
-      });
-      setLastCaptureTime(now);
+      // Update current cell
+      setCurrentCell({ x: cellX, y: cellY });
       
-      console.log('Canvas captured:', {
-        width: canvasRef.current.clientWidth,
-        height: canvasRef.current.clientHeight
-      });
-    } catch (error) {
-      console.error('Error capturing canvas:', error);
+      // Set timer for hover delay (500ms)
+      timerRef.current = setTimeout(() => {
+        setIsVisible(true);
+      }, 500);
     }
-  }, [canvasRef, lastCaptureTime, canvasImage]);
-  
-  // Capture canvas when component mounts
-  useEffect(() => {
-    if (isEnabled && canvasRef.current) {
-      captureCanvas();
-    }
-  }, [isEnabled, canvasRef, captureCanvas]);
+    
+    // Update last mouse move time
+    lastMouseMoveRef.current = Date.now();
+  }, [canvasRef, isEnabled, currentCell.x, currentCell.y]);
 
-  // Update canvas capture when magnifier moves
-  useEffect(() => {
-    if (magnifier && !isResizingMagnifier && !isDraggingMagnifier) {
-      captureCanvas();
+  // Handle mouse leave
+  const handleMouseLeave = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-  }, [magnifier?.x, magnifier?.y, isResizingMagnifier, isDraggingMagnifier, captureCanvas]);
-  
-  // Handle key press for deleting magnifier
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (magnifier?.selected && (e.key === "Escape" || e.key === "Delete" || e.key === "Backspace")) {
-        setMagnifier(null);
-      }
-    };
+    setIsVisible(false);
+  }, []);
 
-    window.addEventListener("keydown", handleKeyDown);
+  // Clean up timer on unmount
+  useEffect(() => {
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
     };
-  }, [magnifier]);
-  
-  // Early return if the feature is disabled
+  }, []);
+
+  // Early return if feature is disabled
   if (!isEnabled) return null;
-  
-  // Handle mouse down to start drawing or interact with magnifier
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!canvasRef.current || !containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Check if clicking inside magnifier for dragging
-    if (magnifier) {
-      const dx = x - magnifier.x;
-      const dy = y - magnifier.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance <= magnifier.size / 2) {
-        setIsDraggingMagnifier(true);
-        setDragOffset({ x: dx, y: dy });
-        setMagnifier({
-          ...magnifier,
-          selected: true
-        });
-        return;
-      } else {
-        // Clicked outside magnifier, deselect it
-        setMagnifier({
-          ...magnifier,
-          selected: false
-        });
-      }
-    }
-    
-    // Start drawing new selection
-    setIsDrawing(true);
-    setStartPoint({ x, y });
-    setEndPoint({ x, y });
-  };
-  
-  // Handle mouse move for drawing or dragging
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Handle magnifier dragging
-    if (isDraggingMagnifier && magnifier) {
-      const newX = Math.max(0, Math.min(rect.width, x - dragOffset.x));
-      const newY = Math.max(0, Math.min(rect.height, y - dragOffset.y));
-      
-      setMagnifier({
-        ...magnifier,
-        x: newX,
-        y: newY
-      });
-      return;
-    }
-    
-    // Handle magnifier resizing with improved logic
-    if (isResizingMagnifier && magnifier && resizeCorner && resizeStartData) {
-      let newSize = magnifier.size;
-      let newX = magnifier.x;
-      let newY = magnifier.y;
-      
-      // Calculate distance from current mouse position to original center
-      const dx = x - resizeStartData.startMagnifierX;
-      const dy = y - resizeStartData.startMagnifierY;
-      
-      if (resizeCorner === "bottomRight") {
-        // Bottom right - just adjust size based on distance
-        const distance = Math.sqrt(dx * dx + dy * dy) * 2;
-        newSize = Math.max(MAGNIFIER.MIN_SIZE, distance);
-      } else if (resizeCorner === "topLeft") {
-        // Top left - move in opposite direction of resize
-        const distance = Math.sqrt(dx * dx + dy * dy) * 2;
-        newSize = Math.max(MAGNIFIER.MIN_SIZE, distance);
-        
-        // Calculate the angle to maintain direction
-        const angle = Math.atan2(dy, dx);
-        // Move center in the opposite direction of resize
-        newX = resizeStartData.startMagnifierX - (Math.cos(angle) * (newSize - resizeStartData.startSize)) / 2;
-        newY = resizeStartData.startMagnifierY - (Math.sin(angle) * (newSize - resizeStartData.startSize)) / 2;
-      } else if (resizeCorner === "topRight") {
-        // Top right - adjust Y position and size
-        const distance = Math.sqrt(dx * dx + dy * dy) * 2;
-        newSize = Math.max(MAGNIFIER.MIN_SIZE, distance);
-        
-        // Calculate the angle to maintain direction
-        const angle = Math.atan2(dy, dx);
-        // Only adjust Y position
-        newY = resizeStartData.startMagnifierY - (Math.sin(angle) * (newSize - resizeStartData.startSize)) / 2;
-      } else if (resizeCorner === "bottomLeft") {
-        // Bottom left - adjust X position and size
-        const distance = Math.sqrt(dx * dx + dy * dy) * 2;
-        newSize = Math.max(MAGNIFIER.MIN_SIZE, distance);
-        
-        // Calculate the angle to maintain direction
-        const angle = Math.atan2(dy, dx);
-        // Only adjust X position
-        newX = resizeStartData.startMagnifierX - (Math.cos(angle) * (newSize - resizeStartData.startSize)) / 2;
-      }
-      
-      // Ensure magnifier stays within bounds
-      newX = Math.max(0, Math.min(rect.width, newX));
-      newY = Math.max(0, Math.min(rect.height, newY));
-      
-      setMagnifier({
-        ...magnifier,
-        x: newX,
-        y: newY,
-        size: newSize
-      });
-      return;
-    }
-    
-    // Handle drawing selection
-    if (isDrawing) {
-      // Calculate the size for a square
-      const width = Math.abs(x - startPoint.x);
-      const height = Math.abs(y - startPoint.y);
-      const size = Math.max(width, height);
-      
-      // Adjust the end point to make it a square
-      let newX = x;
-      let newY = y;
-      
-      if (x >= startPoint.x) {
-        newX = startPoint.x + size;
-      } else {
-        newX = startPoint.x - size;
-      }
-      
-      if (y >= startPoint.y) {
-        newY = startPoint.y + size;
-      } else {
-        newY = startPoint.y - size;
-      }
-      
-      setEndPoint({ x: newX, y: newY });
-    }
-  };
-  
-  // Handle mouse up to finish drawing or dragging
-  const handleMouseUp = () => {
-    // Handle finishing dragging
-    if (isDraggingMagnifier) {
-      setIsDraggingMagnifier(false);
-      captureCanvas(); // Update canvas capture
-      return;
-    }
-    
-    // Handle finishing resize
-    if (isResizingMagnifier) {
-      setIsResizingMagnifier(false);
-      setResizeCorner(null);
-      setResizeStartData(null);
-      captureCanvas(); // Update canvas capture
-      return;
-    }
-    
-    // Handle finishing drawing
-    if (isDrawing) {
-      setIsDrawing(false);
-      
-      // Create magnifier from the selection
-      const size = Math.abs(endPoint.x - startPoint.x);
-      const centerX = Math.min(startPoint.x, endPoint.x) + size / 2;
-      const centerY = Math.min(startPoint.y, endPoint.y) + size / 2;
-      
-      // Only create if it's a meaningful size
-      if (size > MAGNIFIER.MIN_SIZE) {
-        setMagnifier({
-          x: centerX,
-          y: centerY,
-          size: size,
-          selected: true,
-          zoomFactor: MAGNIFIER.ZOOM_FACTOR,
-          borderColor: MAGNIFIER.BORDER_COLOR,
-          borderWidth: MAGNIFIER.BORDER_WIDTH
-        });
-        
-        // Capture canvas after creating magnifier
-        setTimeout(captureCanvas, 100);
-      }
-    }
-  };
-  
-  // Handle resize start
-  const handleResizeStart = (e: React.MouseEvent, corner: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    
-    if (!magnifier || !containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    
-    setIsResizingMagnifier(true);
-    setResizeCorner(corner);
-    setResizeStartData({
-      startX: mouseX,
-      startY: mouseY,
-      startSize: magnifier.size,
-      startMagnifierX: magnifier.x,
-      startMagnifierY: magnifier.y
-    });
-  };
-  
+
   // Render the component
   return (
     <>
-      {/* Selection rectangle during drawing */}
-      {isDrawing && (
-        <div
-          className="absolute border-2 border-blue-500 bg-blue-200 bg-opacity-20 pointer-events-none"
-          style={{
-            left: Math.min(startPoint.x, endPoint.x),
-            top: Math.min(startPoint.y, endPoint.y),
-            width: Math.abs(endPoint.x - startPoint.x),
-            height: Math.abs(endPoint.y - startPoint.y)
-          }}
-        />
-      )}
-      
       {/* Magnifier */}
-      {magnifier && canvasRef.current && (
-        <>
-          {/* Selection square when selected */}
-          {magnifier.selected && (
-            <div
-              className="absolute border border-blue-500 pointer-events-none"
-              style={{
-                left: magnifier.x - magnifier.size / 2,
-                top: magnifier.y - magnifier.size / 2,
-                width: magnifier.size,
-                height: magnifier.size
-              }}
-            />
-          )}
-          
-          {/* Magnifier circle */}
-          <div
-            ref={magnifierRef}
-            className="absolute rounded-full overflow-hidden cursor-move"
+      {isVisible && (
+        <div 
+          className="absolute rounded-lg overflow-hidden border-2 border-blue-500 pointer-events-none z-50 bg-white shadow-lg"
+          style={{
+            width: GRID_SIZE * 10, // 10x magnification of a grid cell
+            height: GRID_SIZE * 10,
+            left: currentCell.x + GRID_SIZE + 10, // Position to the right of the cell
+            top: currentCell.y,
+            // Ensure magnifier stays within canvas bounds
+            ...(currentCell.x + GRID_SIZE * 11 > CANVAS_WIDTH && { left: currentCell.x - GRID_SIZE * 10 - 10 }),
+            ...(currentCell.y + GRID_SIZE * 10 > CANVAS_HEIGHT && { top: CANVAS_HEIGHT - GRID_SIZE * 10 }),
+          }}
+        >
+          {/* Grid background */}
+          <div 
+            className="w-full h-full relative"
             style={{
-              left: magnifier.x - magnifier.size / 2,
-              top: magnifier.y - magnifier.size / 2,
-              width: magnifier.size,
-              height: magnifier.size,
-              border: `${magnifier.borderWidth}px solid ${magnifier.borderColor}`,
-              boxShadow: magnifier.selected ? "0 0 0 1px #3b82f6" : "none"
+              backgroundColor: 'rgba(0,0,0,0.2)', // Match canvas background
+              backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
+              backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`, // Keep grid size the same
+              backgroundPosition: `${-currentCell.x * 10 + GRID_SIZE * 5}px ${-currentCell.y * 10 + GRID_SIZE * 5}px` // Center on the current cell
             }}
           >
-            {/* Magnified content using canvas screenshot */}
-            <div 
-              className="w-full h-full relative overflow-hidden rounded-full"
-              style={{
-                backgroundColor: 'rgba(0,0,0,0.2)', // Fallback
-                backgroundImage: canvasImage ? `url(${canvasImage})` : 'none',
-                backgroundSize: canvasImage ? 
-                  `${canvasSize.width * magnifier.zoomFactor}px ${canvasSize.height * magnifier.zoomFactor}px` : 
-                  'auto',
-                backgroundPosition: canvasImage ? 
-                  `-${(magnifier.x * magnifier.zoomFactor) - magnifier.size / 2}px -${(magnifier.y * magnifier.zoomFactor) - magnifier.size / 2}px` : 
-                  'center'
-              }}
-            />
+            {/* If we want to render placed images here, we would need to clone and scale them */}
+            {canvasRef.current && 
+              Array.from(canvasRef.current.querySelectorAll('img, [style*="background-image"]')).map((element, index) => {
+                const elementStyle = window.getComputedStyle(element as HTMLElement);
+                const rect = (element as HTMLElement).getBoundingClientRect();
+                const canvasRect = canvasRef.current!.getBoundingClientRect();
+                
+                // Calculate position relative to canvas
+                const elementX = rect.left - canvasRect.left;
+                const elementY = rect.top - canvasRect.top;
+                
+                // Calculate position within magnifier view
+                const relativeX = (elementX - currentCell.x) * 10;
+                const relativeY = (elementY - currentCell.y) * 10;
+                
+                // Only show if element is visible within the magnified area
+                const isInView = 
+                  relativeX < GRID_SIZE * 10 && 
+                  relativeY < GRID_SIZE * 10 && 
+                  relativeX + rect.width * 10 > 0 && 
+                  relativeY + rect.height * 10 > 0;
+                
+                if (!isInView) return null;
+                
+                return (
+                  <div
+                    key={index}
+                    className="absolute"
+                    style={{
+                      left: `${relativeX}px`,
+                      top: `${relativeY}px`,
+                      width: `${rect.width * 10}px`,
+                      height: `${rect.height * 10}px`,
+                      backgroundImage: elementStyle.backgroundImage,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      // Handle both background images and actual images
+                      ...(element.tagName === 'IMG' && {
+                        backgroundImage: `url(${(element as HTMLImageElement).src})`,
+                      })
+                    }}
+                  />
+                );
+              })
+            }
           </div>
-          
-          {/* Resize handles when selected */}
-          {magnifier.selected && (
-            <>
-              <div
-                ref={(el) => (resizeHandleRefs.current[0] = el)}
-                className="absolute bg-white border border-blue-500 rounded-sm cursor-nwse-resize z-10 w-3 h-3"
-                style={{
-                  top: magnifier.y - magnifier.size / 2 - 4,
-                  left: magnifier.x - magnifier.size / 2 - 4
-                }}
-                onMouseDown={(e) => handleResizeStart(e, "topLeft")}
-              />
-              <div
-                ref={(el) => (resizeHandleRefs.current[1] = el)}
-                className="absolute bg-white border border-blue-500 rounded-sm cursor-nesw-resize z-10 w-3 h-3"
-                style={{
-                  top: magnifier.y - magnifier.size / 2 - 4,
-                  left: magnifier.x + magnifier.size / 2 - 4
-                }}
-                onMouseDown={(e) => handleResizeStart(e, "topRight")}
-              />
-              <div
-                ref={(el) => (resizeHandleRefs.current[2] = el)}
-                className="absolute bg-white border border-blue-500 rounded-sm cursor-nesw-resize z-10 w-3 h-3"
-                style={{
-                  top: magnifier.y + magnifier.size / 2 - 4,
-                  left: magnifier.x - magnifier.size / 2 - 4
-                }}
-                onMouseDown={(e) => handleResizeStart(e, "bottomLeft")}
-              />
-              <div
-                ref={(el) => (resizeHandleRefs.current[3] = el)}
-                className="absolute bg-white border border-blue-500 rounded-sm cursor-nwse-resize z-10 w-3 h-3"
-                style={{
-                  top: magnifier.y + magnifier.size / 2 - 4,
-                  left: magnifier.x + magnifier.size / 2 - 4
-                }}
-                onMouseDown={(e) => handleResizeStart(e, "bottomRight")}
-              />
-            </>
-          )}
-        </>
+        </div>
       )}
       
-      {/* Transparent overlay to capture events */}
+      {/* Transparent overlay to capture mouse events */}
       <div
         className="absolute inset-0 z-20"
         style={{ pointerEvents: isEnabled ? 'auto' : 'none' }}
-        onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
       />
     </>
   );
