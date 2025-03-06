@@ -59,6 +59,55 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
   const magnifierRef = useRef<HTMLDivElement>(null);
   const resizeHandleRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
   
+  // State to track canvas content (for debugging)
+  const [canvasInfo, setCanvasInfo] = useState({
+    width: 0,
+    height: 0,
+    background: '',
+    bgImage: '',
+    bgSize: '',
+  });
+  
+  // Update canvas info when component mounts
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    
+    const updateCanvasInfo = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const style = window.getComputedStyle(canvas);
+      setCanvasInfo({
+        width: canvas.clientWidth,
+        height: canvas.clientHeight,
+        background: style.backgroundColor,
+        bgImage: style.backgroundImage,
+        bgSize: style.backgroundSize,
+      });
+      
+      console.log('Canvas info updated:', {
+        width: canvas.clientWidth,
+        height: canvas.clientHeight,
+        background: style.backgroundColor,
+        bgImage: style.backgroundImage,
+        bgSize: style.backgroundSize,
+      });
+    };
+    
+    updateCanvasInfo();
+    
+    // Add resize observer to update when canvas changes
+    const observer = new ResizeObserver(updateCanvasInfo);
+    observer.observe(canvasRef.current);
+    
+    return () => {
+      if (canvasRef.current) {
+        observer.unobserve(canvasRef.current);
+      }
+      observer.disconnect();
+    };
+  }, [canvasRef.current]);
+  
   // Handle key press for deleting magnifier
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -326,20 +375,54 @@ const SelectionMagnifier: React.FC<SelectionMagnifierProps> = ({
             }}
           >
             {/* Magnified content */}
-            <div className="w-full h-full relative overflow-hidden rounded-full bg-white">
-              {/* Get styles from the canvas */}
+            <div className="w-full h-full relative overflow-hidden rounded-full">
               {canvasRef.current && (
                 <div
+                  className="absolute top-0 left-0"
                   style={{
-                    position: "absolute",
                     width: `${canvasRef.current.clientWidth * magnifier.zoomFactor}px`,
                     height: `${canvasRef.current.clientHeight * magnifier.zoomFactor}px`,
-                    background: getComputedStyle(canvasRef.current).background,
-                    backgroundImage: getComputedStyle(canvasRef.current).backgroundImage,
-                    backgroundSize: `${parseInt(getComputedStyle(canvasRef.current).backgroundSize.split(' ')[0] || '10px') * magnifier.zoomFactor}px`,
-                    transform: `translate(${-((magnifier.x) * magnifier.zoomFactor - magnifier.size / 2 + magnifier.borderWidth)}px, ${-((magnifier.y) * magnifier.zoomFactor - magnifier.size / 2 + magnifier.borderWidth)}px)`
+                    transform: `translate(-${(magnifier.x * magnifier.zoomFactor) - magnifier.size/2}px, -${(magnifier.y * magnifier.zoomFactor) - magnifier.size/2}px)`,
+                    backgroundColor: canvasInfo.background || 'rgba(0, 0, 0, 0.2)',
+                    backgroundImage: canvasInfo.bgImage,
+                    backgroundSize: `${parseInt(canvasInfo.bgSize || '10px') * magnifier.zoomFactor}px`,
+                    pointerEvents: 'none',
                   }}
-                />
+                >
+                  {/* This will clone and scale all children of the canvas */}
+                  {Array.from(canvasRef.current.children).map((child, index) => {
+                    // Clone each child element from the canvas
+                    const originalRect = (child as HTMLElement).getBoundingClientRect();
+                    const canvasRect = canvasRef.current!.getBoundingClientRect();
+                    
+                    // Calculate position relative to canvas
+                    const relativeLeft = originalRect.left - canvasRect.left;
+                    const relativeTop = originalRect.top - canvasRect.top;
+                    
+                    return (
+                      <div 
+                        key={index}
+                        className="absolute"
+                        style={{
+                          left: `${relativeLeft * magnifier.zoomFactor}px`,
+                          top: `${relativeTop * magnifier.zoomFactor}px`,
+                          width: `${originalRect.width * magnifier.zoomFactor}px`,
+                          height: `${originalRect.height * magnifier.zoomFactor}px`,
+                          background: (child as HTMLElement).style.background,
+                          transform: (child as HTMLElement).style.transform 
+                            ? `scale(${magnifier.zoomFactor}) ${(child as HTMLElement).style.transform}`
+                            : `scale(${magnifier.zoomFactor})`,
+                        }}
+                      >
+                        {/* Clone the inner HTML of the child */}
+                        <div 
+                          className="w-full h-full"
+                          dangerouslySetInnerHTML={{ __html: (child as HTMLElement).innerHTML }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
