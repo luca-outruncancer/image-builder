@@ -51,7 +51,7 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
     setIsLoading(true);
     
     try {
-      const response = await fetch('/api/wallet-info', {
+      const response = await fetch('/api/image-info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ x, y }),
