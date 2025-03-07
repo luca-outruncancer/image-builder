@@ -7,16 +7,21 @@ import { supabase } from '@/lib/supabase';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check database connection
     if (!supabase) {
+      console.error('[WalletInfo] Database connection not available');
       return NextResponse.json(
         { error: 'Database connection not available' },
         { status: 500 }
       );
     }
     
+    // Parse request body
     const body = await request.json();
     
+    // Validate coordinates
     if (body.x === undefined || body.y === undefined) {
+      console.error('[WalletInfo] Missing coordinates in request');
       return NextResponse.json(
         { error: 'Coordinates (x,y) are required' },
         { status: 400 }
@@ -60,6 +65,7 @@ export async function POST(request: NextRequest) {
         success: true,
         imageId: image_id,
         wallet: sender_wallet || user_wallet || "Unknown",
+        user_wallet: user_wallet || "Unknown",
         position: {
           x: start_position_x,
           y: start_position_y,

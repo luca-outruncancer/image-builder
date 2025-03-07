@@ -9,6 +9,24 @@ import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
 import SelectionMagnifier from './SelectionMagnifier';
 
+// Define the wallet info interface
+interface WalletInfo {
+  success: boolean;
+  wallet?: string;
+  user_wallet?: string;
+  imageId?: number;
+  position?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    clickedX: number;
+    clickedY: number;
+  };
+  status?: string;
+  image_location?: string;
+}
+
 interface CanvasMainProps {
   className?: string;
 }
@@ -16,6 +34,7 @@ interface CanvasMainProps {
 export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [canvasScale, setCanvasScale] = useState(1);
+  const [currentWalletInfo, setCurrentWalletInfo] = useState<WalletInfo | null>(null);
   
   const {
     isLoadingImages,
@@ -64,6 +83,13 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const scaledWidth = CANVAS_WIDTH * canvasScale;
   const scaledHeight = CANVAS_HEIGHT * canvasScale;
 
+  // Handle wallet info updates from the magnifier
+  const handleWalletInfoUpdate = (info: WalletInfo | null) => {
+    setCurrentWalletInfo(info);
+  };
+
+  // No format needed as we show full addresses
+
   return (
     <div className={`relative ${className}`}>
       {isLoadingImages ? (
@@ -72,46 +98,50 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
           <span className="ml-3 text-white">Loading canvas...</span>
         </div>
       ) : (
-        <div 
-          ref={canvasContainerRef}
-          className="relative overflow-auto scrollbar-thin scrollbar-thumb-blue-500/40 scrollbar-track-transparent"
-          style={{
-            maxHeight: '70vh',
-            width: '100%'
-          }}
-        >
-          <div
-            ref={canvasRef}
-            className="relative mx-auto"
+        <>
+          <div 
+            ref={canvasContainerRef}
+            className="relative overflow-auto scrollbar-thin scrollbar-thumb-blue-500/40 scrollbar-track-transparent"
             style={{
-              width: `${scaledWidth}px`,
-              height: `${scaledHeight}px`,
-              background: 'rgba(0,0,0,0.2)',
-              backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
-              backgroundSize: `${10 * canvasScale}px ${10 * canvasScale}px`,
-              transform: `scale(${canvasScale})`,
-              transformOrigin: 'top left'
+              maxHeight: '70vh',
+              width: '100%'
             }}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
           >
-            {/* Display all placed images */}
-            <CanvasImageLoader placedImages={placedImages} />
+            <div
+              ref={canvasRef}
+              className="relative mx-auto"
+              style={{
+                width: `${scaledWidth}px`,
+                height: `${scaledHeight}px`,
+                background: 'rgba(0,0,0,0.2)',
+                backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)',
+                backgroundSize: `${10 * canvasScale}px ${10 * canvasScale}px`,
+                transform: `scale(${canvasScale})`,
+                transformOrigin: 'top left'
+              }}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            >
+              {/* Display all placed images */}
+              <CanvasImageLoader placedImages={placedImages} />
 
-            {/* Handle temporary image positioning */}
-            {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
-            
-            {/* Magnifier Component - Only show when not in placement confirmation mode */}
-            {FEATURES.IMAGE_MAGNIFIER_ENABLED && !tempImage && !pendingConfirmation && (
-              <SelectionMagnifier
-                canvasRef={canvasRef}
-                containerRef={canvasRef}
-                isEnabled={true}
-              />
-            )}
+              {/* Handle temporary image positioning */}
+              {tempImage && !pendingConfirmation && <CanvasImagePlacement tempImage={tempImage} />}
+              
+              {/* Magnifier Component - Only show when not in placement confirmation mode */}
+              {FEATURES.IMAGE_MAGNIFIER_ENABLED && !tempImage && !pendingConfirmation && (
+                <SelectionMagnifier
+                  canvasRef={canvasRef}
+                  containerRef={canvasRef}
+                  isEnabled={true}
+                  onWalletInfoUpdate={handleWalletInfoUpdate}
+                />
+              )}
+            </div>
           </div>
-        </div>
+          
+        </>
       )}
 
       {/* Placement confirmation UI */}

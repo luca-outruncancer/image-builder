@@ -15,10 +15,13 @@ export const FEATURES = {
 
 // Magnifier settings
 export const MAGNIFIER = {
-  ZOOM_FACTOR: 10.0,      // 10x magnification for the hover magnifier
-  HOVER_DELAY_MS: 500,    // Delay before showing magnifier on hover
-  BORDER_COLOR: '#3B82F6', // Border color (blue)
-  BORDER_WIDTH: 2,        // Border width in pixels
+  ZOOM_FACTOR: 10, // 10x magnification for the hover magnifier
+  HOVER_DELAY_MS: 500, // Delay before showing magnifier on hover
+  BORDER_WIDTH: 2, // Border width in pixels
+  BORDER_COLOR: '#3b82f6',  //border color
+  RENDER_QUALITY: 'pixelated',
+  EMPTY_BLOCK_COLOR: 'white',
+  GRID_COLOR: 'rgba(200,200,200,0.2)'
 };
 
 // Network configuration
