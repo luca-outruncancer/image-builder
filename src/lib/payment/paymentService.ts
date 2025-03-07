@@ -14,7 +14,13 @@ import {
   WalletConfig,
   PaymentMetadata
 } from './types';
-import { createPaymentError, generatePaymentId, formatErrorForUser } from './utils';
+import { 
+  createPaymentError, 
+  generatePaymentId, 
+  formatErrorForUser, 
+  clearSessionBlockhashData,
+  isTxAlreadyProcessedError
+} from './utils';
 import SolanaPaymentProvider from './solanaPaymentProvider';
 import PaymentStorageProvider from './paymentStorageProvider';
 import { ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS, getMintAddress } from '@/utils/constants';
@@ -65,6 +71,9 @@ export class PaymentService {
       const paymentId = generatePaymentId();
       console.log(`Initializing payment ${paymentId} for amount ${amount} ${ACTIVE_PAYMENT_TOKEN}`);
       
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
       // Create payment session
       const paymentSession: PaymentSession = {
         paymentId,
@@ -72,7 +81,10 @@ export class PaymentService {
         imageId: metadata.imageId,
         amount,
         token: ACTIVE_PAYMENT_TOKEN,
-        metadata,
+        metadata: {
+          ...metadata,
+          paymentId // Store the payment ID in metadata for transaction tracking
+        },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         attempts: 0,
@@ -129,6 +141,9 @@ export class PaymentService {
    */
   public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
     try {
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
       // Check if payment exists
       const paymentSession = this.activePayments.get(paymentId);
       if (!paymentSession) {
@@ -163,7 +178,10 @@ export class PaymentService {
         amount: paymentSession.amount,
         token: paymentSession.token,
         recipientWallet: paymentSession.recipientWallet,
-        metadata: paymentSession.metadata
+        metadata: { 
+          ...paymentSession.metadata,
+          paymentId // Make sure the payment ID is included
+        }
       };
       
       // Get token mint address if needed
@@ -175,6 +193,25 @@ export class PaymentService {
       // Handle the result
       return await this.handlePaymentResult(paymentId, result);
     } catch (error) {
+      // Special handling for "Transaction already processed" errors
+      if (isTxAlreadyProcessedError(error)) {
+        console.log(`Transaction already processed for payment ${paymentId}. Attempting verification.`);
+        
+        // Try to find the payment session
+        const paymentSession = this.activePayments.get(paymentId);
+        if (paymentSession && paymentSession.transactionHash) {
+          console.log(`Found existing signature ${paymentSession.transactionHash} for payment ${paymentId}`);
+          
+          // Create a successful result with the existing hash
+          return await this.handlePaymentResult(paymentId, {
+            success: true,
+            transactionHash: paymentSession.transactionHash,
+            blockchainConfirmation: true,
+            reused: true
+          });
+        }
+      }
+      
       console.error(`Error processing payment ${paymentId}:`, error);
       
       // Update session status
@@ -285,6 +322,37 @@ export class PaymentService {
         };
       }
       
+      // Special handling for "already processed" errors
+      if (result.error?.code === 'DUPLICATE_TRANSACTION') {
+        // Here we should try to recover the transaction if it exists
+        // But we'll mark it as failed for now
+        paymentSession.status = PaymentStatus.FAILED;
+        paymentSession.error = result.error;
+        paymentSession.updatedAt = new Date().toISOString();
+        this.activePayments.set(paymentId, paymentSession);
+        
+        // Clean session storage
+        clearSessionBlockhashData();
+        
+        // Update database
+        if (paymentSession.transactionId) {
+          await this.storageProvider.updateTransactionStatus(
+            paymentSession.transactionId,
+            PaymentStatus.FAILED
+          );
+        }
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: result.error,
+          metadata: paymentSession.metadata,
+          amount: paymentSession.amount,
+          token: paymentSession.token,
+          attempts: paymentSession.attempts
+        };
+      }
+      
       // Mark as failed
       paymentSession.status = PaymentStatus.FAILED;
       paymentSession.error = result.error;
@@ -380,6 +448,9 @@ export class PaymentService {
       // Clear timeout
       this.clearPaymentTimeout(paymentId);
       
+      // Clean up session storage
+      clearSessionBlockhashData();
+      
       return { success: true };
     } catch (error) {
       console.error(`Failed to cancel payment ${paymentId}:`, error);
@@ -464,6 +535,41 @@ export class PaymentService {
     if (paymentSession.imageId) {
       await this.storageProvider.markPaymentAsTimedOut(paymentSession.imageId);
     }
+    
+    // Clean up session storage
+    clearSessionBlockhashData();
+  }
+  
+  /**
+   * Reset payment state after a duplicate transaction error
+   */
+  public async resetAfterDuplicateError(paymentId: string): Promise<boolean> {
+    try {
+      console.log(`Resetting payment ${paymentId} after duplicate transaction error`);
+      
+      // Clear blockchain cache
+      clearSessionBlockhashData();
+      
+      // Clear payment provider cache
+      this.paymentProvider.clearTransactionCache();
+      
+      // Get the payment session
+      const paymentSession = this.activePayments.get(paymentId);
+      if (!paymentSession) {
+        return false;
+      }
+      
+      // Reset payment state for retry
+      paymentSession.status = PaymentStatus.INITIALIZED;
+      paymentSession.error = undefined;
+      paymentSession.updatedAt = new Date().toISOString();
+      this.activePayments.set(paymentId, paymentSession);
+      
+      return true;
+    } catch (error) {
+      console.error(`Failed to reset payment after duplicate error:`, error);
+      return false;
+    }
   }
   
   /**
@@ -484,6 +590,9 @@ export class PaymentService {
     
     this.paymentTimeouts.clear();
     this.activePayments.clear();
+    
+    // Clean session storage
+    clearSessionBlockhashData();
   }
 }
 
