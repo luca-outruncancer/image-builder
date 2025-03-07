@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
 import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
-import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
+import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 
 export async function POST(request: NextRequest) {
@@ -69,17 +69,21 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Step 2: Determine format for resized image 
+    // Step 2: Determine format for resized image - preserve quality when possible
     const targetFormat = determineOptimalFormat(originalExtension, originalBuffer.length);
     const finalFileName = `${fileId}.${targetFormat}`;
     const finalFilePath = path.join(uploadDir, finalFileName);
     const publicUrl = `/uploads/${finalFileName}`;
     
-    // Step 3: Resize the image
+    // Step 3: Resize the image using settings from constants
     let resizeResult;
     try {
-      console.log(`[Upload:${uploadId}] Starting image resize operation to ${size.width}x${size.height}`);
+      console.log(`[Upload:${uploadId}] Starting image resize operation to ${size.width}x${size.height} with quality settings:`, {
+        highQualityEnabled: FEATURES.HIGH_QUALITY_IMAGES && IMAGE_SETTINGS.HIGH_QUALITY_MODE,
+        adaptiveQuality: IMAGE_SETTINGS.SIZE_ADAPTIVE_QUALITY
+      });
       
+      // Let the resizer determine the quality from our constants
       resizeResult = await resizeImage(
         originalBuffer,
         finalFilePath,
@@ -87,16 +91,19 @@ export async function POST(request: NextRequest) {
           width: size.width,
           height: size.height,
           format: targetFormat as 'jpeg' | 'png' | 'webp' | 'avif',
-          fit: 'cover'
+          fit: IMAGE_SETTINGS.DEFAULT_FIT,
+          // No explicit quality setting - let it use the constants
+          highQuality: FEATURES.HIGH_QUALITY_IMAGES // Use feature flag
         }
       );
       
       if (resizeResult.success) {
-        console.log(`[Upload:${uploadId}] Resize successful:`, {
+        console.log(`[Upload:${uploadId}] High-quality resize successful:`, {
           originalSize: `${(originalBuffer.length / 1024).toFixed(1)}KB`,
           newSize: `${(resizeResult.resizedSize / 1024).toFixed(1)}KB`,
           compressionRatio: (originalBuffer.length / resizeResult.resizedSize).toFixed(2),
-          processingTime: `${resizeResult.processingTimeMs}ms`
+          processingTime: `${resizeResult.processingTimeMs}ms`,
+          format: targetFormat
         });
       } else {
         console.warn(`[Upload:${uploadId}] Resize operation failed but fallback succeeded:`, {

@@ -11,6 +11,46 @@ export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 export const FEATURES = {
   IMAGE_MAGNIFIER_ENABLED: true,     // Toggle magnifier functionality
   SHOW_OWNER_WALLET: true,           // Show owner wallet address in magnifier
+  HIGH_QUALITY_IMAGES: true,         // Toggle for high-quality image processing
+};
+
+// Image resize and compression settings
+export const IMAGE_SETTINGS = {
+  // General options
+  HIGH_QUALITY_MODE: true,           // Master toggle for high quality processing
+  PRESERVE_TRANSPARENCY: true,       // Keep transparency in images when possible
+  DEFAULT_FIT: 'cover' as const,     // How images are fit when resizing
+  
+  // Format specific settings
+  FORMAT_SETTINGS: {
+    PREFER_ORIGINAL: true,           // Try to keep original format when possible
+    PREFER_FORMAT: '',               // Force specific format if not empty ('webp', 'jpeg', 'png')
+  },
+  
+  // Quality settings
+  QUALITY: {
+    DEFAULT: 90,                     // Default quality setting
+    JPEG: 92,                        // JPEG quality (0-100)
+    WEBP: 90,                        // WebP quality (0-100)
+    PNG_COMPRESSION: 4,              // PNG compression level (0-9), lower is better quality
+    AVIF: 85,                        // AVIF quality (0-100)
+  },
+  
+  // Size-adaptive quality (override DEFAULT based on image size)
+  SIZE_ADAPTIVE_QUALITY: true,       // Enable size-based quality adjustments
+  SMALL_IMAGE_THRESHOLD: 10000,      // <= 10,000 pixels (e.g., 100x100)
+  SMALL_IMAGE_QUALITY: 95,           // Quality for small images
+  MEDIUM_IMAGE_THRESHOLD: 40000,     // <= 40,000 pixels (e.g., 200x200)
+  MEDIUM_IMAGE_QUALITY: 90,          // Quality for medium images
+  LARGE_IMAGE_QUALITY: 85,           // Quality for large images
+  
+  // Advanced settings
+  ADVANCED: {
+    KERNEL: 'lanczos3' as const,     // Resampling kernel for resize (lanczos3 is highest quality)
+    MOZJPEG: true,                   // Use mozjpeg for better JPEG compression/quality balance
+    USE_LOSSLESS_FOR_TRANSPARENCY: true, // Use lossless compression for images with transparency
+    EFFORT_LEVEL: 4,                 // Compression effort level (0-6 for WebP)
+  }
 };
 
 // Magnifier settings
