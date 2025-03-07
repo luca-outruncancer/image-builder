@@ -7,7 +7,8 @@ import {
   Transaction,
   SystemProgram,
   LAMPORTS_PER_SOL,
-  Commitment
+  Commitment,
+  SendTransactionError
 } from '@solana/web3.js';
 import { 
   createTransferCheckedInstruction, 
@@ -25,9 +26,11 @@ import {
   isUserRejectionError,
   isNetworkError,
   isBalanceError,
-  retryWithBackoff
+  retryWithBackoff,
+  isTxAlreadyProcessedError,
+  getNonce
 } from './utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 
 /**
  * SolanaPaymentProvider handles the interaction with Solana blockchain
@@ -35,6 +38,7 @@ import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
 export class SolanaPaymentProvider {
   private connection: Connection;
   private wallet: WalletConfig;
+  private cachedTransactions: Map<string, string> = new Map(); // Map of txId -> signature
   
   constructor(wallet: WalletConfig) {
     this.wallet = wallet;
@@ -68,13 +72,65 @@ export class SolanaPaymentProvider {
       );
     }
   }
+
+  /**
+   * Verify if a transaction has already been processed successfully
+   */
+  private async verifyTransaction(signature: string): Promise<boolean> {
+    try {
+      console.log(`Verifying transaction signature: ${signature}`);
+      const status = await this.connection.getSignatureStatus(signature);
+      
+      // If we have a confirmation, the transaction succeeded
+      if (status && status.value && !status.value.err) {
+        console.log(`Transaction verified: ${signature} was SUCCESSFUL`);
+        return true;
+      }
+      
+      console.log(`Transaction verified: ${signature} was NOT successful`, status);
+      return false;
+    } catch (error) {
+      console.error("Error verifying transaction:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a transaction with these parameters is already in progress or completed
+   */
+  private async checkExistingTransaction(paymentId: string): Promise<string | null> {
+    const cachedSignature = this.cachedTransactions.get(paymentId);
+    if (cachedSignature) {
+      // Verify it's a successful transaction
+      const isValid = await this.verifyTransaction(cachedSignature);
+      if (isValid) {
+        return cachedSignature;
+      }
+      // If not valid, remove from cache
+      this.cachedTransactions.delete(paymentId);
+    }
+    return null;
+  }
   
   /**
    * Process a SOL payment transaction
    */
   public async processSOLPayment(request: PaymentRequest): Promise<TransactionResult> {
     try {
-      const { amount, recipientWallet } = request;
+      const { amount, recipientWallet, metadata } = request;
+      const paymentId = metadata?.paymentId || 'unknown';
+      
+      // Check for existing transaction first
+      const existingSignature = await this.checkExistingTransaction(paymentId);
+      if (existingSignature) {
+        console.log(`Using existing transaction signature: ${existingSignature}`);
+        return {
+          success: true,
+          transactionHash: existingSignature,
+          blockchainConfirmation: true,
+          reused: true
+        };
+      }
       
       if (!this.wallet.publicKey || !this.wallet.signTransaction) {
         return {
@@ -131,10 +187,21 @@ export class SolanaPaymentProvider {
         })
       );
       
+      // Add a unique identifier to transaction to prevent duplicates
+      const nonce = getNonce();
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey: this.wallet.publicKey,
+          toPubkey: this.wallet.publicKey,
+          lamports: 0
+        })
+      );
+      
       // Get recent blockhash
       let blockHash;
       try {
         blockHash = await this.connection.getLatestBlockhash('confirmed');
+        console.log("Got blockhash:", blockHash.blockhash.slice(0, 8) + "...");
       } catch (blockHashError) {
         return {
           success: false,
@@ -183,14 +250,65 @@ export class SolanaPaymentProvider {
       let signature;
       try {
         signature = await this.connection.sendRawTransaction(signedTransaction.serialize());
+        console.log("Transaction sent, signature:", signature);
+        
+        // Cache the transaction for potential reuse
+        if (paymentId && signature) {
+          this.cachedTransactions.set(paymentId, signature);
+        }
       } catch (sendError) {
         // Check if this is a "Transaction already processed" error
-        if (sendError.message && sendError.message.includes("already been processed")) {
+        if (isTxAlreadyProcessedError(sendError)) {
+          console.log("Transaction already processed error detected");
+          
+          // Try to extract the signature from the error if possible
+          let errorMessage = sendError.message || '';
+          let existingSig = null;
+          
+          // Look for signature in log messages if available
+          if (sendError instanceof SendTransactionError && sendError.logs) {
+            const logs = sendError.logs;
+            console.log("Transaction logs:", logs);
+            
+            // Attempt to find signature in logs
+            for (const log of logs) {
+              const sigMatch = log.match(/signature: ([A-Za-z0-9]+)/);
+              if (sigMatch && sigMatch[1]) {
+                existingSig = sigMatch[1];
+                console.log("Found existing signature in logs:", existingSig);
+                break;
+              }
+            }
+          }
+          
+          // If we couldn't find the signature but have a cached version, try that
+          if (!existingSig && paymentId) {
+            const cachedSig = this.cachedTransactions.get(paymentId);
+            if (cachedSig) {
+              existingSig = cachedSig;
+              console.log("Using cached signature:", existingSig);
+            }
+          }
+          
+          // If we have a signature, verify the transaction
+          if (existingSig) {
+            const isSuccessful = await this.verifyTransaction(existingSig);
+            if (isSuccessful) {
+              console.log("Previously processed transaction verified as successful");
+              return {
+                success: true,
+                transactionHash: existingSig,
+                blockchainConfirmation: true,
+                reused: true
+              };
+            }
+          }
+          
           return {
             success: false,
             error: createPaymentError(
               ErrorCategory.BLOCKCHAIN_ERROR,
-              'Transaction simulation failed: This transaction has already been processed. Please try again with a new transaction.',
+              'Transaction already processed. Please try again with a new transaction.',
               sendError,
               false,
               'DUPLICATE_TRANSACTION'
@@ -280,7 +398,19 @@ export class SolanaPaymentProvider {
    */
   public async processTokenPayment(request: PaymentRequest, mintAddress: string): Promise<TransactionResult> {
     try {
-      const { amount, recipientWallet } = request;
+      const { amount, recipientWallet, metadata } = request;
+      const paymentId = metadata?.paymentId || 'unknown';
+      
+      // Check for existing transaction first
+      const existingSignature = await this.checkExistingTransaction(paymentId);
+      if (existingSignature) {
+        return {
+          success: true,
+          transactionHash: existingSignature,
+          blockchainConfirmation: true,
+          reused: true
+        };
+      }
       
       if (!this.wallet.publicKey || !this.wallet.signTransaction) {
         return {
@@ -360,6 +490,15 @@ export class SolanaPaymentProvider {
         
         const transaction = new Transaction().add(transferInstruction);
         
+        // Add a unique identifier to transaction to prevent duplicates
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: this.wallet.publicKey,
+            toPubkey: this.wallet.publicKey,
+            lamports: 0
+          })
+        );
+        
         // Get latest blockhash
         const blockHash = await this.connection.getLatestBlockhash('confirmed');
         
@@ -399,7 +538,71 @@ export class SolanaPaymentProvider {
         let signature;
         try {
           signature = await this.connection.sendRawTransaction(signedTransaction.serialize());
+          
+          // Cache the transaction for potential reuse
+          if (paymentId && signature) {
+            this.cachedTransactions.set(paymentId, signature);
+          }
         } catch (sendError) {
+          // Check if this is a "Transaction already processed" error
+          if (isTxAlreadyProcessedError(sendError)) {
+            console.log("Token transaction already processed error detected");
+            
+            // Try to extract the signature from the error if possible
+            let errorMessage = sendError.message || '';
+            let existingSig = null;
+            
+            // Look for signature in log messages if available
+            if (sendError instanceof SendTransactionError && sendError.logs) {
+              const logs = sendError.logs;
+              console.log("Transaction logs:", logs);
+              
+              // Attempt to find signature in logs
+              for (const log of logs) {
+                const sigMatch = log.match(/signature: ([A-Za-z0-9]+)/);
+                if (sigMatch && sigMatch[1]) {
+                  existingSig = sigMatch[1];
+                  console.log("Found existing signature in logs:", existingSig);
+                  break;
+                }
+              }
+            }
+            
+            // If we couldn't find the signature but have a cached version, try that
+            if (!existingSig && paymentId) {
+              const cachedSig = this.cachedTransactions.get(paymentId);
+              if (cachedSig) {
+                existingSig = cachedSig;
+                console.log("Using cached signature:", existingSig);
+              }
+            }
+            
+            // If we have a signature, verify the transaction
+            if (existingSig) {
+              const isSuccessful = await this.verifyTransaction(existingSig);
+              if (isSuccessful) {
+                console.log("Previously processed token transaction verified as successful");
+                return {
+                  success: true,
+                  transactionHash: existingSig,
+                  blockchainConfirmation: true,
+                  reused: true
+                };
+              }
+            }
+            
+            return {
+              success: false,
+              error: createPaymentError(
+                ErrorCategory.BLOCKCHAIN_ERROR,
+                'Transaction already processed. Please try again with a new transaction.',
+                sendError,
+                false,
+                'DUPLICATE_TRANSACTION'
+              )
+            };
+          }
+          
           return {
             success: false,
             error: createPaymentError(
@@ -513,6 +716,13 @@ export class SolanaPaymentProvider {
   }
   
   /**
+   * Clear the cached transactions
+   */
+  public clearTransactionCache(): void {
+    this.cachedTransactions.clear();
+  }
+  
+  /**
    * Process payment with automatic token type selection and retry logic
    */
   public async processPayment(request: PaymentRequest, mintAddress?: string | null): Promise<TransactionResult> {
@@ -561,6 +771,19 @@ export class SolanaPaymentProvider {
             'Network error during payment processing',
             error,
             true
+          )
+        };
+      }
+      
+      if (isTxAlreadyProcessedError(error)) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.BLOCKCHAIN_ERROR,
+            'Transaction already processed. Please try again with a new transaction.',
+            error,
+            false,
+            'DUPLICATE_TRANSACTION'
           )
         };
       }
