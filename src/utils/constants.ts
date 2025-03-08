@@ -21,6 +21,9 @@ export const IMAGE_SETTINGS = {
   PRESERVE_TRANSPARENCY: true,       // Keep transparency in images when possible
   DEFAULT_FIT: 'cover' as const,     // How images are fit when resizing
   
+  // Size multiplier to prevent excessive downsizing
+  MINIMUM_SIZE_MULTIPLIER: 10,       // Multiply requested dimensions by this value for actual stored image
+  
   // Format specific settings
   FORMAT_SETTINGS: {
     PREFER_ORIGINAL: true,           // Try to keep original format when possible
