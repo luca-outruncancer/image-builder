@@ -120,6 +120,8 @@ export class SolanaPaymentProvider {
       const { amount, recipientWallet, metadata } = request;
       const paymentId = metadata?.paymentId || 'unknown';
       
+      console.log(`Processing SOL payment [ID: ${paymentId}] for amount ${amount} SOL`);
+      
       // Check for existing transaction first
       const existingSignature = await this.checkExistingTransaction(paymentId);
       if (existingSignature) {
@@ -179,29 +181,36 @@ export class SolanaPaymentProvider {
       const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
       
       // Create transaction
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: this.wallet.publicKey,
-          toPubkey: new PublicKey(recipientWallet),
-          lamports: lamports,
-        })
-      );
+      const transaction = new Transaction();
       
       // Add a unique identifier to transaction to prevent duplicates
       const nonce = getNonce();
-      transaction.add(
-        SystemProgram.transfer({
-          fromPubkey: this.wallet.publicKey,
-          toPubkey: this.wallet.publicKey,
-          lamports: 0
-        })
-      );
+      
+      console.log(`Transaction [ID: ${paymentId}] created with nonce: ${nonce}`);
+      
+      // Add the main transfer instruction
+      const mainTransferInstruction = SystemProgram.transfer({
+        fromPubkey: this.wallet.publicKey,
+        toPubkey: new PublicKey(recipientWallet),
+        lamports: lamports,
+      });
+      
+      transaction.add(mainTransferInstruction);
+      
+      // Add a unique zero-value transfer to make transaction unique
+      const nonceInstruction = SystemProgram.transfer({
+        fromPubkey: this.wallet.publicKey,
+        toPubkey: this.wallet.publicKey,
+        lamports: 0
+      });
+      
+      transaction.add(nonceInstruction);
       
       // Get recent blockhash
       let blockHash;
       try {
         blockHash = await this.connection.getLatestBlockhash('confirmed');
-        console.log("Got blockhash:", blockHash.blockhash.slice(0, 8) + "...");
+        console.log(`[ID: ${paymentId}] Got blockhash:`, blockHash.blockhash.slice(0, 8) + "...");
       } catch (blockHashError) {
         return {
           success: false,
@@ -221,9 +230,10 @@ export class SolanaPaymentProvider {
       let signedTransaction;
       try {
         signedTransaction = await this.wallet.signTransaction(transaction);
+        console.log(`[ID: ${paymentId}] Transaction signed successfully`);
       } catch (signError) {
         if (isUserRejectionError(signError)) {
-          console.log("Transaction declined by user");
+          console.log(`[ID: ${paymentId}] Transaction declined by user`);
           return {
             success: false,
             error: createPaymentError(
@@ -246,20 +256,41 @@ export class SolanaPaymentProvider {
         };
       }
       
+      // Log transaction details for debugging
+      console.log(`[ID: ${paymentId}] Transaction to be sent:`, {
+        blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
+        feePayer: transaction.feePayer?.toString(),
+        instructions: transaction.instructions.length,
+        signatures: transaction.signatures.length,
+        serializedSize: signedTransaction.serialize().length
+      });
+
+      // Log instruction details for better tracing
+      console.log(`[ID: ${paymentId}] Transaction instructions:`, transaction.instructions.map((i, index) => ({
+        index,
+        programId: i.programId.toString(),
+        keys: i.keys.map(k => k.pubkey.toString().substring(0, 8) + "..."),
+        data: Buffer.from(i.data).toString('hex').substring(0, 20) + "..."
+      })));
+      
       // Send transaction
       let signature;
       try {
+        console.log(`[ID: ${paymentId}] Sending transaction...`);
         signature = await this.connection.sendRawTransaction(signedTransaction.serialize());
-        console.log("Transaction sent, signature:", signature);
+        console.log(`[ID: ${paymentId}] Transaction sent, signature:`, signature);
         
         // Cache the transaction for potential reuse
         if (paymentId && signature) {
           this.cachedTransactions.set(paymentId, signature);
+          console.log(`[ID: ${paymentId}] Cached transaction signature:`, signature);
         }
       } catch (sendError) {
+        console.error(`[ID: ${paymentId}] Error sending transaction:`, sendError);
+        
         // Check if this is a "Transaction already processed" error
         if (isTxAlreadyProcessedError(sendError)) {
-          console.log("Transaction already processed error detected");
+          console.log(`[ID: ${paymentId}] Transaction already processed error detected`);
           
           // Try to extract the signature from the error if possible
           let errorMessage = sendError.message || '';
@@ -268,14 +299,14 @@ export class SolanaPaymentProvider {
           // Look for signature in log messages if available
           if (sendError instanceof SendTransactionError && sendError.logs) {
             const logs = sendError.logs;
-            console.log("Transaction logs:", logs);
+            console.log(`[ID: ${paymentId}] Transaction logs:`, logs);
             
             // Attempt to find signature in logs
             for (const log of logs) {
               const sigMatch = log.match(/signature: ([A-Za-z0-9]+)/);
               if (sigMatch && sigMatch[1]) {
                 existingSig = sigMatch[1];
-                console.log("Found existing signature in logs:", existingSig);
+                console.log(`[ID: ${paymentId}] Found existing signature in logs:`, existingSig);
                 break;
               }
             }
@@ -286,7 +317,7 @@ export class SolanaPaymentProvider {
             const cachedSig = this.cachedTransactions.get(paymentId);
             if (cachedSig) {
               existingSig = cachedSig;
-              console.log("Using cached signature:", existingSig);
+              console.log(`[ID: ${paymentId}] Using cached signature:`, existingSig);
             }
           }
           
@@ -294,7 +325,7 @@ export class SolanaPaymentProvider {
           if (existingSig) {
             const isSuccessful = await this.verifyTransaction(existingSig);
             if (isSuccessful) {
-              console.log("Previously processed transaction verified as successful");
+              console.log(`[ID: ${paymentId}] Previously processed transaction verified as successful`);
               return {
                 success: true,
                 transactionHash: existingSig,
@@ -329,6 +360,7 @@ export class SolanaPaymentProvider {
       
       // Confirm transaction
       try {
+        console.log(`[ID: ${paymentId}] Confirming transaction...`);
         const confirmation = await this.connection.confirmTransaction({
           signature,
           blockhash: blockHash.blockhash,
@@ -336,6 +368,7 @@ export class SolanaPaymentProvider {
         }, 'confirmed');
         
         if (confirmation.value.err) {
+          console.error(`[ID: ${paymentId}] Transaction confirmation failed:`, confirmation.value.err);
           return {
             success: false,
             error: createPaymentError(
@@ -347,18 +380,22 @@ export class SolanaPaymentProvider {
           };
         }
         
+        console.log(`[ID: ${paymentId}] Transaction confirmed successfully!`);
         return {
           success: true,
           transactionHash: signature,
           blockchainConfirmation: true
         };
       } catch (confirmError) {
+        console.error(`[ID: ${paymentId}] Error confirming transaction:`, confirmError);
+        
         // Double-check transaction status
         try {
           const status = await this.connection.getSignatureStatus(signature);
           
           if (status.value && !status.value.err) {
             // Transaction was actually successful despite confirmation error
+            console.log(`[ID: ${paymentId}] Transaction was successful despite confirmation error`);
             return {
               success: true,
               transactionHash: signature,
@@ -366,7 +403,7 @@ export class SolanaPaymentProvider {
             };
           }
         } catch (statusError) {
-          console.error('Failed to check transaction status:', statusError);
+          console.error(`[ID: ${paymentId}] Failed to check transaction status:`, statusError);
         }
         
         return {
@@ -401,9 +438,12 @@ export class SolanaPaymentProvider {
       const { amount, recipientWallet, metadata } = request;
       const paymentId = metadata?.paymentId || 'unknown';
       
+      console.log(`Processing token payment [ID: ${paymentId}] for amount ${amount} tokens`);
+      
       // Check for existing transaction first
       const existingSignature = await this.checkExistingTransaction(paymentId);
       if (existingSignature) {
+        console.log(`[ID: ${paymentId}] Using existing token transaction signature:`, existingSignature);
         return {
           success: true,
           transactionHash: existingSignature,
@@ -479,6 +519,9 @@ export class SolanaPaymentProvider {
         }
         
         // Create transaction
+        const transaction = new Transaction();
+        
+        // Add the main token transfer instruction
         const transferInstruction = createTransferCheckedInstruction(
           payerTokenAccount,
           tokenMint,
@@ -488,9 +531,12 @@ export class SolanaPaymentProvider {
           mintInfo.decimals
         );
         
-        const transaction = new Transaction().add(transferInstruction);
+        transaction.add(transferInstruction);
         
         // Add a unique identifier to transaction to prevent duplicates
+        const nonce = getNonce();
+        console.log(`[ID: ${paymentId}] Token transaction created with nonce: ${nonce}`);
+        
         transaction.add(
           SystemProgram.transfer({
             fromPubkey: this.wallet.publicKey,
@@ -501,6 +547,7 @@ export class SolanaPaymentProvider {
         
         // Get latest blockhash
         const blockHash = await this.connection.getLatestBlockhash('confirmed');
+        console.log(`[ID: ${paymentId}] Got token transaction blockhash:`, blockHash.blockhash.slice(0, 8) + "...");
         
         transaction.recentBlockhash = blockHash.blockhash;
         transaction.feePayer = this.wallet.publicKey;
@@ -509,9 +556,10 @@ export class SolanaPaymentProvider {
         let signedTransaction;
         try {
           signedTransaction = await this.wallet.signTransaction(transaction);
+          console.log(`[ID: ${paymentId}] Token transaction signed successfully`);
         } catch (signError) {
           if (isUserRejectionError(signError)) {
-            console.log("Transaction declined by user");
+            console.log(`[ID: ${paymentId}] Token transaction declined by user`);
             return {
               success: false,
               error: createPaymentError(
@@ -534,19 +582,41 @@ export class SolanaPaymentProvider {
           };
         }
         
+        // Log transaction details for debugging
+        console.log(`[ID: ${paymentId}] Token transaction to be sent:`, {
+          blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
+          feePayer: transaction.feePayer?.toString(),
+          instructions: transaction.instructions.length,
+          signatures: transaction.signatures.length,
+          serializedSize: signedTransaction.serialize().length
+        });
+
+        // Log instruction details for better tracing
+        console.log(`[ID: ${paymentId}] Token transaction instructions:`, transaction.instructions.map((i, index) => ({
+          index,
+          programId: i.programId.toString(),
+          keys: i.keys.map(k => k.pubkey.toString().substring(0, 8) + "..."),
+          data: Buffer.from(i.data).toString('hex').substring(0, 20) + "..."
+        })));
+        
         // Send transaction
         let signature;
         try {
+          console.log(`[ID: ${paymentId}] Sending token transaction...`);
           signature = await this.connection.sendRawTransaction(signedTransaction.serialize());
+          console.log(`[ID: ${paymentId}] Token transaction sent, signature:`, signature);
           
           // Cache the transaction for potential reuse
           if (paymentId && signature) {
             this.cachedTransactions.set(paymentId, signature);
+            console.log(`[ID: ${paymentId}] Cached token transaction signature:`, signature);
           }
         } catch (sendError) {
+          console.error(`[ID: ${paymentId}] Error sending token transaction:`, sendError);
+          
           // Check if this is a "Transaction already processed" error
           if (isTxAlreadyProcessedError(sendError)) {
-            console.log("Token transaction already processed error detected");
+            console.log(`[ID: ${paymentId}] Token transaction already processed error detected`);
             
             // Try to extract the signature from the error if possible
             let errorMessage = sendError.message || '';
@@ -555,14 +625,14 @@ export class SolanaPaymentProvider {
             // Look for signature in log messages if available
             if (sendError instanceof SendTransactionError && sendError.logs) {
               const logs = sendError.logs;
-              console.log("Transaction logs:", logs);
+              console.log(`[ID: ${paymentId}] Token transaction logs:`, logs);
               
               // Attempt to find signature in logs
               for (const log of logs) {
                 const sigMatch = log.match(/signature: ([A-Za-z0-9]+)/);
                 if (sigMatch && sigMatch[1]) {
                   existingSig = sigMatch[1];
-                  console.log("Found existing signature in logs:", existingSig);
+                  console.log(`[ID: ${paymentId}] Found existing token signature in logs:`, existingSig);
                   break;
                 }
               }
@@ -573,7 +643,7 @@ export class SolanaPaymentProvider {
               const cachedSig = this.cachedTransactions.get(paymentId);
               if (cachedSig) {
                 existingSig = cachedSig;
-                console.log("Using cached signature:", existingSig);
+                console.log(`[ID: ${paymentId}] Using cached token signature:`, existingSig);
               }
             }
             
@@ -581,7 +651,7 @@ export class SolanaPaymentProvider {
             if (existingSig) {
               const isSuccessful = await this.verifyTransaction(existingSig);
               if (isSuccessful) {
-                console.log("Previously processed token transaction verified as successful");
+                console.log(`[ID: ${paymentId}] Previously processed token transaction verified as successful`);
                 return {
                   success: true,
                   transactionHash: existingSig,
@@ -616,6 +686,7 @@ export class SolanaPaymentProvider {
         
         // Confirm transaction
         try {
+          console.log(`[ID: ${paymentId}] Confirming token transaction...`);
           const confirmation = await this.connection.confirmTransaction({
             signature,
             blockhash: blockHash.blockhash,
@@ -623,6 +694,7 @@ export class SolanaPaymentProvider {
           }, 'confirmed');
           
           if (confirmation.value.err) {
+            console.error(`[ID: ${paymentId}] Token transaction confirmation failed:`, confirmation.value.err);
             return {
               success: false,
               error: createPaymentError(
@@ -634,17 +706,21 @@ export class SolanaPaymentProvider {
             };
           }
           
+          console.log(`[ID: ${paymentId}] Token transaction confirmed successfully!`);
           return {
             success: true,
             transactionHash: signature,
             blockchainConfirmation: true
           };
         } catch (confirmError) {
+          console.error(`[ID: ${paymentId}] Error confirming token transaction:`, confirmError);
+          
           // Check status manually
           const status = await this.connection.getSignatureStatus(signature);
           
           if (status.value && !status.value.err) {
             // Transaction was successful despite confirmation error
+            console.log(`[ID: ${paymentId}] Token transaction was successful despite confirmation error`);
             return {
               success: true,
               transactionHash: signature,
@@ -663,6 +739,8 @@ export class SolanaPaymentProvider {
           };
         }
       } catch (mintError) {
+        console.error(`[ID: ${paymentId}] Token mint error:`, mintError);
+        
         // Check if the mint exists
         try {
           const mintPubkey = new PublicKey(mintAddress);
@@ -719,6 +797,7 @@ export class SolanaPaymentProvider {
    * Clear the cached transactions
    */
   public clearTransactionCache(): void {
+    console.log("Clearing transaction cache");
     this.cachedTransactions.clear();
   }
   
@@ -727,6 +806,12 @@ export class SolanaPaymentProvider {
    */
   public async processPayment(request: PaymentRequest, mintAddress?: string | null): Promise<TransactionResult> {
     try {
+      console.log(`Processing payment [PaymentID: ${request.metadata?.paymentId || 'unknown'}]`, {
+        amount: request.amount,
+        token: request.token,
+        hasMintAddress: !!mintAddress
+      });
+      
       // Retry with backoff for transient errors
       return await retryWithBackoff(async () => {
         if (request.token === 'SOL') {
@@ -738,6 +823,8 @@ export class SolanaPaymentProvider {
         }
       }, 2); // Maximum 2 retries
     } catch (error) {
+      console.error(`Payment processing error [PaymentID: ${request.metadata?.paymentId || 'unknown'}]:`, error);
+      
       // Handle errors that weren't automatically retried
       if (isUserRejectionError(error)) {
         return {
