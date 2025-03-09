@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
 import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
-import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
+import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 
 export async function POST(request: NextRequest) {
@@ -69,34 +69,52 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Step 2: Determine format for resized image 
+    // Step 2: Determine format for resized image - preserve quality when possible
     const targetFormat = determineOptimalFormat(originalExtension, originalBuffer.length);
     const finalFileName = `${fileId}.${targetFormat}`;
     const finalFilePath = path.join(uploadDir, finalFileName);
     const publicUrl = `/uploads/${finalFileName}`;
     
-    // Step 3: Resize the image
+    // Step 3: Apply MINIMUM_SIZE_MULTIPLIER to prevent excessive downsizing
+    // The displayed size will remain as requested, but we'll store a larger version
+    const multiplier = IMAGE_SETTINGS.MINIMUM_SIZE_MULTIPLIER || 1;
+    const storageWidth = size.width * multiplier;
+    const storageHeight = size.height * multiplier;
+    
+    console.log(`[Upload:${uploadId}] Applying size multiplier: ${multiplier}x`, {
+      requestedSize: `${size.width}x${size.height}`,
+      actualStorageSize: `${storageWidth}x${storageHeight}`
+    });
+    
+    // Step 4: Resize the image using settings from constants and the multiplier
     let resizeResult;
     try {
-      console.log(`[Upload:${uploadId}] Starting image resize operation to ${size.width}x${size.height}`);
+      console.log(`[Upload:${uploadId}] Starting image resize operation to ${storageWidth}x${storageHeight} with quality settings:`, {
+        highQualityEnabled: FEATURES.HIGH_QUALITY_IMAGES && IMAGE_SETTINGS.HIGH_QUALITY_MODE,
+        adaptiveQuality: IMAGE_SETTINGS.SIZE_ADAPTIVE_QUALITY
+      });
       
+      // Let the resizer determine the quality from our constants
       resizeResult = await resizeImage(
         originalBuffer,
         finalFilePath,
         {
-          width: size.width,
-          height: size.height,
+          width: storageWidth,
+          height: storageHeight,
           format: targetFormat as 'jpeg' | 'png' | 'webp' | 'avif',
-          fit: 'cover'
+          fit: IMAGE_SETTINGS.DEFAULT_FIT,
+          // No explicit quality setting - let it use the constants
+          highQuality: FEATURES.HIGH_QUALITY_IMAGES // Use feature flag
         }
       );
       
       if (resizeResult.success) {
-        console.log(`[Upload:${uploadId}] Resize successful:`, {
+        console.log(`[Upload:${uploadId}] High-quality resize successful:`, {
           originalSize: `${(originalBuffer.length / 1024).toFixed(1)}KB`,
           newSize: `${(resizeResult.resizedSize / 1024).toFixed(1)}KB`,
           compressionRatio: (originalBuffer.length / resizeResult.resizedSize).toFixed(2),
-          processingTime: `${resizeResult.processingTimeMs}ms`
+          processingTime: `${resizeResult.processingTimeMs}ms`,
+          format: targetFormat
         });
       } else {
         console.warn(`[Upload:${uploadId}] Resize operation failed but fallback succeeded:`, {
@@ -118,8 +136,8 @@ export async function POST(request: NextRequest) {
           format: originalExtension,
           originalSize: originalBuffer.length,
           resizedSize: originalBuffer.length,
-          width: size.width,
-          height: size.height,
+          width: storageWidth,
+          height: storageHeight,
           processingTimeMs: 0,
           error: resizeError
         };
@@ -132,7 +150,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Step 4: Clean up temp file
+    // Step 5: Clean up temp file
     try {
       if (tempOriginalPath && fs.existsSync(tempOriginalPath)) {
         fs.unlinkSync(tempOriginalPath);
@@ -143,17 +161,18 @@ export async function POST(request: NextRequest) {
       // Non-critical error, continue
     }
     
-    // Step 5: Store in database
+    // Step 6: Store in database (notice we store the ORIGINAL requested size, not the multiplied one)
+    // This ensures that the image appears at the size the user requested on the canvas
     try {
       const initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
       
-      console.log(`[Upload:${uploadId}] Creating database record`);
+      console.log(`[Upload:${uploadId}] Creating database record with display size: ${size.width}x${size.height}`);
       const { success, data: imageRecord, error } = await createImageRecord({
         image_location: publicUrl,
         start_position_x: position.x,
         start_position_y: position.y,
-        size_x: size.width,
-        size_y: size.height,
+        size_x: size.width,  // Original requested width (for display)
+        size_y: size.height, // Original requested height (for display)
         image_status: initialStatus,
         user_wallet: walletAddress
       });
@@ -177,7 +196,9 @@ export async function POST(request: NextRequest) {
             originalSize: resizeResult.originalSize,
             finalSize: resizeResult.resizedSize,
             format: resizeResult.format,
-            compressionRatio: resizeResult.originalSize / resizeResult.resizedSize
+            compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
+            storedSize: `${storageWidth}x${storageHeight}`,
+            displaySize: `${size.width}x${size.height}`
           },
           warning: "Image record created in memory only. Database connection failed: " + error
         });
@@ -195,7 +216,9 @@ export async function POST(request: NextRequest) {
           finalSize: resizeResult.resizedSize,
           format: resizeResult.format,
           processingTimeMs: resizeResult.processingTimeMs,
-          compressionRatio: parseFloat((resizeResult.originalSize / resizeResult.resizedSize).toFixed(2))
+          compressionRatio: parseFloat((resizeResult.originalSize / resizeResult.resizedSize).toFixed(2)),
+          storedSize: `${storageWidth}x${storageHeight}`,
+          displaySize: `${size.width}x${size.height}`
         }
       });
     } catch (dbError) {
@@ -219,7 +242,9 @@ export async function POST(request: NextRequest) {
           originalSize: resizeResult.originalSize,
           finalSize: resizeResult.resizedSize,
           format: resizeResult.format,
-          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize
+          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
+          storedSize: `${storageWidth}x${storageHeight}`,
+          displaySize: `${size.width}x${size.height}`
         },
         warning: "Database operation failed. File was saved but record wasn't stored in the database."
       });

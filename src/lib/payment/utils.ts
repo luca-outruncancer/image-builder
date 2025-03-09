@@ -1,5 +1,6 @@
 // src/lib/payment/utils.ts
 import { ErrorCategory, PaymentError } from './types';
+import { SendTransactionError } from '@solana/web3.js';
 
 /**
  * Create a standardized payment error object
@@ -81,6 +82,63 @@ export function isBalanceError(error: any): boolean {
 }
 
 /**
+ * Determine if an error is a "Transaction already processed" error
+ */
+export function isTxAlreadyProcessedError(error: any): boolean {
+  if (!error) return false;
+  
+  // Check error message
+  const errorMessage = error.message || String(error);
+  
+  return (
+    errorMessage.includes("already been processed") ||
+    errorMessage.includes("already processed") ||
+    errorMessage.includes("This transaction has already") ||
+    // SendTransactionError with duplicate code
+    (error instanceof SendTransactionError && 
+      error.logs && 
+      error.logs.some(log => log.includes("already processed")))
+  );
+}
+
+/**
+ * Extract transaction signature from error if possible
+ */
+export function extractSignatureFromError(error: any): string | null {
+  if (!error) return null;
+  
+  try {
+    // Check if it's a SendTransactionError with logs
+    if (error instanceof SendTransactionError && error.logs) {
+      for (const log of error.logs) {
+        const matches = log.match(/signature: ([A-Za-z0-9]+)/);
+        if (matches && matches[1]) {
+          return matches[1];
+        }
+      }
+    }
+    
+    // Try to extract from error message
+    const errorMessage = error.message || String(error);
+    const sigMatches = errorMessage.match(/signature ([A-Za-z0-9]+)/);
+    if (sigMatches && sigMatches[1]) {
+      return sigMatches[1];
+    }
+  } catch (e) {
+    console.error("Error extracting signature from error:", e);
+  }
+  
+  return null;
+}
+
+/**
+ * Generate a unique transaction ID/nonce
+ */
+export function getNonce(): string {
+  return Date.now().toString() + Math.random().toString().slice(2, 8);
+}
+
+/**
  * Create a unique identifier for a payment
  */
 export function generatePaymentId(): string {
@@ -110,6 +168,10 @@ export function formatErrorForUser(error: PaymentError): string {
       return "There was an issue with your wallet. Please reconnect your wallet and try again.";
     
     case ErrorCategory.BLOCKCHAIN_ERROR:
+      // Special handling for duplicate transaction errors
+      if (error.code === 'DUPLICATE_TRANSACTION') {
+        return "This transaction was already processed. Please refresh the page and try again.";
+      }
       return "There was an issue processing the transaction on the blockchain. Please try again.";
     
     default:
@@ -131,7 +193,8 @@ export function formatCurrencyAmount(amount: number, token: string): string {
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
-  initialDelayMs: number = 500
+  initialDelayMs: number = 500,
+  shouldRetry: (error: any) => boolean = () => true
 ): Promise<T> {
   let lastError: any;
   
@@ -147,6 +210,16 @@ export async function retryWithBackoff<T>(
         throw error;
       }
       
+      // Don't retry if it's a duplicate transaction error
+      if (isTxAlreadyProcessedError(error)) {
+        throw error;
+      }
+      
+      // Custom retry logic if provided
+      if (!shouldRetry(error)) {
+        throw error;
+      }
+      
       // Exponential backoff
       const delay = initialDelayMs * Math.pow(2, i);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -154,4 +227,64 @@ export async function retryWithBackoff<T>(
   }
   
   throw lastError;
+}
+
+/**
+ * Clear blockhash data from session storage
+ * This helps prevent duplicate transaction errors by removing cached blockhashes
+ */
+export function clearSessionBlockhashData(): void {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) {
+      return;
+    }
+    
+    // Search for and remove blockhash-related items in session storage
+    const keysToRemove: string[] = [];
+    
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (
+        key.includes('blockhash') || 
+        key.includes('transaction') ||
+        key.includes('lastValidBlockHeight')
+      )) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    // Remove all identified keys
+    keysToRemove.forEach(key => {
+      try {
+        sessionStorage.removeItem(key);
+      } catch (e) {
+        console.warn(`Failed to remove ${key} from session storage:`, e);
+      }
+    });
+    
+    console.log(`Cleared ${keysToRemove.length} blockhash-related items from session storage`);
+  } catch (error) {
+    console.error("Error clearing session storage:", error);
+  }
+}
+
+/**
+ * Debounce function to prevent multiple rapid executions
+ */
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  
+  return function(...args: Parameters<T>): void {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    
+    timeout = setTimeout(() => {
+      func(...args);
+      timeout = null;
+    }, wait);
+  };
 }

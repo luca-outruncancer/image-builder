@@ -8,6 +8,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { getImageRecords, updateImageStatus, IMAGE_STATUS, ImageRecord } from '@/lib/imageStorage';
 import { usePaymentContext } from '@/lib/payment/PaymentContext';
 import { PaymentStatus } from '@/lib/payment/types';
+import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 
 interface PlacedImage {
   id: string;
@@ -57,6 +58,7 @@ export function useCanvasState(): CanvasState {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isLoadingImages, setIsLoadingImages] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const imageToPlace = useImageStore(state => state.imageToPlace);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
@@ -80,6 +82,7 @@ export function useCanvasState(): CanvasState {
     setPendingConfirmation(null);
     setPaymentError(null);
     resetPayment();
+    clearSessionBlockhashData();
   }, [resetPayment]);
 
   // Load placed images from the database
@@ -227,6 +230,7 @@ export function useCanvasState(): CanvasState {
     setTempImage(null);
     setPendingConfirmation(null);
     resetPayment();
+    clearSessionBlockhashData();
     
     if (currentTempImage?.file) {
       setImageToPlace({
@@ -239,201 +243,274 @@ export function useCanvasState(): CanvasState {
     }
   };
 
-  const handleConfirmPlacement = async () => {
-    // Check if we're already processing - prevent double clicks
-    if (isPaymentProcessing) {
-      console.log("Payment already in progress, ignoring duplicate request");
-      return;
-    }
-    
-    if (!tempImage?.file) {
-      console.error("No file to upload");
-      setPaymentError("Missing image file");
-      return;
-    }
-    
-    if (!connected) {
-      console.error("Wallet not connected");
-      setPaymentError("Please connect your wallet to continue");
-      return;
-    }
-    
-    if (!publicKey) {
-      console.error("No public key available");
-      setPaymentError("Cannot access wallet public key");
-      return;
-    }
-
-    const cost = tempImage.cost || 0;
-    console.log(`Processing payment of ${cost}`);
-    
-    if (cost <= 0) {
-      console.error("Invalid cost:", cost);
-      setPaymentError("Invalid payment amount");
-      return;
-    }
-    
-    // STEP 1: Create image record with pending payment status
-    let imageRecord: ImageRecord | null = null;
-    
-    try {
-      const formData = new FormData();
-      formData.append('file', tempImage.file);
-      formData.append('position', JSON.stringify({ x: tempImage.x, y: tempImage.y }));
-      formData.append('size', JSON.stringify({ width: tempImage.width, height: tempImage.height }));
-      
-      // Add wallet address
-      if (publicKey) {
-        formData.append('wallet', publicKey.toString());
+  // Debounced version of confirm placement to prevent double submissions
+  const debouncedConfirmPlacement = useCallback(
+    debounce(async () => {
+      if (isSubmitting) {
+        console.log("Already processing submission, ignoring duplicate request");
+        return;
       }
-     
-      console.log("Uploading image to server...");
-      
-      // Upload the image file first
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server error: ${response.status} - ${errorText}`);
-      }
-      
-      const data = await response.json();
-      console.log("Upload response:", data);
-      
-      if (!data.success) {
-        throw new Error(data.error || "Unknown server error");
-      }
-      
-      // Store the image record
-      imageRecord = data.record;
-      
-      console.log("Image uploaded successfully, ID:", imageRecord.image_id);
-      
-      // Add the image to the canvas with pending status
-      setPlacedImages(prev => [
-        ...prev,
-        {
-          id: imageRecord!.image_id.toString(),
-          src: imageRecord!.image_location,
-          x: imageRecord!.start_position_x,
-          y: imageRecord!.start_position_y,
-          width: imageRecord!.size_x,
-          height: imageRecord!.size_y,
-          status: IMAGE_STATUS.PENDING_PAYMENT,
-          cost: tempImage.cost
-        }
-      ]);
-      
-    } catch (uploadError) {
-      console.error("Failed to upload image:", uploadError);
-      setPaymentError(`Failed to upload image: ${uploadError instanceof Error ? uploadError.message : "Server error"}`);
-      return;
-    }
-    
-    if (!imageRecord) {
-      console.error("No image record created");
-      setPaymentError("Failed to create image record. Please try again.");
-      return;
-    }
-    
-    // STEP 2: Initialize payment
-    const imageId = parseInt(imageRecord.image_id.toString());
-    
-    const paymentId = await initializePayment(cost, {
-      imageId: imageId,
-      positionX: tempImage.x,
-      positionY: tempImage.y,
-      width: tempImage.width,
-      height: tempImage.height,
-      fileName: tempImage.file.name
-    });
-    
-    if (!paymentId) {
-      console.error("Failed to initialize payment");
-      
-      // Update image status to error
-      try {
-        await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
-        // Remove the pending image from the canvas
-        setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
-      } catch (updateError) {
-        console.error("Failed to update image status after init error:", updateError);
-      }
-      
-      return;
-    }
-    
-    // STEP 3: Process payment
-    const success = await processPayment(paymentId);
-    
-    if (!success) {
-      // Change log level for user rejections
-      if (error?.category === 'user_rejection') {
-        console.log("User rejected the transaction");
-      } else {
-        console.error("Payment failed:", error?.message);
-      }
-      
-      // Handle user rejection 
-      if (error?.category === 'user_rejection') {
-        console.log("User rejected the transaction - returning to confirmation screen");
+  
+      if (!tempImage?.file) {
+        console.error("No file to upload");
+        setPaymentError("Missing image file");
+        setIsSubmitting(false);
         return;
       }
       
-      // Handle timeout specifically
-      if (error?.category === 'timeout_error') {
-        // Clean up any records created for this session
+      if (!connected) {
+        console.error("Wallet not connected");
+        setPaymentError("Please connect your wallet to continue");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!publicKey) {
+        console.error("No public key available");
+        setPaymentError("Cannot access wallet public key");
+        setIsSubmitting(false);
+        return;
+      }
+  
+      const cost = tempImage.cost || 0;
+      console.log(`Processing payment of ${cost}`);
+      
+      if (cost <= 0) {
+        console.error("Invalid cost:", cost);
+        setPaymentError("Invalid payment amount");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Clear session storage before starting a new transaction
+      clearSessionBlockhashData();
+      
+      // STEP 1: Create image record with pending payment status
+      let imageRecord: ImageRecord | null = null;
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', tempImage.file);
+        formData.append('position', JSON.stringify({ x: tempImage.x, y: tempImage.y }));
+        formData.append('size', JSON.stringify({ width: tempImage.width, height: tempImage.height }));
+        
+        // Add wallet address
+        if (publicKey) {
+          formData.append('wallet', publicKey.toString());
+        }
+       
+        console.log("Uploading image to server...");
+        
+        // Upload the image file first
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Server error: ${response.status} - ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log("Upload response:", data);
+        
+        if (!data.success) {
+          throw new Error(data.error || "Unknown server error");
+        }
+        
+        // Store the image record
+        imageRecord = data.record;
+        
+        console.log("Image uploaded successfully, ID:", imageRecord.image_id);
+        
+        // Add the image to the canvas with pending status
+        setPlacedImages(prev => [
+          ...prev,
+          {
+            id: imageRecord!.image_id.toString(),
+            src: imageRecord!.image_location,
+            x: imageRecord!.start_position_x,
+            y: imageRecord!.start_position_y,
+            width: imageRecord!.size_x,
+            height: imageRecord!.size_y,
+            status: IMAGE_STATUS.PENDING_PAYMENT,
+            cost: tempImage.cost
+          }
+        ]);
+        
+      } catch (uploadError) {
+        console.error("Failed to upload image:", uploadError);
+        setPaymentError(`Failed to upload image: ${uploadError instanceof Error ? uploadError.message : "Server error"}`);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!imageRecord) {
+        console.error("No image record created");
+        setPaymentError("Failed to create image record. Please try again.");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // STEP 2: Initialize payment
+      const imageId = parseInt(imageRecord.image_id.toString());
+      
+      const paymentId = await initializePayment(cost, {
+        imageId: imageId,
+        positionX: tempImage.x,
+        positionY: tempImage.y,
+        width: tempImage.width,
+        height: tempImage.height,
+        fileName: tempImage.file.name
+      });
+      
+      if (!paymentId) {
+        console.error("Failed to initialize payment");
+        
+        // Update image status to error
         try {
-          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT);
+          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+          // Remove the pending image from the canvas
           setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
         } catch (updateError) {
-          console.log("Failed to update image status after timeout:", updateError);
+          console.error("Failed to update image status after init error:", updateError);
         }
+        
+        setIsSubmitting(false);
+        return;
       }
       
-      // Otherwise, we update image status to failed and remove it from canvas
+      // STEP 3: Process payment
       try {
-        await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
-        // Remove the pending image from the canvas
-        setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
-      } catch (updateError) {
-        console.error("Failed to update image status after payment error:", updateError);
+        const success = await processPayment(paymentId);
+        
+        if (!success) {
+          // Change log level for user rejections
+          if (error?.category === 'user_rejection') {
+            console.log("User rejected the transaction");
+          } else {
+            console.error("Payment failed:", error?.message);
+          }
+          
+          // Handle user rejection 
+          if (error?.category === 'user_rejection') {
+            console.log("User rejected the transaction - returning to confirmation screen");
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // Handle duplicate transaction error specifically
+          if (error?.code === 'DUPLICATE_TRANSACTION') {
+            console.log("Detected duplicate transaction, need to refresh");
+            
+            // Clean up any session data
+            clearSessionBlockhashData();
+            
+            // If we have a transaction hash, mark as success
+            if (error.originalError?.transactionHash) {
+              console.log("Found transaction hash in error, marking as success:", error.originalError.transactionHash);
+              
+              // Update image status to success
+              try {
+                await updateImageStatus(imageId, IMAGE_STATUS.CONFIRMED, true);
+                
+                // Update the UI
+                setPlacedImages(prev => prev.map(img => 
+                  img.id === imageId.toString()
+                    ? { ...img, status: IMAGE_STATUS.CONFIRMED }
+                    : img
+                ));
+                
+                // Cleanup and reset
+                setTempImage(null);
+                setPendingConfirmation(null);
+                resetPayment();
+                
+                setIsSubmitting(false);
+                return;
+              } catch (updateError) {
+                console.error("Failed to update image status after handling duplicate transaction:", updateError);
+              }
+            }
+            
+            // If we couldn't recover, show error and ask user to refresh
+            setPaymentError("Transaction already processed. Please refresh the page and try again.");
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // Handle timeout specifically
+          if (error?.category === 'timeout_error') {
+            // Clean up any records created for this session
+            try {
+              await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT);
+              setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+            } catch (updateError) {
+              console.log("Failed to update image status after timeout:", updateError);
+            }
+          }
+          
+          // Otherwise, we update image status to failed and remove it from canvas
+          try {
+            await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+            // Remove the pending image from the canvas
+            setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+          } catch (updateError) {
+            console.error("Failed to update image status after payment error:", updateError);
+          }
+          
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Clean up on successful payment
+        console.log("Payment successful, refreshing page...");
+        window.location.reload();
+      } catch (processingError) {
+        console.error("Error during payment processing:", processingError);
+        setPaymentError(`Payment processing error: ${processingError instanceof Error ? processingError.message : "Unknown error"}`);
+        
+        // Update image status to failed
+        try {
+          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+          // Remove the pending image from the canvas
+          setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
+        } catch (updateError) {
+          console.error("Failed to update image status after payment error:", updateError);
+        }
+        
+        setIsSubmitting(false);
       }
-      
+    }, 500), // 500ms debounce time
+    [tempImage, connected, publicKey, initializePayment, processPayment, error, resetPayment]
+  );
+
+  const handleConfirmPlacement = useCallback(async () => {
+    // Check if we're already processing - prevent double clicks
+    if (isPaymentProcessing || isSubmitting) {
+      console.log("Payment already in progress, ignoring duplicate request");
       return;
     }
+
+    // Set submitting flag to prevent duplicates
+    setIsSubmitting(true);
     
-    // Clean up on successful payment
-    console.log("Payment successful, refreshing page...");
-    window.location.reload();
-  };
+    // Use our debounced version to handle the actual submission
+    debouncedConfirmPlacement();
+  }, [debouncedConfirmPlacement, isPaymentProcessing, isSubmitting]);
 
   const handleCancelPlacement = () => {
     setPendingConfirmation(null);
     resetPayment();
+    clearSessionBlockhashData();
   };
 
   const handleDone = () => {
     console.log("Payment complete, resetting state for new transaction");
     
     // Clean up session storage
-    try {
-      if (typeof window !== 'undefined') {
-        const keysToRemove = [];
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const key = sessionStorage.key(i);
-          if (key && (key.includes('blockhash') || key.includes('transaction'))) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach(key => sessionStorage.removeItem(key));
-      }
-    } catch (e) {
-      console.error("Failed to clear session storage:", e);
-    }
+    clearSessionBlockhashData();
     
     // Reset all state
     resetState();
@@ -444,6 +521,7 @@ export function useCanvasState(): CanvasState {
   
   const handleRetryPayment = () => {
     setPaymentError(null);
+    setIsSubmitting(false);
     
     // If there was an error about already processed transaction, reset completely
     if (error?.category === 'blockchain_error' && error.code === 'DUPLICATE_TRANSACTION') {
@@ -451,6 +529,9 @@ export function useCanvasState(): CanvasState {
       window.location.reload();
       return;
     }
+    
+    // Clean blockchain state
+    clearSessionBlockhashData();
     
     // Otherwise, try to process the payment again
     handleConfirmPlacement();
@@ -462,7 +543,7 @@ export function useCanvasState(): CanvasState {
     tempImage,
     pendingConfirmation,
     paymentError,
-    isPaymentProcessing,
+    isPaymentProcessing: isPaymentProcessing || isSubmitting,
     mousePosition,
     isLoadingImages,
     canvasRef,

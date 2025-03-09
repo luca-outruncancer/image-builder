@@ -40,6 +40,7 @@ export interface PaymentMetadata {
   width: number;
   height: number;
   fileName?: string;
+  paymentId?: string; // Added for tracking unique payments
 }
 
 // Payment request object
@@ -64,6 +65,7 @@ export interface TransactionResult {
   transactionHash?: string;
   error?: PaymentError;
   blockchainConfirmation?: boolean;
+  reused?: boolean; // Indicates this is a reused transaction that was already processed
 }
 
 // Status response for payment

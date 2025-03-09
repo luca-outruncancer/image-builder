@@ -2,6 +2,7 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
+import { IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
 
 interface ResizeOptions {
   width: number;
@@ -11,6 +12,8 @@ interface ResizeOptions {
   format?: 'jpeg' | 'png' | 'webp' | 'avif';
   quality?: number;
   background?: string;
+  // Option to override global quality setting
+  highQuality?: boolean;
 }
 
 export interface ResizeResult {
@@ -27,6 +30,7 @@ export interface ResizeResult {
 
 /**
  * Resizes an image with detailed error handling and logging
+ * Enhanced to prioritize image quality while still managing file size
  * 
  * @param sourceBuffer - Original image buffer
  * @param targetPath - Path to save the resized image
@@ -43,45 +47,130 @@ export async function resizeImage(
   let resizedBuffer: Buffer | null = null;
   
   try {
+    // Check if high quality processing is enabled globally
+    const highQualityEnabled = typeof options.highQuality !== 'undefined' 
+      ? options.highQuality 
+      : IMAGE_SETTINGS.HIGH_QUALITY_MODE && FEATURES.HIGH_QUALITY_IMAGES;
+    
     console.log(`[ImageResizer] Starting resize operation for ${targetPath}`, {
       targetWidth: options.width,
       targetHeight: options.height,
       originalSize: `${(originalSize / 1024).toFixed(1)}KB`,
-      format: options.format || 'original'
+      format: options.format || 'original',
+      highQuality: highQualityEnabled
     });
 
     // Get input image metadata
     const metadata = await sharp(sourceBuffer).metadata();
     console.log(`[ImageResizer] Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
     
-    // Choose output format - prefer WebP for better compression unless specified
-    const outputFormat = options.format || (metadata.size && metadata.size > 100000 ? 'webp' : metadata.format);
+    // Choose output format based on needs and settings
+    const hasTransparency = metadata.hasAlpha || metadata.format === 'png' || metadata.format === 'webp';
+    
+    // Determine output format based on constants and image properties
+    let outputFormat = options.format;
+    if (!outputFormat) {
+      // If a specific format is preferred in constants
+      if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT) {
+        outputFormat = IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT as 'jpeg' | 'png' | 'webp' | 'avif';
+      } 
+      // If we should preserve original format when possible
+      else if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_ORIGINAL && metadata.format) {
+        if (metadata.format === 'jpeg' || metadata.format === 'png' || 
+            metadata.format === 'webp' || metadata.format === 'avif') {
+          outputFormat = metadata.format as 'jpeg' | 'png' | 'webp' | 'avif';
+        }
+      }
+      
+      // If we need to preserve transparency and format doesn't support it
+      if (hasTransparency && IMAGE_SETTINGS.PRESERVE_TRANSPARENCY) {
+        if (outputFormat === 'jpeg') {
+          outputFormat = 'png';
+        }
+      }
+      
+      // Default format if still not determined
+      if (!outputFormat) {
+        outputFormat = hasTransparency ? 'png' : 
+          (metadata.format === 'jpeg' ? 'jpeg' : 'webp');
+      }
+    }
     
     // Configure Sharp with basic error handling
-    let sharpInstance = sharp(sourceBuffer, { failOnError: false });
+    let sharpInstance = sharp(sourceBuffer, { 
+      failOnError: false,
+    });
     
-    // Apply resize operation
+    // Apply resize operation with settings from constants
     sharpInstance = sharpInstance.resize({
       width: options.width,
       height: options.height,
-      fit: options.fit || 'cover',
+      fit: options.fit || IMAGE_SETTINGS.DEFAULT_FIT,
       position: options.position || 'center',
-      background: options.background || { r: 0, g: 0, b: 0, alpha: 0 }
+      background: options.background || { r: 0, g: 0, b: 0, alpha: 0 },
+      // Improve quality with these settings
+      withoutEnlargement: false, // Allow enlargement if needed
+      withoutReduction: false,
+      kernel: IMAGE_SETTINGS.ADVANCED.KERNEL,
     });
     
-    // Apply format-specific settings
+    // Determine quality based on image size if adaptive quality is enabled
+    const determineQuality = () => {
+      // First check if quality was explicitly set in options
+      if (options.quality) return options.quality;
+      
+      // Otherwise, use adaptive quality if enabled
+      if (IMAGE_SETTINGS.SIZE_ADAPTIVE_QUALITY) {
+        const totalPixels = options.width * options.height;
+        
+        if (totalPixels <= IMAGE_SETTINGS.SMALL_IMAGE_THRESHOLD) {
+          return IMAGE_SETTINGS.SMALL_IMAGE_QUALITY;
+        } else if (totalPixels <= IMAGE_SETTINGS.MEDIUM_IMAGE_THRESHOLD) {
+          return IMAGE_SETTINGS.MEDIUM_IMAGE_QUALITY;
+        } else {
+          return IMAGE_SETTINGS.LARGE_IMAGE_QUALITY;
+        }
+      }
+      
+      // Fall back to the default quality setting
+      return highQualityEnabled ? IMAGE_SETTINGS.QUALITY.DEFAULT : 80;
+    };
+    
+    // Apply format-specific settings from constants
     switch(outputFormat) {
       case 'jpeg':
-        sharpInstance = sharpInstance.jpeg({ quality: options.quality || 85 });
+        sharpInstance = sharpInstance.jpeg({ 
+          quality: determineQuality(),
+          // Better JPEG options
+          trellisQuantisation: true,
+          overshootDeringing: true,
+          optimiseScans: true,
+          mozjpeg: IMAGE_SETTINGS.ADVANCED.MOZJPEG
+        });
         break;
       case 'png':
-        sharpInstance = sharpInstance.png({ compressionLevel: 9 });
+        sharpInstance = sharpInstance.png({ 
+          // Use compression level from constants
+          compressionLevel: IMAGE_SETTINGS.QUALITY.PNG_COMPRESSION,
+          adaptiveFiltering: true,
+          palette: false 
+        });
         break;
       case 'webp':
-        sharpInstance = sharpInstance.webp({ quality: options.quality || 80 });
+        sharpInstance = sharpInstance.webp({ 
+          quality: determineQuality(),
+          // Use settings from constants
+          lossless: hasTransparency && IMAGE_SETTINGS.ADVANCED.USE_LOSSLESS_FOR_TRANSPARENCY,
+          nearLossless: hasTransparency && IMAGE_SETTINGS.ADVANCED.USE_LOSSLESS_FOR_TRANSPARENCY,
+          smartSubsample: true,
+          effort: IMAGE_SETTINGS.ADVANCED.EFFORT_LEVEL
+        });
         break;
       case 'avif':
-        sharpInstance = sharpInstance.avif({ quality: options.quality || 75 });
+        sharpInstance = sharpInstance.avif({ 
+          quality: determineQuality(),
+          speed: 5 // Range 0-10, lower is slower but better quality
+        });
         break;
     }
     
@@ -110,6 +199,7 @@ export async function resizeImage(
       newSize: `${(fileStats.size / 1024).toFixed(1)}KB`,
       compressionRatio: compressionRatio.toFixed(2),
       dimensions: `${finalMetadata.width}x${finalMetadata.height}`,
+      format: outputFormat,
       processingTimeMs
     });
     
@@ -188,23 +278,51 @@ export async function resizeImage(
 }
 
 /**
- * Determines the optimal image format based on input size and type
+ * Determines the optimal image format based on input size, type and quality needs
+ * Uses constants for configurable behavior
  * 
  * @param originalFormat The original image format
  * @param fileSize Size in bytes
  * @returns The recommended output format
  */
 export function determineOptimalFormat(originalFormat: string, fileSize: number): 'jpeg' | 'png' | 'webp' | 'avif' {
-  // For small files, preserve transparency if needed
-  if (fileSize < 100 * 1024 && (originalFormat === 'png' || originalFormat === 'webp')) {
-    return originalFormat === 'webp' ? 'webp' : 'png';
+  // If a specific format is preferred in settings, use that
+  if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT) {
+    const preferredFormat = IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT;
+    if (['jpeg', 'png', 'webp', 'avif'].includes(preferredFormat)) {
+      return preferredFormat as 'jpeg' | 'png' | 'webp' | 'avif';
+    }
   }
   
-  // For medium-sized files use WebP for good balance
-  if (fileSize < 500 * 1024) {
+  // If we should prefer original format
+  if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_ORIGINAL) {
+    // Make sure it's a valid format we support
+    if (['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(originalFormat)) {
+      // Normalize 'jpg' to 'jpeg'
+      if (originalFormat === 'jpg') return 'jpeg';
+      return originalFormat as 'jpeg' | 'png' | 'webp' | 'avif';
+    }
+  }
+  
+  // Standard selection logic as fallback
+  
+  // Preserve PNG for transparency support if enabled
+  if (originalFormat === 'png' && IMAGE_SETTINGS.PRESERVE_TRANSPARENCY) {
+    // For large PNGs, suggest webp which supports transparency with better compression
+    return fileSize > 500 * 1024 ? 'webp' : 'png';
+  }
+  
+  // Keep original format if it's already optimized
+  if (originalFormat === 'webp') {
     return 'webp';
   }
   
-  // For really large files, consider more aggressive compression
+  // For JPEG images
+  if (originalFormat === 'jpeg' || originalFormat === 'jpg') {
+    // Keep as JPEG for compatibility and quality
+    return 'jpeg';
+  }
+  
+  // Default to WebP for good balance of quality and compression
   return 'webp';
 }
