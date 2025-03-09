@@ -4,13 +4,20 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
-import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
-import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
+import { createImageRecord, IMAGE_STATUS, ImageRecord } from '@/lib/imageStorage';
+import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
+import { apiLogger, imageLogger } from '@/utils/logger';
+import { getRequestId } from '@/utils/logger';
 
 export async function POST(request: NextRequest) {
+  const requestId = getRequestId();
   const uploadId = nanoid(6); // Short ID for logging
-  console.log(`[Upload:${uploadId}] Processing new upload request`);
+  
+  apiLogger.info(`Processing new image upload request`, {
+    uploadId,
+    requestId
+  });
   
   try {
     const formData = await request.formData();
@@ -20,7 +27,13 @@ export async function POST(request: NextRequest) {
     const walletAddress = formData.get('wallet') as string;
 
     if (!file || !positionString || !sizeString) {
-      console.log(`[Upload:${uploadId}] Missing required parameters`);
+      apiLogger.error(`Missing required parameters`, { 
+        uploadId,
+        hasFile: !!file,
+        hasPosition: !!positionString,
+        hasSize: !!sizeString
+      });
+      
       return NextResponse.json(
         { error: 'File, position, and size are required' },
         { status: 400 }
@@ -30,12 +43,13 @@ export async function POST(request: NextRequest) {
     const position = JSON.parse(positionString);
     const size = JSON.parse(sizeString);
 
-    console.log(`[Upload:${uploadId}] Request validated:`, { 
+    apiLogger.info(`Upload request validated`, { 
+      uploadId, 
       fileName: file.name, 
       fileSize: `${(file.size / 1024).toFixed(1)}KB`,
       position, 
       targetSize: size,
-      wallet: walletAddress ? `${walletAddress.slice(0, 6)}...` : 'none'
+      wallet: walletAddress ? `${walletAddress.slice(0, 8)}...` : 'none'
     });
 
     // Generate a unique ID for the file and create paths
@@ -51,7 +65,7 @@ export async function POST(request: NextRequest) {
       // Create upload directory if needed
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
-        console.log(`[Upload:${uploadId}] Created uploads directory: ${uploadDir}`);
+        apiLogger.info(`Created uploads directory`, { uploadId, path: uploadDir });
       }
       
       const bytes = await file.arrayBuffer();
@@ -60,75 +74,75 @@ export async function POST(request: NextRequest) {
       // Save to temp path first for safety
       tempOriginalPath = path.join(uploadDir, `temp_${fileId}.${originalExtension}`);
       await writeFile(tempOriginalPath, originalBuffer);
-      console.log(`[Upload:${uploadId}] Original file saved to temp location: ${tempOriginalPath}`);
+      
+      apiLogger.debug(`Original file saved to temp location`, { 
+        uploadId, 
+        path: tempOriginalPath,
+        size: originalBuffer.length
+      });
     } catch (fileError) {
-      console.error(`[Upload:${uploadId}] Error saving original file:`, fileError);
+      apiLogger.error(`Error saving original file`, { uploadId, error: fileError });
       return NextResponse.json(
         { error: 'Failed to save uploaded file: ' + (fileError instanceof Error ? fileError.message : String(fileError)) },
         { status: 500 }
       );
     }
     
-    // Step 2: Determine format for resized image - preserve quality when possible
+    // Step 2: Determine format for resized image 
     const targetFormat = determineOptimalFormat(originalExtension, originalBuffer.length);
     const finalFileName = `${fileId}.${targetFormat}`;
     const finalFilePath = path.join(uploadDir, finalFileName);
     const publicUrl = `/uploads/${finalFileName}`;
     
-    // Step 3: Apply MINIMUM_SIZE_MULTIPLIER to prevent excessive downsizing
-    // The displayed size will remain as requested, but we'll store a larger version
-    const multiplier = IMAGE_SETTINGS.MINIMUM_SIZE_MULTIPLIER || 1;
-    const storageWidth = size.width * multiplier;
-    const storageHeight = size.height * multiplier;
-    
-    console.log(`[Upload:${uploadId}] Applying size multiplier: ${multiplier}x`, {
-      requestedSize: `${size.width}x${size.height}`,
-      actualStorageSize: `${storageWidth}x${storageHeight}`
+    apiLogger.debug(`Selected output format`, { 
+      uploadId, 
+      originalFormat: originalExtension, 
+      targetFormat,
+      originalSize: `${(originalBuffer.length / 1024).toFixed(1)}KB`
     });
     
-    // Step 4: Resize the image using settings from constants and the multiplier
+    // Step 3: Resize the image
     let resizeResult;
     try {
-      console.log(`[Upload:${uploadId}] Starting image resize operation to ${storageWidth}x${storageHeight} with quality settings:`, {
-        highQualityEnabled: FEATURES.HIGH_QUALITY_IMAGES && IMAGE_SETTINGS.HIGH_QUALITY_MODE,
-        adaptiveQuality: IMAGE_SETTINGS.SIZE_ADAPTIVE_QUALITY
+      apiLogger.info(`Starting image resize operation`, { 
+        uploadId, 
+        targetWidth: size.width,
+        targetHeight: size.height
       });
       
-      // Let the resizer determine the quality from our constants
       resizeResult = await resizeImage(
         originalBuffer,
         finalFilePath,
         {
-          width: storageWidth,
-          height: storageHeight,
+          width: size.width,
+          height: size.height,
           format: targetFormat as 'jpeg' | 'png' | 'webp' | 'avif',
-          fit: IMAGE_SETTINGS.DEFAULT_FIT,
-          // No explicit quality setting - let it use the constants
-          highQuality: FEATURES.HIGH_QUALITY_IMAGES // Use feature flag
+          fit: 'cover'
         }
       );
       
       if (resizeResult.success) {
-        console.log(`[Upload:${uploadId}] High-quality resize successful:`, {
+        imageLogger.info(`Resize successful`, {
+          uploadId,
           originalSize: `${(originalBuffer.length / 1024).toFixed(1)}KB`,
           newSize: `${(resizeResult.resizedSize / 1024).toFixed(1)}KB`,
           compressionRatio: (originalBuffer.length / resizeResult.resizedSize).toFixed(2),
-          processingTime: `${resizeResult.processingTimeMs}ms`,
-          format: targetFormat
+          processingTime: `${resizeResult.processingTimeMs}ms`
         });
       } else {
-        console.warn(`[Upload:${uploadId}] Resize operation failed but fallback succeeded:`, {
+        imageLogger.warn(`Resize operation failed but fallback succeeded`, {
+          uploadId,
           reason: resizeResult.error?.message || 'Unknown error',
           usingOriginal: resizeResult.resizedSize === originalBuffer.length
         });
       }
     } catch (resizeError) {
-      console.error(`[Upload:${uploadId}] Critical resize error:`, resizeError);
+      imageLogger.error(`Critical resize error`, { uploadId, error: resizeError });
       
       // Use original as fallback in case of complete failure
       try {
         await writeFile(finalFilePath, originalBuffer);
-        console.log(`[Upload:${uploadId}] Fell back to original file after resize failure`);
+        apiLogger.info(`Fell back to original file after resize failure`, { uploadId });
         
         resizeResult = {
           success: false,
@@ -136,13 +150,13 @@ export async function POST(request: NextRequest) {
           format: originalExtension,
           originalSize: originalBuffer.length,
           resizedSize: originalBuffer.length,
-          width: storageWidth,
-          height: storageHeight,
+          width: size.width,
+          height: size.height,
           processingTimeMs: 0,
           error: resizeError
         };
       } catch (fallbackError) {
-        console.error(`[Upload:${uploadId}] Complete failure - could not save fallback:`, fallbackError);
+        apiLogger.error(`Complete failure - could not save fallback`, { uploadId, error: fallbackError });
         return NextResponse.json(
           { error: 'Failed to process image: could not save either original or resized version' },
           { status: 500 }
@@ -150,35 +164,34 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Step 5: Clean up temp file
+    // Step 4: Clean up temp file
     try {
       if (tempOriginalPath && fs.existsSync(tempOriginalPath)) {
         fs.unlinkSync(tempOriginalPath);
-        console.log(`[Upload:${uploadId}] Removed temporary file: ${tempOriginalPath}`);
+        apiLogger.debug(`Removed temporary file`, { uploadId, path: tempOriginalPath });
       }
     } catch (cleanupError) {
-      console.warn(`[Upload:${uploadId}] Failed to clean up temp file:`, cleanupError);
+      apiLogger.warn(`Failed to clean up temp file`, { uploadId, error: cleanupError });
       // Non-critical error, continue
     }
     
-    // Step 6: Store in database (notice we store the ORIGINAL requested size, not the multiplied one)
-    // This ensures that the image appears at the size the user requested on the canvas
+    // Step 5: Store in database
     try {
       const initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
       
-      console.log(`[Upload:${uploadId}] Creating database record with display size: ${size.width}x${size.height}`);
+      apiLogger.info(`Creating database record`, { uploadId });
       const { success, data: imageRecord, error } = await createImageRecord({
         image_location: publicUrl,
         start_position_x: position.x,
         start_position_y: position.y,
-        size_x: size.width,  // Original requested width (for display)
-        size_y: size.height, // Original requested height (for display)
+        size_x: size.width,
+        size_y: size.height,
         image_status: initialStatus,
         user_wallet: walletAddress
       });
       
       if (!success || !imageRecord) {
-        console.error(`[Upload:${uploadId}] Database record creation failed:`, error);
+        apiLogger.error(`Database record creation failed`, { uploadId, error });
         return NextResponse.json({
           success: true, // Still count as success since file was saved
           url: publicUrl,
@@ -196,15 +209,17 @@ export async function POST(request: NextRequest) {
             originalSize: resizeResult.originalSize,
             finalSize: resizeResult.resizedSize,
             format: resizeResult.format,
-            compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
-            storedSize: `${storageWidth}x${storageHeight}`,
-            displaySize: `${size.width}x${size.height}`
+            compressionRatio: resizeResult.originalSize / resizeResult.resizedSize
           },
           warning: "Image record created in memory only. Database connection failed: " + error
         });
       }
       
-      console.log(`[Upload:${uploadId}] Upload process complete. ImageID: ${imageRecord.image_id}`);
+      apiLogger.info(`Upload process complete`, { 
+        uploadId, 
+        imageId: imageRecord.image_id,
+        walletAddress: walletAddress ? `${walletAddress.slice(0, 8)}...` : 'none'
+      });
       
       // Return success with optimization info
       return NextResponse.json({
@@ -216,13 +231,11 @@ export async function POST(request: NextRequest) {
           finalSize: resizeResult.resizedSize,
           format: resizeResult.format,
           processingTimeMs: resizeResult.processingTimeMs,
-          compressionRatio: parseFloat((resizeResult.originalSize / resizeResult.resizedSize).toFixed(2)),
-          storedSize: `${storageWidth}x${storageHeight}`,
-          displaySize: `${size.width}x${size.height}`
+          compressionRatio: parseFloat((resizeResult.originalSize / resizeResult.resizedSize).toFixed(2))
         }
       });
     } catch (dbError) {
-      console.error(`[Upload:${uploadId}] Database operation error:`, dbError);
+      apiLogger.error(`Database operation error`, { uploadId, error: dbError });
       
       // Still return success with the file URL and a warning
       return NextResponse.json({
@@ -242,15 +255,17 @@ export async function POST(request: NextRequest) {
           originalSize: resizeResult.originalSize,
           finalSize: resizeResult.resizedSize,
           format: resizeResult.format,
-          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
-          storedSize: `${storageWidth}x${storageHeight}`,
-          displaySize: `${size.width}x${size.height}`
+          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize
         },
         warning: "Database operation failed. File was saved but record wasn't stored in the database."
       });
     }
   } catch (error) {
-    console.error(`[Upload:${uploadId}] Unexpected error:`, error);
+    apiLogger.error(`Unexpected error in upload process`, { 
+      uploadId, 
+      error: error instanceof Error ? error.message : String(error)
+    });
+    
     return NextResponse.json(
       { error: 'Failed to upload image: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
