@@ -1,6 +1,7 @@
 // src/lib/imageStorage.ts
 
 import { createClient } from '@supabase/supabase-js';
+import { storageLogger } from '@/utils/logger';
 
 // Use environment variables for Supabase connection
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -11,12 +12,12 @@ let supabase: any = null;
 try {
   if (supabaseUrl && supabaseKey) {
     supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("Supabase client initialized in imageStorage");
+    storageLogger.info("Supabase client initialized in imageStorage");
   } else {
-    console.error("Unable to initialize Supabase client due to missing environment variables in imageStorage");
+    storageLogger.error("Unable to initialize Supabase client due to missing environment variables in imageStorage");
   }
 } catch (error) {
-  console.error("Error initializing Supabase client in imageStorage:", error);
+  storageLogger.error("Error initializing Supabase client in imageStorage", { error });
 }
 
 // Image status constants
@@ -50,7 +51,7 @@ export interface ImageRecord {
 export async function createImageRecord(imageData: Partial<ImageRecord>) {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return { 
         success: false, 
         error: "Supabase client not available. Check your environment variables." 
@@ -58,6 +59,12 @@ export async function createImageRecord(imageData: Partial<ImageRecord>) {
     }
     
     const now = new Date().toISOString();
+    
+    storageLogger.info("Creating new image record", {
+      position: `${imageData.start_position_x},${imageData.start_position_y}`,
+      size: `${imageData.size_x}x${imageData.size_y}`,
+      status: imageData.image_status
+    });
     
     const { data, error } = await supabase
       .from('images')
@@ -77,13 +84,21 @@ export async function createImageRecord(imageData: Partial<ImageRecord>) {
       .single();
     
     if (error) {
-      console.error("Error creating image record:", error);
+      storageLogger.error("Error creating image record", { error });
       throw error;
     }
     
+    storageLogger.info("Image record created successfully", { imageId: data.image_id });
     return { success: true, data };
   } catch (error) {
-    console.error("Failed to create image record:", error);
+    storageLogger.error("Failed to create image record", { 
+      error,
+      imageData: {
+        location: imageData.image_location,
+        position: `${imageData.start_position_x},${imageData.start_position_y}`,
+        size: `${imageData.size_x}x${imageData.size_y}`
+      }
+    });
     return { success: false, error };
   }
 }
@@ -94,12 +109,18 @@ export async function createImageRecord(imageData: Partial<ImageRecord>) {
 export async function updateImageStatus(imageId: number, status: number, confirmed: boolean = false) {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return { 
         success: false, 
         error: "Supabase client not available. Check your environment variables." 
       };
     }
+    
+    storageLogger.info("Updating image status", {
+      imageId,
+      newStatus: status,
+      confirmed
+    });
     
     const updateData: any = {
       image_status: status,
@@ -121,11 +142,16 @@ export async function updateImageStatus(imageId: number, status: number, confirm
         .single();
       
       if (fetchError) {
-        console.error("Error fetching current image data:", fetchError);
+        storageLogger.error("Error fetching current image data", { imageId, error: fetchError });
         // Continue with update without incrementing
       } else {
         const currentAttempts = currentImage?.payment_attempts || 0;
         updateData.payment_attempts = currentAttempts + 1;
+        storageLogger.debug("Incrementing payment attempts", { 
+          imageId, 
+          previousAttempts: currentAttempts,
+          newAttempts: currentAttempts + 1
+        });
       }
     }
     
@@ -142,13 +168,23 @@ export async function updateImageStatus(imageId: number, status: number, confirm
       .single();
     
     if (error) {
-      console.error("Error updating image status:", error);
+      storageLogger.error("Error updating image status", { imageId, error });
       throw error;
     }
     
+    storageLogger.info("Image status updated successfully", { 
+      imageId, 
+      status,
+      confirmed: !!confirmed
+    });
+    
     return { success: true, data };
   } catch (error) {
-    console.error("Failed to update image status:", error);
+    storageLogger.error("Failed to update image status", { 
+      imageId, 
+      status,
+      error
+    });
     return { success: false, error };
   }
 }
@@ -160,9 +196,11 @@ export async function updateImageStatus(imageId: number, status: number, confirm
 export async function getImageRecords(): Promise<ImageRecord[]> {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return [];
     }
+    
+    storageLogger.info("Fetching all active image records");
     
     const { data, error } = await supabase
       .from('images')
@@ -175,13 +213,14 @@ export async function getImageRecords(): Promise<ImageRecord[]> {
       .order('created_at', { ascending: false });
     
     if (error) {
-      console.error("Error fetching image records:", error);
+      storageLogger.error("Error fetching image records", { error });
       throw error;
     }
     
+    storageLogger.info("Retrieved image records", { count: data?.length || 0 });
     return data || [];
   } catch (error) {
-    console.error("Failed to get image records:", error);
+    storageLogger.error("Failed to get image records", { error });
     return [];
   }
 }
@@ -192,9 +231,11 @@ export async function getImageRecords(): Promise<ImageRecord[]> {
 export async function getImageById(imageId: number): Promise<ImageRecord | null> {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return null;
     }
+    
+    storageLogger.debug("Fetching image by ID", { imageId });
     
     const { data, error } = await supabase
       .from('images')
@@ -203,13 +244,18 @@ export async function getImageById(imageId: number): Promise<ImageRecord | null>
       .single();
     
     if (error) {
-      console.error("Error fetching image record by ID:", error);
+      storageLogger.error("Error fetching image record by ID", { imageId, error });
       throw error;
     }
     
+    storageLogger.debug("Retrieved image record", { 
+      imageId, 
+      status: data?.image_status
+    });
+    
     return data || null;
   } catch (error) {
-    console.error(`Failed to get image with ID ${imageId}:`, error);
+    storageLogger.error(`Failed to get image with ID ${imageId}`, { error });
     return null;
   }
 }
@@ -220,9 +266,14 @@ export async function getImageById(imageId: number): Promise<ImageRecord | null>
 export async function isAreaAvailable(x: number, y: number, width: number, height: number): Promise<boolean> {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return true; // Default to available if can't check
     }
+    
+    storageLogger.debug("Checking area availability", { 
+      position: `${x},${y}`, 
+      size: `${width}x${height}`
+    });
     
     const { data, error } = await supabase
       .from('images')
@@ -236,11 +287,15 @@ export async function isAreaAvailable(x: number, y: number, width: number, heigh
       .or(`start_position_y.lt.${y + height},start_position_y.gt.${y - height}`);
     
     if (error) {
-      console.error("Error checking area availability:", error);
+      storageLogger.error("Error checking area availability", { error });
       throw error;
     }
     
     if (!data || data.length === 0) {
+      storageLogger.debug("Area is available (no overlaps)", { 
+        position: `${x},${y}`, 
+        size: `${width}x${height}`
+      });
       return true; // No overlapping images found
     }
     
@@ -257,12 +312,23 @@ export async function isAreaAvailable(x: number, y: number, width: number, heigh
         continue; // No overlap with this image
       }
       
+      storageLogger.debug("Area is NOT available (found overlap)", { 
+        position: `${x},${y}`, 
+        size: `${width}x${height}`,
+        overlapsWithImageId: image.image_id
+      });
+      
       return false; // Overlap found
     }
     
+    storageLogger.debug("Area is available (no overlaps after detailed check)", { 
+      position: `${x},${y}`, 
+      size: `${width}x${height}`
+    });
+    
     return true; // No overlaps found
   } catch (error) {
-    console.error("Failed to check area availability:", error);
+    storageLogger.error("Failed to check area availability", { error });
     return true; // Default to available if check fails
   }
 }
@@ -274,13 +340,17 @@ export async function isAreaAvailable(x: number, y: number, width: number, heigh
 export async function cleanupExpiredPendingPayments(): Promise<{ success: boolean, count?: number, error?: any }> {
   try {
     if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
+      storageLogger.warn("Skipping database operation: Supabase client not available");
       return { success: false, error: "Supabase client not available" };
     }
     
     // Calculate cutoff time (24 hours ago)
     const cutoffTime = new Date();
     cutoffTime.setHours(cutoffTime.getHours() - 24);
+    
+    storageLogger.info("Cleaning up expired pending payments", { 
+      cutoffTime: cutoffTime.toISOString()
+    });
     
     // Update status of expired pending payments
     const { data, error } = await supabase
@@ -293,16 +363,20 @@ export async function cleanupExpiredPendingPayments(): Promise<{ success: boolea
       .lt('created_at', cutoffTime.toISOString());
     
     if (error) {
-      console.error("Error cleaning up expired pending payments:", error);
+      storageLogger.error("Error cleaning up expired pending payments", { error });
       throw error;
     }
+    
+    storageLogger.info("Cleanup of expired pending payments complete", { 
+      updatedCount: data?.length || 0 
+    });
     
     return { 
       success: true, 
       count: data?.length || 0 
     };
   } catch (error) {
-    console.error("Failed to clean up expired pending payments:", error);
+    storageLogger.error("Failed to clean up expired pending payments", { error });
     return { success: false, error };
   }
 }
