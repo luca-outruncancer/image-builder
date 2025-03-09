@@ -31,9 +31,8 @@ DECLARE
   lock_count INTEGER;
   image_count INTEGER;
 BEGIN
-  -- Start a transaction with proper isolation level
-  -- This ensures that the check and lock operations are atomic
-  SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+  -- Remove the problematic transaction isolation level setting
+  -- This will use the default isolation level of the database
   
   -- Check if the area is currently locked
   SELECT COUNT(*) INTO lock_count
@@ -182,3 +181,7 @@ GRANT EXECUTE ON FUNCTION check_area_availability TO authenticated;
 GRANT EXECUTE ON FUNCTION lock_area TO authenticated;
 GRANT EXECUTE ON FUNCTION release_lock TO authenticated;
 GRANT EXECUTE ON FUNCTION find_image_at_position TO authenticated;
+
+-- Grant table permissions
+GRANT SELECT, INSERT, UPDATE ON area_locks TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE area_locks_lock_id_seq TO authenticated;
