@@ -215,10 +215,10 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      apiLogger.info(`Upload process complete`, { 
+      apiLogger.info(`Upload process complete`, {
         uploadId, 
         imageId: imageRecord.image_id,
-        walletAddress: walletAddress ? `${walletAddress.slice(0, 8)}...` : 'none'
+        compressionRatio: resizeResult.originalSize / resizeResult.resizedSize
       });
       
       // Return success with optimization info
@@ -263,9 +263,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     apiLogger.error(`Unexpected error in upload process`, { 
       uploadId, 
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error) 
     });
-    
     return NextResponse.json(
       { error: 'Failed to upload image: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
