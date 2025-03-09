@@ -28,7 +28,7 @@ import { ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS, getMintAddress } from '
 const PAYMENT_TIMEOUT_MS = 180000; // 3 minutes
 
 /**
- * Core PaymentService that orchestrates the payment flow
+ * Core PaymentService that orchestrates the payment flow with server-side verification
  */
 export class PaymentService {
   private paymentProvider: SolanaPaymentProvider;
@@ -36,6 +36,7 @@ export class PaymentService {
   private activePayments: Map<string, PaymentSession>;
   private paymentTimeouts: Map<string, NodeJS.Timeout>;
   private wallet: WalletConfig;
+  private apiKey: string; // For API authentication (should be properly managed in production)
   
   constructor(wallet: WalletConfig) {
     this.wallet = wallet;
@@ -43,6 +44,7 @@ export class PaymentService {
     this.storageProvider = new PaymentStorageProvider();
     this.activePayments = new Map();
     this.paymentTimeouts = new Map();
+    this.apiKey = process.env.NEXT_PUBLIC_API_KEY || 'dev-key';
     
     console.log("PaymentService initialized");
     console.log("Active sessions on init:", this.activePayments.size);
@@ -145,7 +147,7 @@ export class PaymentService {
   }
   
   /**
-   * Process a payment
+   * Process a payment with server-side verification
    */
   public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
     try {
@@ -228,6 +230,42 @@ export class PaymentService {
         error: result.error ? result.error.message : "none"
       });
       
+      // If transaction succeeded, verify it server-side
+      if (result.success && result.transactionHash) {
+        try {
+          console.log(`Verifying transaction server-side for payment ${paymentId}`);
+          const verificationResult = await this.verifyTransactionServerSide(
+            result.transactionHash,
+            paymentSession.imageId
+          );
+          
+          // Update result based on server verification
+          if (!verificationResult.success) {
+            console.error(`Server verification failed for payment ${paymentId}:`, verificationResult.error);
+            
+            // Override client-side success with server verification result
+            result.success = false;
+            result.error = createPaymentError(
+              ErrorCategory.BLOCKCHAIN_ERROR,
+              'Transaction verification failed: ' + (verificationResult.error?.message || 'Unknown error'),
+              verificationResult.error,
+              false
+            );
+          } else {
+            console.log(`Server verification successful for payment ${paymentId}`);
+            // Update transaction hash if the server provided one (might be different in case of reused tx)
+            if (verificationResult.transactionHash) {
+              result.transactionHash = verificationResult.transactionHash;
+            }
+          }
+        } catch (verifyError) {
+          console.error(`Error during server verification for payment ${paymentId}:`, verifyError);
+          
+          // Don't fail the transaction if verification fails, but log the error
+          console.warn(`Continuing with client-side verification for payment ${paymentId}`);
+        }
+      }
+      
       // Handle the result
       return await this.handlePaymentResult(paymentId, result);
     } catch (error) {
@@ -283,6 +321,42 @@ export class PaymentService {
           error,
           true
         )
+      };
+    }
+  }
+  
+  /**
+   * Verify a transaction using the server-side API
+   */
+  private async verifyTransactionServerSide(signature: string, imageId: number): Promise<any> {
+    try {
+      // Call server-side verification API
+      const response = await fetch('/api/verify-transaction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': this.apiKey
+        },
+        body: JSON.stringify({
+          signature,
+          imageId
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server verification failed: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Transaction verification error:', error);
+      return {
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : String(error)
+        }
       };
     }
   }
