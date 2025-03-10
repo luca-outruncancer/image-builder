@@ -110,19 +110,37 @@ export function extractSignatureFromError(error: any): string | null {
   try {
     // Check if it's a SendTransactionError with logs
     if (error instanceof SendTransactionError && error.logs) {
+      // First look for direct signature mentions in logs
       for (const log of error.logs) {
         const matches = log.match(/signature: ([A-Za-z0-9]+)/);
         if (matches && matches[1]) {
           return matches[1];
         }
       }
+
+      // Then check for transaction signature in log format
+      for (const log of error.logs) {
+        // Look for typical transaction signature format (base58 string of ~80-90 chars)
+        const sigMatch = log.match(/([1-9A-HJ-NP-Za-km-z]{80,90})/);
+        if (sigMatch && sigMatch[1]) {
+          return sigMatch[1];
+        }
+      }
     }
     
     // Try to extract from error message
     const errorMessage = error.message || String(error);
-    const sigMatches = errorMessage.match(/signature ([A-Za-z0-9]+)/);
+    
+    // First check for explicit signature mention
+    const sigMatches = errorMessage.match(/signature ([A-Za-z0-9]{80,90})/);
     if (sigMatches && sigMatches[1]) {
       return sigMatches[1];
+    }
+    
+    // Then try to extract any base58-looking string that might be a signature
+    const base58Matches = errorMessage.match(/([1-9A-HJ-NP-Za-km-z]{80,90})/);
+    if (base58Matches && base58Matches[1]) {
+      return base58Matches[1];
     }
   } catch (e) {
     console.error("Error extracting signature from error:", e);
@@ -132,10 +150,16 @@ export function extractSignatureFromError(error: any): string | null {
 }
 
 /**
- * Generate a unique transaction ID/nonce
+ * Generate a unique transaction ID/nonce based on multiple entropy sources
+ * This creates a more robust nonce that's unique even across sessions
  */
 export function getNonce(): string {
-  return Date.now().toString() + Math.random().toString().slice(2, 8);
+  const timestamp = Date.now();
+  const randomValue = Math.random().toString().slice(2, 10);
+  const entropy = crypto.getRandomValues(new Uint8Array(4))
+    .reduce((acc, val) => acc + val.toString(16).padStart(2, '0'), '');
+  
+  return `${timestamp}_${randomValue}_${entropy}`;
 }
 
 /**
@@ -144,7 +168,11 @@ export function getNonce(): string {
 export function generatePaymentId(): string {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  return `pay_${timestamp}_${random}`;
+  // Add entropy to make it unique even in case of timestamp collisions
+  const entropy = crypto.getRandomValues(new Uint8Array(2))
+    .reduce((acc, val) => acc + val.toString(16), '');
+  
+  return `pay_${timestamp}_${random}_${entropy}`;
 }
 
 /**
@@ -247,7 +275,9 @@ export function clearSessionBlockhashData(): void {
       if (key && (
         key.includes('blockhash') || 
         key.includes('transaction') ||
-        key.includes('lastValidBlockHeight')
+        key.includes('lastValidBlockHeight') ||
+        key.includes('paymentSession') ||
+        key.includes('txSignature')
       )) {
         keysToRemove.push(key);
       }
@@ -262,9 +292,68 @@ export function clearSessionBlockhashData(): void {
       }
     });
     
-    console.log(`Cleared ${keysToRemove.length} blockhash-related items from session storage`);
+    console.log(`Cleared ${keysToRemove.length} session storage items to prevent transaction reuse`);
   } catch (error) {
     console.error("Error clearing session storage:", error);
+  }
+}
+
+/**
+ * Store transaction signature for a payment in session to prevent resubmissions
+ */
+export function storeTransactionSignature(paymentId: string, signature: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) {
+      return;
+    }
+    
+    const key = `txSignature_${paymentId}`;
+    sessionStorage.setItem(key, signature);
+    console.log(`Stored transaction signature for payment ${paymentId}`);
+  } catch (error) {
+    console.error("Error storing transaction signature:", error);
+  }
+}
+
+/**
+ * Get stored transaction signature for a payment
+ */
+export function getStoredTransactionSignature(paymentId: string): string | null {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) {
+      return null;
+    }
+    
+    const key = `txSignature_${paymentId}`;
+    return sessionStorage.getItem(key);
+  } catch (error) {
+    console.error("Error retrieving transaction signature:", error);
+    return null;
+  }
+}
+
+/**
+ * Generate a unique session ID for diagnostic purposes
+ * This helps trace transactions across page refreshes
+ */
+export function getOrCreateSessionId(): string {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) {
+      return `memory_${Date.now()}`;
+    }
+    
+    const key = 'payment_session_id';
+    let sessionId = sessionStorage.getItem(key);
+    
+    if (!sessionId) {
+      sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      sessionStorage.setItem(key, sessionId);
+    }
+    
+    return sessionId;
+  } catch (error) {
+    console.error("Error with session ID:", error);
+    return `fallback_${Date.now()}`;
   }
 }
 
