@@ -48,3 +48,69 @@ export class SolPaymentProcessor {
     }
     return null;
   }
+  
+  /**
+   * Process a SOL payment transaction
+   */
+  public async processPayment(request: PaymentRequest): Promise<TransactionResult> {
+    try {
+      const { amount, recipientWallet, metadata } = request;
+      const paymentId = metadata?.paymentId || 'unknown';
+      
+      console.log(`Processing SOL payment [ID: ${paymentId}] for amount ${amount} SOL`);
+      
+      // Check for existing transaction first
+      const existingSignature = await this.checkExistingTransaction(paymentId);
+      if (existingSignature) {
+        console.log(`Using existing transaction signature: ${existingSignature}`);
+        return {
+          success: true,
+          transactionHash: existingSignature,
+          blockchainConfirmation: true,
+          reused: true
+        };
+      }
+      
+      if (!this.wallet.publicKey || !this.wallet.signTransaction) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.WALLET_ERROR,
+            'Wallet not connected or missing required methods',
+            null,
+            false
+          )
+        };
+      }
+      
+      // Check SOL balance
+      let balance;
+      try {
+        const connection = connectionManager.getConnection();
+        balance = await connection.getBalance(this.wallet.publicKey);
+      } catch (balanceError) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.NETWORK_ERROR,
+            'Failed to check SOL balance',
+            balanceError,
+            true
+          )
+        };
+      }
+      
+      const solBalance = balance / LAMPORTS_PER_SOL;
+      console.log("Current SOL balance:", solBalance);
+      
+      if (solBalance < amount) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.BALANCE_ERROR,
+            `Insufficient SOL balance. You have ${solBalance.toFixed(6)} SOL but need ${amount} SOL`,
+            null,
+            false
+          )
+        };
+      }
