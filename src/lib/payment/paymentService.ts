@@ -166,3 +166,112 @@ export class PaymentService {
       };
     }
   }
+  
+  /**
+   * Process a payment
+   */
+  public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
+    const context = { paymentId };
+    
+    try {
+      paymentLogger.info(`Processing payment ${paymentId}`, null, context);
+      
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
+      // Check if payment exists
+      const paymentSession = this.activePayments.get(paymentId);
+      if (!paymentSession) {
+        paymentLogger.error(`Payment session ${paymentId} not found in active payments`, {
+          activeSessionsIds: Array.from(this.activePayments.keys())
+        }, context);
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            'Payment session not found',
+            null,
+            false
+          )
+        };
+      }
+      
+      // Update payment status
+      paymentSession.status = PaymentStatus.PROCESSING;
+      paymentSession.attempts += 1;
+      paymentSession.updatedAt = new Date().toISOString();
+      this.activePayments.set(paymentId, paymentSession);
+      
+      paymentLogger.debug(`Payment ${paymentId} updated to PROCESSING status`, { 
+        attempt: paymentSession.attempts,
+        imageId: paymentSession.imageId,
+        amount: paymentSession.amount,
+        token: paymentSession.token,
+        transactionId: paymentSession.transactionId
+      }, context, paymentSession.walletAddress);
+      
+      // Update database status
+      if (paymentSession.transactionId) {
+        await this.storageProvider.updateTransactionStatus(
+          paymentSession.transactionId,
+          PaymentStatus.PROCESSING
+        );
+      }
+      
+      // Create payment request object
+      const paymentRequest: PaymentRequest = {
+        amount: paymentSession.amount,
+        token: paymentSession.token,
+        recipientWallet: paymentSession.recipientWallet,
+        metadata: { 
+          ...paymentSession.metadata,
+          paymentId // Make sure the payment ID is included
+        }
+      };
+      
+      paymentLogger.info(`Sending payment request to blockchain for ${paymentId}`, {
+        token: paymentRequest.token,
+        amount: paymentRequest.amount,
+        recipient: paymentRequest.recipientWallet.substring(0, 8) + "...",
+        imageId: paymentRequest.metadata.imageId
+      }, context, paymentSession.walletAddress);
+      
+      // Get token mint address if needed
+      const mintAddress = paymentSession.token === 'SOL' ? null : getMintAddress();
+      
+      // Process the payment
+      const result = await this.paymentProvider.processPayment(paymentRequest, mintAddress);
+      paymentLogger.info(`Payment ${paymentId} blockchain result received`, {
+        success: result.success,
+        hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
+        reused: result.reused || false,
+        errorCategory: result.error ? result.error.category : "none"
+      }, context, paymentSession.walletAddress);
+      
+      // Handle the result
+      return await this.handlePaymentResult(paymentId, result);
+    } catch (error) {
+      // Special handling for "Transaction already processed" errors
+      if (isTxAlreadyProcessedError(error)) {
+        paymentLogger.info(`Transaction already processed for payment ${paymentId}`, {
+          error: error instanceof Error ? error.message : String(error)
+        }, context);
+        
+        // Try to find the payment session
+        const paymentSession = this.activePayments.get(paymentId);
+        if (paymentSession && paymentSession.transactionHash) {
+          paymentLogger.info(`Found existing signature for payment ${paymentId}`, {
+            signature: paymentSession.transactionHash.substring(0, 8) + "..."
+          }, context, paymentSession.walletAddress);
+          
+          // Create a successful result with the existing hash
+          return await this.handlePaymentResult(paymentId, {
+            success: true,
+            transactionHash: paymentSession.transactionHash,
+            blockchainConfirmation: true,
+            reused: true
+          });
+        }
+      }
