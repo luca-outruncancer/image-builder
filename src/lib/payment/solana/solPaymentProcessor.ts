@@ -114,3 +114,83 @@ export class SolPaymentProcessor {
           )
         };
       }
+      
+      // Calculate lamports (1 SOL = 1,000,000,000 lamports)
+      const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
+      
+      // Create transaction
+      const transaction = new Transaction();
+      
+      // Add a unique identifier to transaction to prevent duplicates
+      const nonce = getNonce();
+      
+      console.log(`Transaction [ID: ${paymentId}] created with nonce: ${nonce}`);
+      
+      // Add the main transfer instruction
+      const mainTransferInstruction = SystemProgram.transfer({
+        fromPubkey: this.wallet.publicKey,
+        toPubkey: new PublicKey(recipientWallet),
+        lamports: lamports,
+      });
+      
+      transaction.add(mainTransferInstruction);
+      
+      // Add a unique zero-value transfer to make transaction unique
+      const nonceInstruction = SystemProgram.transfer({
+        fromPubkey: this.wallet.publicKey,
+        toPubkey: this.wallet.publicKey,
+        lamports: 0
+      });
+      
+      transaction.add(nonceInstruction);
+      
+      // Get recent blockhash
+      let blockHash;
+      try {
+        const connection = connectionManager.getConnection();
+        blockHash = await connection.getLatestBlockhash('confirmed');
+        console.log(`[ID: ${paymentId}] Got blockhash:`, blockHash.blockhash.slice(0, 8) + "...");
+      } catch (blockHashError) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.NETWORK_ERROR,
+            'Failed to get recent blockhash',
+            blockHashError,
+            true
+          )
+        };
+      }
+      
+      transaction.recentBlockhash = blockHash.blockhash;
+      transaction.feePayer = this.wallet.publicKey;
+      
+      // Sign transaction
+      let signedTransaction;
+      try {
+        signedTransaction = await this.wallet.signTransaction(transaction);
+        console.log(`[ID: ${paymentId}] Transaction signed successfully`);
+      } catch (signError) {
+        if (isUserRejectionError(signError)) {
+          console.log(`[ID: ${paymentId}] Transaction declined by user`);
+          return {
+            success: false,
+            error: createPaymentError(
+              ErrorCategory.USER_REJECTION,
+              'Transaction was declined by user',
+              signError,
+              false
+            )
+          };
+        }
+        
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.WALLET_ERROR,
+            'Failed to sign transaction',
+            signError,
+            true
+          )
+        };
+      }
