@@ -6,10 +6,7 @@ import Footer from '@/components/layout/Footer';
 import Header from '@/components/layout/Header';
 import { cn } from '@/lib/utils';
 import Providers from './providers';
-import dynamic from 'next/dynamic';
-
-// Dynamic import with no SSR for ErrorBoundary (client-only component)
-const ErrorBoundary = dynamic(() => import('@/components/ErrorBoundary'), { ssr: false });
+import ErrorBoundaryWrapper from '@/components/ErrorBoundaryWrapper';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -50,13 +47,13 @@ export default function RootLayout({
       </head>
       <body className={cn(inter.className, 'relative min-h-full')}>
         <Providers>
-          <ErrorBoundary componentName="ApplicationRoot">
+          <ErrorBoundaryWrapper componentName="ApplicationRoot">
             <div className="page-gradient">
               <Header />
               <div className="main-content">{children}</div>
               <Footer className="w-full mt-auto" />
             </div>
-          </ErrorBoundary>
+          </ErrorBoundaryWrapper>
         </Providers>
       </body>
     </html>
