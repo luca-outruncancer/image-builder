@@ -312,3 +312,40 @@ export class PaymentService {
           });
         }
       }
+      
+      console.error(`[PS:${this.sessionId}] Error processing payment ${paymentId}:`, error);
+      
+      // Update session status
+      const paymentSession = this.activePayments.get(paymentId);
+      if (paymentSession) {
+        paymentSession.status = PaymentStatus.FAILED;
+        paymentSession.error = createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          'Payment processing failed',
+          error,
+          true
+        );
+        paymentSession.updatedAt = new Date().toISOString();
+        this.activePayments.set(paymentId, paymentSession);
+        
+        // Update database
+        if (paymentSession.transactionId) {
+          await this.storageProvider.updateTransactionStatus(
+            paymentSession.transactionId,
+            PaymentStatus.FAILED
+          );
+        }
+      }
+      
+      return {
+        paymentId,
+        status: PaymentStatus.FAILED,
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          'Payment processing failed',
+          error,
+          true
+        )
+      };
+    }
+  }
