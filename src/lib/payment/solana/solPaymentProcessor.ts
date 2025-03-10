@@ -194,3 +194,94 @@ export class SolPaymentProcessor {
           )
         };
       }
+      
+      // Log transaction details for debugging
+      console.log(`[ID: ${paymentId}] Transaction to be sent:`, {
+        blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
+        feePayer: transaction.feePayer?.toString(),
+        instructions: transaction.instructions.length,
+        signatures: transaction.signatures.length,
+        serializedSize: signedTransaction.serialize().length
+      });
+
+      // Send transaction
+      let signature;
+      try {
+        console.log(`[ID: ${paymentId}] Sending transaction...`);
+        const connection = connectionManager.getConnection();
+        signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        console.log(`[ID: ${paymentId}] Transaction sent, signature:`, signature);
+        
+        // Cache the transaction for potential reuse
+        if (paymentId && signature) {
+          this.cachedTransactions.set(paymentId, signature);
+          console.log(`[ID: ${paymentId}] Cached transaction signature:`, signature);
+        }
+      } catch (sendError) {
+        console.error(`[ID: ${paymentId}] Error sending transaction:`, sendError);
+        
+        // Handle "Transaction already processed" error
+        if (isTxAlreadyProcessedError(sendError)) {
+          // Try to extract signature from error
+          const extractedSig = extractSignatureFromError(sendError);
+          if (extractedSig) {
+            console.log(`[ID: ${paymentId}] Found signature in error:`, extractedSig);
+            
+            // Verify the extracted signature
+            const isValid = await connectionManager.verifyTransaction(extractedSig);
+            if (isValid) {
+              return {
+                success: true,
+                transactionHash: extractedSig,
+                blockchainConfirmation: true,
+                reused: true
+              };
+            }
+          }
+          
+          // If we couldn't recover, return specialized error
+          return {
+            success: false,
+            error: createPaymentError(
+              ErrorCategory.BLOCKCHAIN_ERROR,
+              'Transaction already processed. Please try again with a new transaction.',
+              sendError,
+              false,
+              'DUPLICATE_TRANSACTION'
+            )
+          };
+        }
+        
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.BLOCKCHAIN_ERROR,
+            'Failed to send transaction',
+            sendError,
+            true
+          )
+        };
+      }
+      
+      // Confirm transaction
+      try {
+        console.log(`[ID: ${paymentId}] Confirming transaction...`);
+        const connection = connectionManager.getConnection();
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: blockHash.blockhash,
+          lastValidBlockHeight: blockHash.lastValidBlockHeight,
+        }, 'confirmed');
+        
+        if (confirmation.value.err) {
+          console.error(`[ID: ${paymentId}] Transaction confirmation failed:`, confirmation.value.err);
+          return {
+            success: false,
+            error: createPaymentError(
+              ErrorCategory.BLOCKCHAIN_ERROR,
+              `Transaction failed: ${confirmation.value.err.toString()}`,
+              confirmation.value.err,
+              false
+            )
+          };
+        }
