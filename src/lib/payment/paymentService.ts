@@ -166,3 +166,48 @@ export class PaymentService {
       };
     }
   }
+  
+  /**
+   * Process a payment
+   */
+  public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
+    const context = { paymentId };
+    
+    try {
+      paymentLogger.info(`Processing payment ${paymentId}`, null, context);
+      
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
+      // Check if payment exists
+      const paymentSession = this.activePayments.get(paymentId);
+      if (!paymentSession) {
+        paymentLogger.error(`Payment session ${paymentId} not found in active payments`, {
+          activeSessionsIds: Array.from(this.activePayments.keys())
+        }, context);
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            'Payment session not found',
+            null,
+            false
+          )
+        };
+      }
+      
+      // Update payment status
+      paymentSession.status = PaymentStatus.PROCESSING;
+      paymentSession.attempts += 1;
+      paymentSession.updatedAt = new Date().toISOString();
+      this.activePayments.set(paymentId, paymentSession);
+      
+      paymentLogger.debug(`Payment ${paymentId} updated to PROCESSING status`, { 
+        attempt: paymentSession.attempts,
+        imageId: paymentSession.imageId,
+        amount: paymentSession.amount,
+        token: paymentSession.token,
+        transactionId: paymentSession.transactionId
+      }, context, paymentSession.walletAddress);
