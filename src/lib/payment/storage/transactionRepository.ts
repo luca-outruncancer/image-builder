@@ -269,3 +269,112 @@ export class TransactionRepository {
       };
     }
   }
+  
+  /**
+   * Get a transaction by ID
+   */
+  public async getTransaction(transactionId: number): Promise<{ success: boolean; data?: TransactionRecord; error?: PaymentError }> {
+    try {
+      if (!validateDatabaseConnection(supabase)) {
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Database client not available",
+            null,
+            false
+          )
+        };
+      }
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('transaction_id', transactionId)
+        .single();
+      
+      if (error) {
+        console.error("Error getting transaction:", error);
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Failed to get transaction",
+            error,
+            true
+          )
+        };
+      }
+      
+      return { success: true, data };
+    } catch (error) {
+      console.error('Failed to get transaction:', error);
+      return { 
+        success: false, 
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          "Failed to retrieve transaction",
+          error,
+          true
+        )
+      };
+    }
+  }
+  
+  /**
+   * Get a transaction by image ID
+   */
+  public async getTransactionByImageId(imageId: number): Promise<{ success: boolean; data?: TransactionRecord; error?: PaymentError }> {
+    try {
+      if (!validateDatabaseConnection(supabase)) {
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Database client not available",
+            null,
+            false
+          )
+        };
+      }
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('image_id', imageId)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (error) {
+        // If no transaction found, that's ok
+        if (error.code === 'PGRST116') {
+          return { success: true, data: undefined };
+        }
+        
+        console.error("Error getting transaction by image ID:", error);
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Failed to get transaction for image",
+            error,
+            true
+          )
+        };
+      }
+      
+      return { success: true, data };
+    } catch (error) {
+      console.error('Failed to get transaction by image ID:', error);
+      return { 
+        success: false, 
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          "Failed to retrieve transaction for image",
+          error,
+          true
+        )
+      };
+    }
+  }
