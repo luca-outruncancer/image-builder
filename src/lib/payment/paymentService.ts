@@ -272,3 +272,43 @@ export class PaymentService {
           paymentId: paymentRequest.metadata.paymentId
         }
       });
+      
+      // Get token mint address if needed
+      const mintAddress = paymentSession.token === 'SOL' ? null : getMintAddress();
+      
+      // Process the payment
+      console.log(`[PS:${this.sessionId}] Sending payment ${paymentId} to blockchain provider`);
+      const result = await this.paymentProvider.processPayment(paymentRequest, mintAddress);
+      console.log(`[PS:${this.sessionId}] Payment ${paymentId} blockchain result:`, {
+        success: result.success,
+        hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
+        reused: result.reused || false,
+        error: result.error ? result.error.message : "none"
+      });
+      
+      // Handle the result
+      return await this.handlePaymentResult(paymentId, result);
+    } catch (error) {
+      // Special handling for "Transaction already processed" errors
+      if (isTxAlreadyProcessedError(error)) {
+        console.log(`[PS:${this.sessionId}] Transaction already processed for payment ${paymentId}. Attempting recovery.`);
+        
+        // Try to find the payment session
+        const paymentSession = this.activePayments.get(paymentId);
+        if (paymentSession && paymentSession.transactionHash) {
+          console.log(`[PS:${this.sessionId}] Found existing signature ${paymentSession.transactionHash} for payment ${paymentId}`);
+          
+          // Store this in session storage for future reference
+          if (paymentSession.imageId) {
+            storeTransactionSignature(`img_${paymentSession.imageId}`, paymentSession.transactionHash);
+          }
+          
+          // Create a successful result with the existing hash
+          return await this.handlePaymentResult(paymentId, {
+            success: true,
+            transactionHash: paymentSession.transactionHash,
+            blockchainConfirmation: true,
+            reused: true
+          });
+        }
+      }
