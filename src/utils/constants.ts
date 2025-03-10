@@ -14,6 +14,40 @@ export const FEATURES = {
   HIGH_QUALITY_IMAGES: true,         // Toggle for high-quality image processing
 };
 
+// Logging configuration
+export enum LogLevel {
+  DEBUG = 0,  // Most verbose
+  INFO = 1,   // Standard information
+  ERROR = 2,  // Errors only
+  NONE = 3    // No logging
+}
+
+export const LOGGING = {
+  // General settings
+  ENABLE_CONSOLE_LOGGING: true,     // Enable logging to console
+  ENABLE_DB_LOGGING: true,          // Enable logging to database
+  LEVEL: LogLevel.DEBUG,            // Current log level
+  APP_PREFIX: 'IMGBLDR',            // Application prefix for logs
+  ENVIRONMENT: process.env.NODE_ENV || 'development',  // Current environment
+  
+  // Database settings
+  RETENTION_DAYS: 30,               // How many days to retain logs
+  DB_TABLE: 'system_logs',          // Table name for logs
+  
+  // Component names for logging context
+  COMPONENTS: {
+    PAYMENT: 'PAYMENT',             // Payment processing
+    BLOCKCHAIN: 'BLOCKCHAIN',       // Blockchain interactions
+    WALLET: 'WALLET',               // Wallet management
+    CANVAS: 'CANVAS',               // Canvas operations
+    IMAGE: 'IMAGE',                 // Image processing
+    API: 'API',                     // API endpoints
+    STORAGE: 'STORAGE',             // Storage operations
+    AUTH: 'AUTH',                   // Authentication
+    SYSTEM: 'SYSTEM',               // System operations
+  }
+};
+
 // Image resize and compression settings
 export const IMAGE_SETTINGS = {
   // General options
