@@ -285,3 +285,63 @@ export class SolPaymentProcessor {
             )
           };
         }
+        
+        console.log(`[ID: ${paymentId}] Transaction confirmed successfully!`);
+        return {
+          success: true,
+          transactionHash: signature,
+          blockchainConfirmation: true
+        };
+      } catch (confirmError) {
+        console.error(`[ID: ${paymentId}] Error confirming transaction:`, confirmError);
+        
+        // Double-check transaction status
+        try {
+          const connection = connectionManager.getConnection();
+          const status = await connection.getSignatureStatus(signature);
+          
+          if (status.value && !status.value.err) {
+            // Transaction was actually successful despite confirmation error
+            console.log(`[ID: ${paymentId}] Transaction was successful despite confirmation error`);
+            return {
+              success: true,
+              transactionHash: signature,
+              blockchainConfirmation: true
+            };
+          }
+        } catch (statusError) {
+          console.error(`[ID: ${paymentId}] Failed to check transaction status:`, statusError);
+        }
+        
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.BLOCKCHAIN_ERROR,
+            'Transaction confirmation failed',
+            confirmError,
+            true
+          )
+        };
+      }
+    } catch (error) {
+      console.error('SOL payment error:', error);
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          error instanceof Error ? error.message : 'Unknown payment error',
+          error,
+          true
+        )
+      };
+    }
+  }
+  
+  /**
+   * Clear the transaction cache
+   */
+  public clearTransactionCache(): void {
+    console.log("Clearing SOL transaction cache");
+    this.cachedTransactions.clear();
+  }
+}
