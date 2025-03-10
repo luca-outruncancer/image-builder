@@ -88,3 +88,56 @@ export class PaymentService {
         console.log(`Found existing signature in session storage for image ${metadata.imageId}: ${existingSignature}`);
         // We'll verify this during the processing phase
       }
+      
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
+      // Create payment session
+      const paymentSession: PaymentSession = {
+        paymentId,
+        status: PaymentStatus.INITIALIZED,
+        imageId: metadata.imageId,
+        amount,
+        token: ACTIVE_PAYMENT_TOKEN,
+        metadata: {
+          ...metadata,
+          paymentId // Store the payment ID in metadata for transaction tracking
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        attempts: 0,
+        walletAddress: this.wallet.publicKey.toString(),
+        recipientWallet: RECIPIENT_WALLET_ADDRESS
+      };
+      
+      // Store in memory
+      this.activePayments.set(paymentId, paymentSession);
+      console.log(`[PS:${this.sessionId}] Payment ${paymentId} added to active sessions. Total active:`, this.activePayments.size);
+      
+      // Initialize in database
+      const dbResult = await this.storageProvider.initializeTransaction(paymentSession);
+      
+      if (!dbResult.success) {
+        console.error(`[PS:${this.sessionId}] Failed to initialize payment ${paymentId} in database:`, dbResult.error);
+        this.activePayments.delete(paymentId);
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: dbResult.error
+        };
+      }
+      
+      // Update session with transaction ID
+      paymentSession.transactionId = dbResult.transactionId;
+      this.activePayments.set(paymentId, paymentSession);
+      console.log(`[PS:${this.sessionId}] Payment ${paymentId} updated with transaction ID: ${dbResult.transactionId}`);
+      
+      // Set timeout for this payment
+      this.setPaymentTimeout(paymentId);
+      
+      return {
+        paymentId,
+        status: PaymentStatus.INITIALIZED,
+        transactionId: dbResult.transactionId
+      };
