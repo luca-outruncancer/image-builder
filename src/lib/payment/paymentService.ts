@@ -229,3 +229,46 @@ export class PaymentService {
           }
         }
       }
+      
+      // Update payment status
+      paymentSession.status = PaymentStatus.PROCESSING;
+      paymentSession.attempts += 1;
+      paymentSession.updatedAt = new Date().toISOString();
+      this.activePayments.set(paymentId, paymentSession);
+      
+      console.log(`[PS:${this.sessionId}] Payment ${paymentId} updated to PROCESSING status. Attempt: ${paymentSession.attempts}`);
+      console.log("Payment details:", {
+        imageId: paymentSession.imageId,
+        amount: paymentSession.amount,
+        token: paymentSession.token,
+        transactionId: paymentSession.transactionId
+      });
+      
+      // Update database status
+      if (paymentSession.transactionId) {
+        await this.storageProvider.updateTransactionStatus(
+          paymentSession.transactionId,
+          PaymentStatus.PROCESSING
+        );
+      }
+      
+      // Create payment request object
+      const paymentRequest: PaymentRequest = {
+        amount: paymentSession.amount,
+        token: paymentSession.token,
+        recipientWallet: paymentSession.recipientWallet,
+        metadata: { 
+          ...paymentSession.metadata,
+          paymentId // Make sure the payment ID is included
+        }
+      };
+      
+      console.log(`[PS:${this.sessionId}] Payment request for ${paymentId} created`, {
+        token: paymentRequest.token,
+        amount: paymentRequest.amount,
+        recipient: paymentRequest.recipientWallet.substring(0, 8) + "...",
+        metadata: {
+          imageId: paymentRequest.metadata.imageId,
+          paymentId: paymentRequest.metadata.paymentId
+        }
+      });
