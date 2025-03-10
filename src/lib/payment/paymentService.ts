@@ -113,3 +113,56 @@ export class PaymentService {
         walletAddress: this.wallet.publicKey.toString(),
         recipientWallet: RECIPIENT_WALLET_ADDRESS
       };
+      
+      // Store in memory
+      this.activePayments.set(paymentId, paymentSession);
+      paymentLogger.debug(`Payment ${paymentId} added to active sessions`, {
+        activeSessionsCount: this.activePayments.size
+      });
+      
+      // Initialize in database
+      const dbResult = await this.storageProvider.initializeTransaction(paymentSession);
+      
+      if (!dbResult.success) {
+        paymentLogger.error(`Failed to initialize payment ${paymentId} in database`, 
+          dbResult.error, context, this.wallet.publicKey.toString());
+        
+        this.activePayments.delete(paymentId);
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: dbResult.error
+        };
+      }
+      
+      // Update session with transaction ID
+      paymentSession.transactionId = dbResult.transactionId;
+      this.activePayments.set(paymentId, paymentSession);
+      paymentLogger.info(`Payment ${paymentId} initialized with transaction ID: ${dbResult.transactionId}`, 
+        null, context, this.wallet.publicKey.toString());
+      
+      // Set timeout for this payment
+      this.setPaymentTimeout(paymentId);
+      
+      return {
+        paymentId,
+        status: PaymentStatus.INITIALIZED,
+        transactionId: dbResult.transactionId
+      };
+    } catch (error) {
+      paymentLogger.error('Failed to initialize payment', error, context, 
+        this.wallet.publicKey?.toString());
+      
+      return {
+        paymentId: '',
+        status: PaymentStatus.FAILED,
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          'Payment initialization failed',
+          error,
+          true
+        )
+      };
+    }
+  }
