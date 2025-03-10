@@ -1,11 +1,47 @@
 // src/lib/payment/solana/index.ts
+import { processSolPayment, checkSolBalance } from './solPaymentProcessor';
+import { processTokenPayment, checkTokenBalance } from './tokenPaymentProcessor';
+import { PaymentRequest, TransactionResult, WalletConfig } from '../types';
+import { ACTIVE_PAYMENT_TOKEN, getMintAddress } from '@/utils/constants';
 
-// Re-export the connectionManager singleton
-export { connectionManager } from './connectionManager';
+/**
+ * Main entry point for processing payments
+ * Automatically routes to the correct processor based on token type
+ */
+export async function processPayment(
+  request: PaymentRequest,
+  walletConfig: WalletConfig,
+  mintAddress?: string | null
+): Promise<TransactionResult> {
+  console.log(`Routing payment for ${request.token}`, {
+    amount: request.amount,
+    paymentId: request.metadata?.paymentId || 'unknown'
+  });
+  
+  if (request.token === 'SOL') {
+    return processSolPayment(request, walletConfig);
+  } else {
+    // Ensure we have a mint address for token payments
+    const tokenMintAddress = mintAddress || getMintAddress();
+    
+    if (!tokenMintAddress) {
+      return {
+        success: false,
+        error: {
+          category: 'unknown_error',
+          message: `No mint address available for ${request.token}`,
+          retryable: false
+        }
+      };
+    }
+    
+    return processTokenPayment(request, tokenMintAddress, walletConfig);
+  }
+}
 
-// Export the payment provider
-export { default as SolanaPaymentProvider } from './solanaPaymentProvider';
-
-// Also export the specific processors for direct access if needed
-export { SolPaymentProcessor } from './solPaymentProcessor';
-export { TokenPaymentProcessor } from './tokenPaymentProcessor';
+export {
+  processSolPayment,
+  processTokenPayment,
+  checkSolBalance,
+  checkTokenBalance
+};
