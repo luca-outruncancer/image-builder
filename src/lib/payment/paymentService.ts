@@ -1,29 +1,23 @@
 // src/lib/payment/paymentService.ts
 'use client';
 
-import { useWallet } from '@solana/wallet-adapter-react';
 import { 
   PaymentRequest,
-  PaymentResponse,
-  PaymentStatusResponse,
-  PaymentStatus,
-  PaymentSession,
-  ErrorCategory,
+  PaymentResponse, 
+  PaymentStatusResponse, 
+  PaymentStatus, 
+  PaymentMetadata, 
   PaymentError,
-  TransactionResult,
-  WalletConfig,
-  PaymentMetadata
+  PaymentSession
 } from './types';
 import { 
-  createPaymentError, 
-  generatePaymentId, 
-  formatErrorForUser, 
-  clearSessionBlockhashData,
-  isTxAlreadyProcessedError
+  generatePaymentId,
+  formatErrorForUser,
+  clearSessionBlockhashData
 } from './utils';
-import SolanaPaymentProvider from './solanaPaymentProvider';
-import PaymentStorageProvider from './paymentStorageProvider';
-import { ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS, getMintAddress } from '@/utils/constants';
+import { SolanaPaymentProvider } from './solana';
+import { PaymentStorageProvider } from './storage';
+import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 
 const PAYMENT_TIMEOUT_MS = 180000; // 3 minutes
 
@@ -35,9 +29,9 @@ export class PaymentService {
   private storageProvider: PaymentStorageProvider;
   private activePayments: Map<string, PaymentSession>;
   private paymentTimeouts: Map<string, NodeJS.Timeout>;
-  private wallet: WalletConfig;
+  private wallet: any;
   
-  constructor(wallet: WalletConfig) {
+  constructor(wallet: any) {
     this.wallet = wallet;
     this.paymentProvider = new SolanaPaymentProvider(wallet);
     this.storageProvider = new PaymentStorageProvider();
@@ -45,7 +39,6 @@ export class PaymentService {
     this.paymentTimeouts = new Map();
     
     console.log("PaymentService initialized");
-    console.log("Active sessions on init:", this.activePayments.size);
   }
   
   /**
@@ -61,21 +54,17 @@ export class PaymentService {
         return {
           paymentId: '',
           status: PaymentStatus.FAILED,
-          error: createPaymentError(
-            ErrorCategory.WALLET_ERROR,
-            'Wallet not connected',
-            null,
-            false
-          )
+          error: {
+            category: 'wallet_error',
+            message: 'Wallet not connected',
+            retryable: false
+          }
         };
       }
       
       // Generate a unique payment ID
       const paymentId = generatePaymentId();
-      console.log(`Initializing payment ${paymentId} for amount ${amount} ${ACTIVE_PAYMENT_TOKEN}`, {
-        imageId: metadata.imageId,
-        walletConnected: this.wallet.connected
-      });
+      console.log(`Initializing payment ${paymentId} for amount ${amount}`);
       
       // Clean up any session data to ensure fresh transaction
       clearSessionBlockhashData();
@@ -86,7 +75,7 @@ export class PaymentService {
         status: PaymentStatus.INITIALIZED,
         imageId: metadata.imageId,
         amount,
-        token: ACTIVE_PAYMENT_TOKEN,
+        token: 'SOL', // Currently hardcoded to SOL
         metadata: {
           ...metadata,
           paymentId // Store the payment ID in metadata for transaction tracking
@@ -100,7 +89,6 @@ export class PaymentService {
       
       // Store in memory
       this.activePayments.set(paymentId, paymentSession);
-      console.log(`Payment ${paymentId} added to active sessions. Total active:`, this.activePayments.size);
       
       // Initialize in database
       const dbResult = await this.storageProvider.initializeTransaction(paymentSession);
@@ -119,7 +107,6 @@ export class PaymentService {
       // Update session with transaction ID
       paymentSession.transactionId = dbResult.transactionId;
       this.activePayments.set(paymentId, paymentSession);
-      console.log(`Payment ${paymentId} updated with transaction ID: ${dbResult.transactionId}`);
       
       // Set timeout for this payment
       this.setPaymentTimeout(paymentId);
@@ -134,12 +121,12 @@ export class PaymentService {
       return {
         paymentId: '',
         status: PaymentStatus.FAILED,
-        error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Payment initialization failed',
-          error,
-          true
-        )
+        error: {
+          category: 'unknown_error',
+          message: 'Payment initialization failed',
+          retryable: true,
+          originalError: error
+        }
       };
     }
   }
@@ -148,27 +135,34 @@ export class PaymentService {
    * Process a payment
    */
   public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
+    const currentPaymentId = paymentId;
+    
+    if (!currentPaymentId) {
+      return {
+        paymentId: '',
+        status: PaymentStatus.FAILED,
+        error: {
+          category: 'unknown_error',
+          message: 'No payment ID provided',
+          retryable: false
+        }
+      };
+    }
+    
     try {
-      console.log(`Processing payment ${paymentId}`);
-      
-      // Clean up any session data to ensure fresh transaction
-      clearSessionBlockhashData();
-      
       // Check if payment exists
-      const paymentSession = this.activePayments.get(paymentId);
+      const paymentSession = this.activePayments.get(currentPaymentId);
       if (!paymentSession) {
-        console.error(`Payment session ${paymentId} not found in active payments`);
-        console.log("Current active sessions:", Array.from(this.activePayments.keys()));
+        console.error(`Payment session ${currentPaymentId} not found in active payments`);
         
         return {
-          paymentId,
+          paymentId: currentPaymentId,
           status: PaymentStatus.FAILED,
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            'Payment session not found',
-            null,
-            false
-          )
+          error: {
+            category: 'unknown_error',
+            message: 'Payment session not found',
+            retryable: false
+          }
         };
       }
       
@@ -176,15 +170,7 @@ export class PaymentService {
       paymentSession.status = PaymentStatus.PROCESSING;
       paymentSession.attempts += 1;
       paymentSession.updatedAt = new Date().toISOString();
-      this.activePayments.set(paymentId, paymentSession);
-      
-      console.log(`Payment ${paymentId} updated to PROCESSING status. Attempt: ${paymentSession.attempts}`);
-      console.log("Payment details:", {
-        imageId: paymentSession.imageId,
-        amount: paymentSession.amount,
-        token: paymentSession.token,
-        transactionId: paymentSession.transactionId
-      });
+      this.activePayments.set(currentPaymentId, paymentSession);
       
       // Update database status
       if (paymentSession.transactionId) {
@@ -199,195 +185,69 @@ export class PaymentService {
         amount: paymentSession.amount,
         token: paymentSession.token,
         recipientWallet: paymentSession.recipientWallet,
-        metadata: { 
-          ...paymentSession.metadata,
-          paymentId // Make sure the payment ID is included
-        }
+        metadata: paymentSession.metadata
       };
       
-      console.log(`Payment request for ${paymentId} created`, {
-        token: paymentRequest.token,
-        amount: paymentRequest.amount,
-        recipient: paymentRequest.recipientWallet.substring(0, 8) + "...",
-        metadata: {
-          imageId: paymentRequest.metadata.imageId,
-          paymentId: paymentRequest.metadata.paymentId
-        }
-      });
-      
-      // Get token mint address if needed
-      const mintAddress = paymentSession.token === 'SOL' ? null : getMintAddress();
-      
       // Process the payment
-      console.log(`Sending payment ${paymentId} to blockchain provider`);
-      const result = await this.paymentProvider.processPayment(paymentRequest, mintAddress);
-      console.log(`Payment ${paymentId} blockchain result:`, {
-        success: result.success,
-        hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
-        reused: result.reused || false,
-        error: result.error ? result.error.message : "none"
-      });
+      const result = await this.paymentProvider.processPayment(paymentRequest, null);
       
       // Handle the result
-      return await this.handlePaymentResult(paymentId, result);
-    } catch (error) {
-      // Special handling for "Transaction already processed" errors
-      if (isTxAlreadyProcessedError(error)) {
-        console.log(`Transaction already processed for payment ${paymentId}. Attempting verification.`);
-        
-        // Try to find the payment session
-        const paymentSession = this.activePayments.get(paymentId);
-        if (paymentSession && paymentSession.transactionHash) {
-          console.log(`Found existing signature ${paymentSession.transactionHash} for payment ${paymentId}`);
-          
-          // Create a successful result with the existing hash
-          return await this.handlePaymentResult(paymentId, {
-            success: true,
-            transactionHash: paymentSession.transactionHash,
-            blockchainConfirmation: true,
-            reused: true
-          });
-        }
-      }
-      
-      console.error(`Error processing payment ${paymentId}:`, error);
-      
-      // Update session status
-      const paymentSession = this.activePayments.get(paymentId);
-      if (paymentSession) {
-        paymentSession.status = PaymentStatus.FAILED;
-        paymentSession.error = createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Payment processing failed',
-          error,
-          true
-        );
+      if (result.success) {
+        // Update session status
+        paymentSession.status = PaymentStatus.CONFIRMED;
+        paymentSession.transactionHash = result.transactionHash;
         paymentSession.updatedAt = new Date().toISOString();
-        this.activePayments.set(paymentId, paymentSession);
+        this.activePayments.set(currentPaymentId, paymentSession);
         
         // Update database
         if (paymentSession.transactionId) {
           await this.storageProvider.updateTransactionStatus(
             paymentSession.transactionId,
-            PaymentStatus.FAILED
+            PaymentStatus.CONFIRMED,
+            result.transactionHash,
+            result.blockchainConfirmation
           );
         }
-      }
-      
-      return {
-        paymentId,
-        status: PaymentStatus.FAILED,
-        error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Payment processing failed',
-          error,
-          true
-        )
-      };
-    }
-  }
-  
-  /**
-   * Handle the result of a payment processing attempt
-   */
-  private async handlePaymentResult(
-    paymentId: string,
-    result: TransactionResult
-  ): Promise<PaymentStatusResponse> {
-    console.log(`Handling payment result for ${paymentId}:`, {
-      success: result.success,
-      hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
-      error: result.error ? {
-        category: result.error.category,
-        message: result.error.message,
-        code: result.error.code
-      } : "none"
-    });
-    
-    const paymentSession = this.activePayments.get(paymentId);
-    if (!paymentSession) {
-      console.error(`Payment session ${paymentId} not found when handling result`);
-      return {
-        paymentId,
-        status: PaymentStatus.FAILED,
-        error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Payment session not found',
-          null,
-          false
-        )
-      };
-    }
-    
-    if (result.success) {
-      // Payment successful
-      console.log(`Payment ${paymentId} successful with hash: ${result.transactionHash}`);
-      
-      paymentSession.status = PaymentStatus.CONFIRMED;
-      paymentSession.transactionHash = result.transactionHash;
-      paymentSession.updatedAt = new Date().toISOString();
-      this.activePayments.set(paymentId, paymentSession);
-      
-      // Update database
-      if (paymentSession.transactionId) {
-        await this.storageProvider.updateTransactionStatus(
-          paymentSession.transactionId,
-          PaymentStatus.CONFIRMED,
-          result.transactionHash,
-          result.blockchainConfirmation
-        );
-      }
-      
-      // Clear timeout
-      this.clearPaymentTimeout(paymentId);
-      
-      return {
-        paymentId,
-        status: PaymentStatus.CONFIRMED,
-        transactionHash: result.transactionHash,
-        metadata: paymentSession.metadata,
-        amount: paymentSession.amount,
-        token: paymentSession.token,
-        timestamp: paymentSession.updatedAt,
-        attempts: paymentSession.attempts
-      };
-    } else {
-      // Payment failed
-      const errorCategory = result.error?.category || ErrorCategory.UNKNOWN_ERROR;
-      
-      // Special handling for user rejection - don't mark as failed
-      if (errorCategory === ErrorCategory.USER_REJECTION) {
-        console.log(`Payment ${paymentId} - User rejected the transaction`);
         
-        paymentSession.status = PaymentStatus.PENDING;
-        paymentSession.error = result.error;
-        paymentSession.updatedAt = new Date().toISOString();
-        this.activePayments.set(paymentId, paymentSession);
+        // Clear timeout
+        this.clearPaymentTimeout(currentPaymentId);
         
         return {
-          paymentId,
-          status: PaymentStatus.PENDING,
-          error: result.error,
+          paymentId: currentPaymentId,
+          status: PaymentStatus.CONFIRMED,
+          transactionHash: result.transactionHash,
           metadata: paymentSession.metadata,
           amount: paymentSession.amount,
           token: paymentSession.token,
+          timestamp: paymentSession.updatedAt,
           attempts: paymentSession.attempts
         };
-      }
-      
-      // Special handling for "already processed" errors
-      if (result.error?.code === 'DUPLICATE_TRANSACTION') {
-        console.log(`Payment ${paymentId} - Duplicate transaction error`);
+      } else {
+        const errorCategory = result.error?.category || 'unknown_error';
         
-        // Here we should try to recover the transaction if it exists
-        // But we'll mark it as failed for now
+        // Special handling for user rejection - don't mark as failed
+        if (errorCategory === 'user_rejection') {
+          paymentSession.status = PaymentStatus.PENDING;
+          paymentSession.error = result.error;
+          paymentSession.updatedAt = new Date().toISOString();
+          this.activePayments.set(currentPaymentId, paymentSession);
+          
+          return {
+            paymentId: currentPaymentId,
+            status: PaymentStatus.PENDING,
+            error: result.error,
+            metadata: paymentSession.metadata,
+            amount: paymentSession.amount,
+            token: paymentSession.token,
+            attempts: paymentSession.attempts
+          };
+        }
+        
+        // Mark as failed
         paymentSession.status = PaymentStatus.FAILED;
         paymentSession.error = result.error;
         paymentSession.updatedAt = new Date().toISOString();
-        this.activePayments.set(paymentId, paymentSession);
-        
-        // Clean session storage
-        clearSessionBlockhashData();
+        this.activePayments.set(currentPaymentId, paymentSession);
         
         // Update database
         if (paymentSession.transactionId) {
@@ -398,7 +258,7 @@ export class PaymentService {
         }
         
         return {
-          paymentId,
+          paymentId: currentPaymentId,
           status: PaymentStatus.FAILED,
           error: result.error,
           metadata: paymentSession.metadata,
@@ -407,62 +267,42 @@ export class PaymentService {
           attempts: paymentSession.attempts
         };
       }
+    } catch (error) {
+      console.error(`Error processing payment ${currentPaymentId}:`, error);
       
-      // Mark as failed
-      console.log(`Payment ${paymentId} failed with error: ${result.error?.message}`);
-      
-      paymentSession.status = PaymentStatus.FAILED;
-      paymentSession.error = result.error;
-      paymentSession.updatedAt = new Date().toISOString();
-      this.activePayments.set(paymentId, paymentSession);
-      
-      // Update database
-      if (paymentSession.transactionId) {
-        await this.storageProvider.updateTransactionStatus(
-          paymentSession.transactionId,
-          PaymentStatus.FAILED
-        );
+      // Get the payment session
+      const paymentSession = this.activePayments.get(currentPaymentId);
+      if (paymentSession) {
+        paymentSession.status = PaymentStatus.FAILED;
+        paymentSession.error = {
+          category: 'unknown_error',
+          message: 'Payment processing failed',
+          originalError: error,
+          retryable: true
+        };
+        paymentSession.updatedAt = new Date().toISOString();
+        this.activePayments.set(currentPaymentId, paymentSession);
+        
+        // Update database
+        if (paymentSession.transactionId) {
+          await this.storageProvider.updateTransactionStatus(
+            paymentSession.transactionId,
+            PaymentStatus.FAILED
+          );
+        }
       }
       
       return {
-        paymentId,
+        paymentId: currentPaymentId,
         status: PaymentStatus.FAILED,
-        error: result.error,
-        metadata: paymentSession.metadata,
-        amount: paymentSession.amount,
-        token: paymentSession.token,
-        attempts: paymentSession.attempts
+        error: {
+          category: 'unknown_error',
+          message: 'Payment processing failed',
+          originalError: error,
+          retryable: true
+        }
       };
     }
-  }
-  
-  /**
-   * Get the status of a payment
-   */
-  public getPaymentStatus(paymentId: string): PaymentStatusResponse | null {
-    const paymentSession = this.activePayments.get(paymentId);
-    if (!paymentSession) {
-      console.log(`getPaymentStatus: No session found for ${paymentId}`);
-      return null;
-    }
-    
-    console.log(`Payment status for ${paymentId}:`, {
-      status: paymentSession.status,
-      hash: paymentSession.transactionHash ? (paymentSession.transactionHash.substring(0, 8) + "...") : "none",
-      attempts: paymentSession.attempts
-    });
-    
-    return {
-      paymentId,
-      status: paymentSession.status,
-      transactionHash: paymentSession.transactionHash,
-      error: paymentSession.error,
-      metadata: paymentSession.metadata,
-      amount: paymentSession.amount,
-      token: paymentSession.token,
-      timestamp: paymentSession.updatedAt,
-      attempts: paymentSession.attempts
-    };
   }
   
   /**
@@ -477,12 +317,11 @@ export class PaymentService {
         console.error(`Cannot cancel payment - session ${paymentId} not found`);
         return {
           success: false,
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            'Payment session not found',
-            null,
-            false
-          )
+          error: {
+            category: 'unknown_error',
+            message: 'Payment session not found',
+            retryable: false
+          }
         };
       }
       
@@ -491,12 +330,11 @@ export class PaymentService {
         console.log(`Cannot cancel payment ${paymentId} - already confirmed`);
         return {
           success: false,
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            'Cannot cancel a confirmed payment',
-            null,
-            false
-          )
+          error: {
+            category: 'unknown_error',
+            message: 'Cannot cancel a confirmed payment',
+            retryable: false
+          }
         };
       }
       
@@ -519,21 +357,48 @@ export class PaymentService {
       // Clean up session storage
       clearSessionBlockhashData();
       
-      console.log(`Payment ${paymentId} successfully cancelled`);
-      
       return { success: true };
     } catch (error) {
       console.error(`Failed to cancel payment ${paymentId}:`, error);
       return {
         success: false,
-        error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Failed to cancel payment',
-          error,
-          true
-        )
+        error: {
+          category: 'unknown_error',
+          message: 'Failed to cancel payment',
+          originalError: error,
+          retryable: true
+        }
       };
     }
+  }
+  
+  /**
+   * Get the status of a payment
+   */
+  public getPaymentStatus(paymentId: string): PaymentStatusResponse | null {
+    const paymentSession = this.activePayments.get(paymentId);
+    if (!paymentSession) {
+      return null;
+    }
+    
+    return {
+      paymentId,
+      status: paymentSession.status,
+      transactionHash: paymentSession.transactionHash,
+      error: paymentSession.error,
+      metadata: paymentSession.metadata,
+      amount: paymentSession.amount,
+      token: paymentSession.token,
+      timestamp: paymentSession.updatedAt,
+      attempts: paymentSession.attempts
+    };
+  }
+  
+  /**
+   * Get a formatted error message for display to users
+   */
+  public getFormattedErrorMessage(error: PaymentError): string {
+    return formatErrorForUser(error);
   }
   
   /**
@@ -588,12 +453,11 @@ export class PaymentService {
     
     // Update session status
     paymentSession.status = PaymentStatus.TIMEOUT;
-    paymentSession.error = createPaymentError(
-      ErrorCategory.TIMEOUT_ERROR,
-      'Payment timed out after 3 minutes',
-      null,
-      false
-    );
+    paymentSession.error = {
+      category: 'timeout_error',
+      message: 'Payment timed out after 3 minutes',
+      retryable: false
+    };
     paymentSession.updatedAt = new Date().toISOString();
     this.activePayments.set(paymentId, paymentSession);
     
@@ -609,13 +473,10 @@ export class PaymentService {
     if (paymentSession.imageId) {
       await this.storageProvider.markPaymentAsTimedOut(paymentSession.imageId);
     }
-    
-    // Clean up session storage
-    clearSessionBlockhashData();
   }
   
   /**
-   * Reset payment state after a duplicate transaction error
+   * Reset a payment after a duplicate transaction error
    */
   public async resetAfterDuplicateError(paymentId: string): Promise<boolean> {
     try {
@@ -640,20 +501,11 @@ export class PaymentService {
       paymentSession.updatedAt = new Date().toISOString();
       this.activePayments.set(paymentId, paymentSession);
       
-      console.log(`Payment ${paymentId} successfully reset for retry`);
-      
       return true;
     } catch (error) {
       console.error(`Failed to reset payment after duplicate error:`, error);
       return false;
     }
-  }
-  
-  /**
-   * Get a formatted error message for display to users
-   */
-  public getFormattedErrorMessage(error: PaymentError): string {
-    return formatErrorForUser(error);
   }
   
   /**
@@ -672,24 +524,7 @@ export class PaymentService {
     
     // Clean session storage
     clearSessionBlockhashData();
-    
-    console.log("PaymentService cleanup complete");
   }
-}
-
-/**
- * React hook for using the payment service
- */
-export function usePaymentService() {
-  const wallet = useWallet();
-  
-  const walletConfig: WalletConfig = {
-    publicKey: wallet.publicKey,
-    signTransaction: wallet.signTransaction,
-    connected: wallet.connected
-  };
-  
-  return new PaymentService(walletConfig);
 }
 
 export default PaymentService;
