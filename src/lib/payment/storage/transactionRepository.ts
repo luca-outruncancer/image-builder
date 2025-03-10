@@ -378,3 +378,107 @@ export class TransactionRepository {
       };
     }
   }
+  
+  /**
+   * Get all transactions for a wallet address
+   */
+  public async getTransactionsByWallet(walletAddress: string): Promise<{ success: boolean; data?: TransactionRecord[]; error?: PaymentError }> {
+    try {
+      if (!validateDatabaseConnection(supabase)) {
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Database client not available",
+            null,
+            false
+          )
+        };
+      }
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('sender_wallet', walletAddress)
+        .order('timestamp', { ascending: false });
+      
+      if (error) {
+        console.error("Error getting transactions for wallet:", error);
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Failed to get transactions for wallet",
+            error,
+            true
+          )
+        };
+      }
+      
+      return { success: true, data };
+    } catch (error) {
+      console.error('Failed to get transactions for wallet:', error);
+      return { 
+        success: false, 
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          "Failed to retrieve wallet transactions",
+          error,
+          true
+        )
+      };
+    }
+  }
+  
+  /**
+   * Mark a payment as timed out if it's been pending for too long
+   */
+  public async markPaymentAsTimedOut(imageId: number): Promise<{ success: boolean; error?: PaymentError }> {
+    try {
+      if (!validateDatabaseConnection(supabase)) {
+        return { 
+          success: false, 
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            "Database client not available",
+            null,
+            false
+          )
+        };
+      }
+      
+      const now = getCurrentTimestamp();
+      
+      // Update the existing transaction record for this image
+      const { error: txError } = await supabase
+        .from('transactions')
+        .update({
+          transaction_status: 'timeout',
+          last_verified_at: now
+        })
+        .eq('image_id', imageId)
+        .in('transaction_status', ['initiated', 'pending', 'in_progress']);
+      
+      if (txError) {
+        console.log("Note: Could not update transaction status for timeout:", txError);
+        // We'll continue even if this fails
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to mark payment as timed out:', error);
+      return { 
+        success: false, 
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          "Failed to mark payment as timed out",
+          error,
+          true
+        )
+      };
+    }
+  }
+}
+
+// Export a singleton instance
+export const transactionRepository = new TransactionRepository();
