@@ -141,3 +141,91 @@ export class PaymentService {
         status: PaymentStatus.INITIALIZED,
         transactionId: dbResult.transactionId
       };
+    } catch (error) {
+      console.error('[PS:${this.sessionId}] Failed to initialize payment:', error);
+      return {
+        paymentId: '',
+        status: PaymentStatus.FAILED,
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          'Payment initialization failed',
+          error,
+          true
+        )
+      };
+    }
+  }
+  
+  /**
+   * Process a payment
+   */
+  public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
+    try {
+      console.log(`[PS:${this.sessionId}] Processing payment ${paymentId}`);
+      
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
+      // Check if payment exists
+      const paymentSession = this.activePayments.get(paymentId);
+      if (!paymentSession) {
+        console.error(`[PS:${this.sessionId}] Payment session ${paymentId} not found in active payments`);
+        console.log("Current active sessions:", Array.from(this.activePayments.keys()));
+        
+        return {
+          paymentId,
+          status: PaymentStatus.FAILED,
+          error: createPaymentError(
+            ErrorCategory.UNKNOWN_ERROR,
+            'Payment session not found',
+            null,
+            false
+          )
+        };
+      }
+      
+      // First check for previously completed transactions in session storage
+      if (paymentSession.imageId) {
+        const storedSignature = getStoredTransactionSignature(`img_${paymentSession.imageId}`);
+        if (storedSignature) {
+          console.log(`[PS:${this.sessionId}] Found stored signature for image ${paymentSession.imageId}, verifying...`);
+          
+          try {
+            // Verify if this transaction was successful
+            const result = await this.paymentProvider.verifyExistingTransaction(storedSignature);
+            if (result.success) {
+              console.log(`[PS:${this.sessionId}] Stored signature ${storedSignature} verified as successful`);
+              
+              // Update payment session
+              paymentSession.status = PaymentStatus.CONFIRMED;
+              paymentSession.transactionHash = storedSignature;
+              paymentSession.updatedAt = new Date().toISOString();
+              this.activePayments.set(paymentId, paymentSession);
+              
+              // Update database
+              if (paymentSession.transactionId) {
+                await this.storageProvider.updateTransactionStatus(
+                  paymentSession.transactionId,
+                  PaymentStatus.CONFIRMED,
+                  storedSignature,
+                  true
+                );
+              }
+              
+              return {
+                paymentId,
+                status: PaymentStatus.CONFIRMED,
+                transactionHash: storedSignature,
+                metadata: paymentSession.metadata,
+                amount: paymentSession.amount,
+                token: paymentSession.token,
+                timestamp: paymentSession.updatedAt,
+                attempts: paymentSession.attempts
+              };
+            }
+          } catch (verifyError) {
+            console.error(`[PS:${this.sessionId}] Error verifying stored signature:`, verifyError);
+            // Continue with normal payment flow
+          }
+        }
+      }
