@@ -54,3 +54,62 @@ export class PaymentService {
       walletAddress: wallet.publicKey?.toString()
     });
   }
+  
+  /**
+   * Initialize a new payment
+   */
+  public async initializePayment(
+    amount: number,
+    metadata: PaymentMetadata
+  ): Promise<PaymentResponse> {
+    const context = {
+      amount,
+      token: ACTIVE_PAYMENT_TOKEN,
+      imageId: metadata.imageId,
+      walletConnected: this.wallet.connected
+    };
+    
+    try {
+      // Check if wallet is connected
+      if (!this.wallet.connected || !this.wallet.publicKey) {
+        paymentLogger.error('Payment initialization failed - wallet not connected', null, context);
+        return {
+          paymentId: '',
+          status: PaymentStatus.FAILED,
+          error: createPaymentError(
+            ErrorCategory.WALLET_ERROR,
+            'Wallet not connected',
+            null,
+            false
+          )
+        };
+      }
+      
+      // Generate a unique payment ID
+      const paymentId = generatePaymentId();
+      paymentLogger.info(`Initializing payment ${paymentId}`, { 
+        amount: amount,
+        token: ACTIVE_PAYMENT_TOKEN,
+        ...context
+      });
+      
+      // Clean up any session data to ensure fresh transaction
+      clearSessionBlockhashData();
+      
+      // Create payment session
+      const paymentSession: PaymentSession = {
+        paymentId,
+        status: PaymentStatus.INITIALIZED,
+        imageId: metadata.imageId,
+        amount,
+        token: ACTIVE_PAYMENT_TOKEN,
+        metadata: {
+          ...metadata,
+          paymentId // Store the payment ID in metadata for transaction tracking
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        attempts: 0,
+        walletAddress: this.wallet.publicKey.toString(),
+        recipientWallet: RECIPIENT_WALLET_ADDRESS
+      };
