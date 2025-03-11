@@ -8,9 +8,11 @@ import {
   PaymentStatus, 
   PaymentStatusResponse, 
   PaymentMetadata, 
-  PaymentError
+  PaymentError,
+  ErrorCategory
 } from '../types';
 import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
+import { paymentLogger } from '@/utils/logger';
 
 /**
  * React hook for managing payment state and interactions
@@ -47,7 +49,7 @@ export function usePayment() {
     try {
       if (!wallet.connected) {
         setError({
-          category: 'wallet_error',
+          category: ErrorCategory.WALLET_ERROR,
           message: 'Wallet not connected',
           retryable: false
         });
@@ -67,9 +69,9 @@ export function usePayment() {
       
       return response.paymentId;
     } catch (error) {
-      console.error('Failed to initialize payment:', error);
+      paymentLogger.error('Failed to initialize payment:', error);
       setError({
-        category: 'unknown_error',
+        category: ErrorCategory.UNKNOWN_ERROR,
         message: 'Payment initialization failed',
         retryable: true,
         originalError: error
@@ -86,7 +88,7 @@ export function usePayment() {
     
     if (!currentPaymentId) {
       setError({
-        category: 'unknown_error',
+        category: ErrorCategory.UNKNOWN_ERROR,
         message: 'No payment ID provided',
         retryable: false
       });
@@ -122,9 +124,9 @@ export function usePayment() {
       setIsProcessing(false);
       return false;
     } catch (error) {
-      console.error('Failed to process payment:', error);
+      paymentLogger.error('Failed to process payment:', error);
       setError({
-        category: 'unknown_error',
+        category: ErrorCategory.UNKNOWN_ERROR,
         message: 'Payment processing failed',
         retryable: true,
         originalError: error
@@ -158,9 +160,9 @@ export function usePayment() {
         return false;
       }
     } catch (error) {
-      console.error('Failed to cancel payment:', error);
+      paymentLogger.error('Failed to cancel payment:', error);
       setError({
-        category: 'unknown_error',
+        category: ErrorCategory.UNKNOWN_ERROR,
         message: 'Payment cancellation failed',
         retryable: true,
         originalError: error

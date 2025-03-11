@@ -26,6 +26,8 @@ import {
   clearSessionBlockhashData
 } from '../utils';
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { blockchainLogger } from '@/utils/logger';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Process a SOL payment transaction
@@ -37,56 +39,40 @@ export async function processSolPayment(
   const { amount, recipientWallet, metadata } = request;
   const paymentId = metadata?.paymentId || 'unknown';
   
-  console.log(`[SolPayment:${paymentId}] Processing SOL payment for amount ${amount} SOL`);
-  
-  if (!walletConfig.publicKey || !walletConfig.signTransaction) {
-    return {
-      success: false,
-      error: createPaymentError(
-        ErrorCategory.WALLET_ERROR,
-        'Wallet not connected or missing required methods',
-        null,
-        false
-      )
-    };
-  }
-  
-  // Create connection to Solana
-  const connection = new Connection(RPC_ENDPOINT, {
-    commitment: 'confirmed' as Commitment,
-    confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
-  });
-  
   try {
+    blockchainLogger.info(`Processing SOL payment for amount ${amount} SOL`, {
+      paymentId,
+      amount,
+      recipientWallet: request.recipientWallet
+    });
+    
+    if (!walletConfig.publicKey || !walletConfig.signTransaction) {
+      throw new Error('Wallet not connected or missing required methods');
+    }
+    
+    // Create connection to Solana
+    const connection = new Connection(RPC_ENDPOINT, {
+      commitment: 'confirmed' as Commitment,
+      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+    });
+    
     // Check SOL balance
     let balance;
     try {
       balance = await connection.getBalance(walletConfig.publicKey);
     } catch (balanceError) {
-      return {
-        success: false,
-        error: createPaymentError(
-          ErrorCategory.NETWORK_ERROR,
-          'Failed to check SOL balance',
-          balanceError,
-          true
-        )
-      };
+      throw new Error('Failed to check SOL balance');
     }
     
     const solBalance = balance / LAMPORTS_PER_SOL;
-    console.log(`[SolPayment:${paymentId}] Current SOL balance: ${solBalance.toFixed(6)}`);
+    blockchainLogger.info(`Current SOL balance: ${solBalance.toFixed(6)}`, {
+      paymentId,
+      balance: solBalance,
+      required: amount
+    });
     
     if (solBalance < amount) {
-      return {
-        success: false,
-        error: createPaymentError(
-          ErrorCategory.BALANCE_ERROR,
-          `Insufficient SOL balance. You have ${solBalance.toFixed(6)} SOL but need ${amount} SOL`,
-          null,
-          false
-        )
-      };
+      throw new Error(`Insufficient SOL balance. Required: ${amount}, Available: ${solBalance}`);
     }
     
     // Calculate lamports (1 SOL = 1,000,000,000 lamports)
@@ -100,7 +86,10 @@ export async function processSolPayment(
     const timestamp = Date.now();
     const uniqueId = `${nonce}_${timestamp}`;
     
-    console.log(`[SolPayment:${paymentId}] Creating transaction with unique ID: ${uniqueId}`);
+    blockchainLogger.info(`Creating transaction with unique ID: ${uniqueId}`, {
+      paymentId,
+      uniqueId
+    });
     
     // Add the main transfer instruction
     const mainTransferInstruction = SystemProgram.transfer({
@@ -130,20 +119,16 @@ export async function processSolPayment(
     while (blockHashRetries < maxBlockHashRetries) {
       try {
         blockHash = await connection.getLatestBlockhash('confirmed');
-        console.log(`[SolPayment:${paymentId}] Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`);
+        blockchainLogger.info(`Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`, {
+          paymentId,
+          blockhash: blockHash.blockhash,
+          lastValidBlockHeight: blockHash.lastValidBlockHeight
+        });
         break;
       } catch (blockHashError) {
         blockHashRetries++;
         if (blockHashRetries === maxBlockHashRetries) {
-          return {
-            success: false,
-            error: createPaymentError(
-              ErrorCategory.NETWORK_ERROR,
-              'Failed to get recent blockhash after multiple attempts',
-              blockHashError,
-              true
-            )
-          };
+          throw new Error('Failed to get recent blockhash after multiple attempts');
         }
         // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, 1000 * blockHashRetries));
@@ -151,15 +136,7 @@ export async function processSolPayment(
     }
     
     if (!blockHash) {
-      return {
-        success: false,
-        error: createPaymentError(
-          ErrorCategory.NETWORK_ERROR,
-          'Failed to get recent blockhash',
-          new Error('No blockhash received'),
-          true
-        )
-      };
+      throw new Error('Failed to get recent blockhash');
     }
     
     // Set transaction parameters
@@ -170,10 +147,10 @@ export async function processSolPayment(
     let signedTransaction;
     try {
       signedTransaction = await walletConfig.signTransaction(transaction);
-      console.log(`[SolPayment:${paymentId}] Transaction signed successfully`);
+      blockchainLogger.info(`Transaction signed successfully`, { paymentId });
     } catch (signError) {
       if (isUserRejectionError(signError)) {
-        console.log(`[SolPayment:${paymentId}] User declined to sign transaction`);
+        blockchainLogger.info(`User declined to sign transaction`, { paymentId });
         return {
           success: false,
           error: createPaymentError(
@@ -197,15 +174,12 @@ export async function processSolPayment(
     }
     
     // Log transaction details for debugging
-    console.log(`[SolPayment:${paymentId}] Transaction details:`, {
-      blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
-      feePayer: transaction.feePayer?.toString().slice(0, 8) + "...",
-      instructions: transaction.instructions.length,
-      signatures: transaction.signatures.length,
-      serializedSize: signedTransaction.serialize().length,
+    blockchainLogger.debug(`Transaction details:`, {
+      paymentId,
       uniqueId,
-      uniqueLamports,
-      timestamp
+      blockhash: transaction.recentBlockhash,
+      instructions: transaction.instructions.length,
+      signers: transaction.signatures.length
     });
     
     // Send transaction with retry logic
@@ -218,12 +192,17 @@ export async function processSolPayment(
         // Clear any cached transaction data before sending
         clearSessionBlockhashData();
         
-        console.log(`[SolPayment:${paymentId}] Sending transaction (attempt ${retryCount + 1}/${maxRetries + 1})...`);
-        console.log(`[SolPayment:${paymentId}] Transaction details:`, {
+        blockchainLogger.info(`Sending transaction (attempt ${retryCount + 1}/${maxRetries + 1})...`, {
+          paymentId,
+          attempt: retryCount + 1,
+          maxAttempts: maxRetries + 1
+        });
+        
+        blockchainLogger.debug(`Transaction details:`, {
+          paymentId,
           uniqueId,
-          blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
-          instructions: transaction.instructions.length,
-          uniqueLamports
+          attempt: retryCount + 1,
+          blockhash: transaction.recentBlockhash
         });
         
         signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
@@ -231,27 +210,44 @@ export async function processSolPayment(
           preflightCommitment: 'confirmed'
         });
         
-        console.log(`[SolPayment:${paymentId}] Transaction sent, signature: ${signature}`);
+        blockchainLogger.info(`Transaction sent, signature: ${signature}`, {
+          paymentId,
+          signature,
+          attempt: retryCount + 1
+        });
         break;
       } catch (sendError) {
-        console.error(`[SolPayment:${paymentId}] Error sending transaction (attempt ${retryCount + 1}):`, sendError);
+        blockchainLogger.error(`Error sending transaction (attempt ${retryCount + 1}):`, sendError, {
+          paymentId,
+          attempt: retryCount + 1
+        });
         
         // Check if this is a "Transaction already processed" error
         if (isTxAlreadyProcessedError(sendError)) {
-          console.log(`[SolPayment:${paymentId}] Transaction already processed error detected`);
+          blockchainLogger.info(`Transaction already processed error detected`, {
+            paymentId,
+            error: sendError instanceof Error ? sendError.message : String(sendError)
+          });
           
           // Try to extract the signature from the error
           const existingSig = extractSignatureFromError(sendError);
           
           if (existingSig) {
-            console.log(`[SolPayment:${paymentId}] Found existing signature: ${existingSig}`);
+            blockchainLogger.info(`Found existing signature: ${existingSig}`, {
+              paymentId,
+              signature: existingSig
+            });
             
             // Verify if the transaction was successful
             try {
               const status = await connection.getSignatureStatus(existingSig);
               
               if (status && status.value && !status.value.err) {
-                console.log(`[SolPayment:${paymentId}] Found successful existing transaction`);
+                blockchainLogger.info(`Found successful existing transaction`, {
+                  paymentId,
+                  signature: existingSig,
+                  status: status.value
+                });
                 return {
                   success: true,
                   transactionHash: existingSig,
@@ -260,7 +256,10 @@ export async function processSolPayment(
                 };
               }
             } catch (statusError) {
-              console.log(`[SolPayment:${paymentId}] Error checking transaction status:`, statusError);
+              blockchainLogger.error(`Error checking transaction status:`, statusError, {
+                paymentId,
+                signature: existingSig
+              });
             }
           }
           
@@ -302,8 +301,12 @@ export async function processSolPayment(
     }
     
     // Confirm transaction
+    blockchainLogger.info(`Confirming transaction...`, {
+      paymentId,
+      signature
+    });
+    
     try {
-      console.log(`[SolPayment:${paymentId}] Confirming transaction...`);
       const confirmation = await connection.confirmTransaction({
         signature,
         blockhash: blockHash.blockhash,
@@ -311,33 +314,44 @@ export async function processSolPayment(
       }, 'confirmed');
       
       if (confirmation.value.err) {
-        console.error(`[SolPayment:${paymentId}] Transaction confirmation failed:`, confirmation.value.err);
-        return {
-          success: false,
-          error: createPaymentError(
-            ErrorCategory.BLOCKCHAIN_ERROR,
-            `Transaction error: ${confirmation.value.err.toString()}`,
-            confirmation.value.err,
-            true
-          )
-        };
+        blockchainLogger.error(`Transaction confirmation failed:`, confirmation.value.err, {
+          paymentId,
+          signature
+        });
+        
+        throw new Error(
+          typeof confirmation.value.err === 'string' 
+            ? confirmation.value.err 
+            : 'Transaction confirmation failed'
+        );
       }
       
-      console.log(`[SolPayment:${paymentId}] Transaction confirmed successfully!`);
+      blockchainLogger.info(`Transaction confirmed successfully!`, {
+        paymentId,
+        signature,
+        confirmationStatus: 'confirmed'
+      });
       return {
         success: true,
         transactionHash: signature,
         blockchainConfirmation: true
       };
     } catch (confirmError) {
-      console.error(`[SolPayment:${paymentId}] Error confirming transaction:`, confirmError);
+      blockchainLogger.error(`Error confirming transaction:`, confirmError, {
+        paymentId,
+        signature
+      });
       
       // Check status manually - may have succeeded despite confirmation error
       try {
         const status = await connection.getSignatureStatus(signature);
         
         if (status.value && !status.value.err) {
-          console.log(`[SolPayment:${paymentId}] Transaction succeeded despite confirmation error`);
+          blockchainLogger.info(`Transaction succeeded despite confirmation error`, {
+            paymentId,
+            signature,
+            status: status.value
+          });
           return {
             success: true,
             transactionHash: signature,
@@ -345,7 +359,10 @@ export async function processSolPayment(
           };
         }
       } catch (statusError) {
-        console.error(`[SolPayment:${paymentId}] Failed to check transaction status:`, statusError);
+        blockchainLogger.error(`Failed to check transaction status:`, statusError, {
+          paymentId,
+          signature
+        });
       }
       
       return {
@@ -359,12 +376,67 @@ export async function processSolPayment(
       };
     }
   } catch (error) {
-    console.error(`[SolPayment:${paymentId}] SOL payment error:`, error);
+    blockchainLogger.error(`SOL payment error:`, error, {
+      paymentId,
+      amount,
+      recipientWallet: request.recipientWallet
+    });
+    
+    // Map error to appropriate category
+    if (isUserRejectionError(error)) {
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.USER_REJECTION,
+          'Transaction was declined by user',
+          error,
+          false
+        )
+      };
+    }
+    
+    if (isBalanceError(error)) {
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.BALANCE_ERROR,
+          error instanceof Error ? error.message : 'Insufficient funds',
+          error,
+          false
+        )
+      };
+    }
+    
+    if (isNetworkError(error)) {
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.NETWORK_ERROR,
+          'Network error during payment processing',
+          error,
+          true
+        )
+      };
+    }
+    
+    if (isTxAlreadyProcessedError(error)) {
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.BLOCKCHAIN_ERROR,
+          'Transaction already processed',
+          error,
+          false,
+          'DUPLICATE_TRANSACTION'
+        )
+      };
+    }
+    
     return {
       success: false,
       error: createPaymentError(
         ErrorCategory.UNKNOWN_ERROR,
-        error instanceof Error ? error.message : 'Unknown payment error',
+        error instanceof Error ? error.message : 'Payment processing failed',
         error,
         true
       )
@@ -389,7 +461,7 @@ export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balan
     
     return { balance: solBalance };
   } catch (error) {
-    console.error(`Error checking SOL balance:`, error);
+    blockchainLogger.error(`Error checking SOL balance:`, error);
     return { 
       balance: 0, 
       error: error instanceof Error ? error.message : 'Unknown error checking SOL balance'

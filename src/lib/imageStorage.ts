@@ -1,22 +1,26 @@
 // src/lib/imageStorage.ts
 
 import { createClient } from '@supabase/supabase-js';
+import { PaymentStatus } from './payment/types';
+import { imageLogger, storageLogger } from '@/utils/logger';
 
 // Use environment variables for Supabase connection
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+// Initialize Supabase client
 let supabase: any = null;
 
-try {
-  if (supabaseUrl && supabaseKey) {
+// Initialize only if environment variables are available
+if (supabaseUrl && supabaseKey) {
+  try {
     supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("Supabase client initialized in imageStorage");
-  } else {
-    console.error("Unable to initialize Supabase client due to missing environment variables in imageStorage");
+    storageLogger.info('Supabase client initialized in imageStorage');
+  } catch (error) {
+    storageLogger.error('Error initializing Supabase client in imageStorage:', error);
   }
-} catch (error) {
-  console.error("Error initializing Supabase client in imageStorage:", error);
+} else {
+  storageLogger.error('Unable to initialize Supabase client due to missing environment variables in imageStorage');
 }
 
 // Image status constants
@@ -47,155 +51,135 @@ export interface ImageRecord {
 /**
  * Create a new image record in the database
  */
-export async function createImageRecord(imageData: Partial<ImageRecord>) {
+export async function createImageRecord(
+  imageId: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  walletAddress: string,
+  cost: number,
+  status: PaymentStatus = PaymentStatus.PENDING
+): Promise<{ success: boolean; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return { 
-        success: false, 
-        error: "Supabase client not available. Check your environment variables." 
-      };
-    }
-    
-    const now = new Date().toISOString();
-    
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('images')
       .insert({
-        image_location: imageData.image_location,
-        start_position_x: imageData.start_position_x,
-        start_position_y: imageData.start_position_y,
-        size_x: imageData.size_x,
-        size_y: imageData.size_y,
-        image_status: imageData.image_status || IMAGE_STATUS.PENDING_PAYMENT,
-        created_at: now,
-        last_updated_at: now,
-        sender_wallet: imageData.sender_wallet, // Store the wallet address
-        payment_attempts: 0 // Initialize payment attempts counter
-      })
-      .select()
-      .single();
+        image_id: imageId,
+        x,
+        y,
+        width,
+        height,
+        wallet_address: walletAddress,
+        cost,
+        status: status.toUpperCase()
+      });
     
     if (error) {
-      console.error("Error creating image record:", error);
-      throw error;
+      storageLogger.error('Error creating image record:', error);
+      return { success: false, error };
     }
     
-    return { success: true, data };
+    return { success: true };
   } catch (error) {
-    console.error("Failed to create image record:", error);
+    storageLogger.error('Failed to create image record:', error);
     return { success: false, error };
   }
 }
 
 /**
- * Update the status of an existing image
+ * Update the status of an image
  */
-export async function updateImageStatus(imageId: number, status: number, confirmed: boolean = false) {
+export async function updateImageStatus(
+  imageId: number,
+  status: PaymentStatus,
+  confirmed: boolean = false
+): Promise<{ success: boolean; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return { 
-        success: false, 
-        error: "Supabase client not available. Check your environment variables." 
-      };
+    // First get the current image data
+    const { data: currentData, error: fetchError } = await supabase
+      .from('images')
+      .select('status')
+      .eq('image_id', imageId)
+      .single();
+    
+    if (fetchError) {
+      storageLogger.error('Error fetching current image data:', fetchError);
+      return { success: false, error: fetchError };
     }
     
-    const updateData: any = {
-      image_status: status,
-      last_updated_at: new Date().toISOString()
-    };
-    
-    // If confirmed, update the confirmed_at timestamp
-    if (confirmed) {
-      updateData.confirmed_at = new Date().toISOString();
-    }
-    
-    // Increment payment attempts counter if retrying
-    if (status === IMAGE_STATUS.PAYMENT_RETRY) {
-      // Get current image data first
-      const { data: currentImage, error: fetchError } = await supabase
+    // Only update if status is different or confirmation is being set
+    if (currentData.status !== status || confirmed) {
+      const { error } = await supabase
         .from('images')
-        .select('payment_attempts')
-        .eq('image_id', imageId)
-        .single();
+        .update({
+          status,
+          confirmed,
+          updated_at: new Date().toISOString()
+        })
+        .eq('image_id', imageId);
       
-      if (fetchError) {
-        console.error("Error fetching current image data:", fetchError);
-        // Continue with update without incrementing
-      } else {
-        const currentAttempts = currentImage?.payment_attempts || 0;
-        updateData.payment_attempts = currentAttempts + 1;
+      if (error) {
+        storageLogger.error('Error updating image status:', error);
+        return { success: false, error };
       }
     }
     
-    // If failed or timed out, record the final attempt count
-    if (status === IMAGE_STATUS.PAYMENT_FAILED || status === IMAGE_STATUS.PAYMENT_TIMEOUT) {
-      updateData.payment_final_status = status;
-    }
-    
-    const { data, error } = await supabase
-      .from('images')
-      .update(updateData)
-      .eq('image_id', imageId)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error("Error updating image status:", error);
-      throw error;
-    }
-    
-    return { success: true, data };
+    return { success: true };
   } catch (error) {
-    console.error("Failed to update image status:", error);
+    storageLogger.error('Failed to update image status:', error);
     return { success: false, error };
   }
 }
 
 /**
- * Get all image records that should be displayed on the canvas
- * (status 1 = confirmed, status 2 = pending payment, status 6 = payment retry)
+ * Get all placed images
  */
-export async function getImageRecords(): Promise<ImageRecord[]> {
+export async function getPlacedImages(): Promise<{ success: boolean; data?: any[]; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return [];
-    }
-    
     const { data, error } = await supabase
       .from('images')
       .select('*')
-      .in('image_status', [
-        IMAGE_STATUS.CONFIRMED, 
-        IMAGE_STATUS.PENDING_PAYMENT,
-        IMAGE_STATUS.PAYMENT_RETRY
-      ])
-      .order('created_at', { ascending: false });
+      .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
+      .eq('confirmed', true);
     
     if (error) {
-      console.error("Error fetching image records:", error);
-      throw error;
+      storageLogger.error('Error fetching image records:', error);
+      return { success: false, error };
     }
     
-    return data || [];
+    return { success: true, data };
   } catch (error) {
-    console.error("Failed to get image records:", error);
-    return [];
+    storageLogger.error('Failed to get image records:', error);
+    return { success: false, error };
   }
 }
 
 /**
- * Get a specific image record by ID
+ * Get an image by ID
  */
-export async function getImageById(imageId: number): Promise<ImageRecord | null> {
+export async function getImageById(imageId: number): Promise<{ success: boolean; data?: any; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return null;
-    }
-    
     const { data, error } = await supabase
       .from('images')
       .select('*')
@@ -203,106 +187,91 @@ export async function getImageById(imageId: number): Promise<ImageRecord | null>
       .single();
     
     if (error) {
-      console.error("Error fetching image record by ID:", error);
-      throw error;
+      storageLogger.error('Error fetching image record by ID:', error);
+      return { success: false, error };
     }
     
-    return data || null;
+    return { success: true, data };
   } catch (error) {
-    console.error(`Failed to get image with ID ${imageId}:`, error);
-    return null;
+    storageLogger.error(`Failed to get image with ID ${imageId}:`, error);
+    return { success: false, error };
   }
 }
 
 /**
- * Check if a specific area on the canvas is available
+ * Check if an area is available for placing an image
  */
-export async function isAreaAvailable(x: number, y: number, width: number, height: number): Promise<boolean> {
+export async function checkAreaAvailability(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  excludeImageId?: number
+): Promise<{ success: boolean; available?: boolean; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return true; // Default to available if can't check
-    }
-    
-    const { data, error } = await supabase
+    // Query for any confirmed images that overlap with the target area
+    let query = supabase
       .from('images')
       .select('*')
-      .in('image_status', [
-        IMAGE_STATUS.CONFIRMED, 
-        IMAGE_STATUS.PENDING_PAYMENT,
-        IMAGE_STATUS.PAYMENT_RETRY
-      ])
-      .or(`start_position_x.lt.${x + width},start_position_x.gt.${x - width}`)
-      .or(`start_position_y.lt.${y + height},start_position_y.gt.${y - height}`);
+      .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
+      .eq('confirmed', true)
+      .or(`and(x.gte.${x},x.lt.${x + width}),and(x.lte.${x},x.plus.width.gt.${x})`)
+      .or(`and(y.gte.${y},y.lt.${y + height}),and(y.lte.${y},y.plus.height.gt.${y})`);
+    
+    // Exclude the current image if updating
+    if (excludeImageId) {
+      query = query.neq('image_id', excludeImageId);
+    }
+    
+    const { data, error } = await query;
     
     if (error) {
-      console.error("Error checking area availability:", error);
-      throw error;
+      storageLogger.error('Error checking area availability:', error);
+      return { success: false, error };
     }
     
-    if (!data || data.length === 0) {
-      return true; // No overlapping images found
-    }
-    
-    // Check for actual overlap
-    for (const image of data) {
-      const imageRight = image.start_position_x + image.size_x;
-      const imageBottom = image.start_position_y + image.size_y;
-      const newRight = x + width;
-      const newBottom = y + height;
-      
-      // Check if there's no overlap
-      if (x >= imageRight || newRight <= image.start_position_x || 
-          y >= imageBottom || newBottom <= image.start_position_y) {
-        continue; // No overlap with this image
-      }
-      
-      return false; // Overlap found
-    }
-    
-    return true; // No overlaps found
+    // Area is available if no overlapping images were found
+    return { success: true, available: data.length === 0 };
   } catch (error) {
-    console.error("Failed to check area availability:", error);
-    return true; // Default to available if check fails
+    storageLogger.error('Failed to check area availability:', error);
+    return { success: false, error };
   }
 }
 
 /**
- * Clean up expired pending payments (more than 24 hours old)
- * This can be called periodically to maintain database cleanliness
+ * Clean up expired pending payments
  */
-export async function cleanupExpiredPendingPayments(): Promise<{ success: boolean, count?: number, error?: any }> {
+export async function cleanupExpiredPendingPayments(
+  timeoutMinutes: number = 3
+): Promise<{ success: boolean; error?: any }> {
+  if (!supabase) {
+    storageLogger.info('Skipping database operation: Supabase client not available');
+    return { success: false, error: 'Database client not available' };
+  }
+  
   try {
-    if (!supabase) {
-      console.warn("Skipping database operation: Supabase client not available");
-      return { success: false, error: "Supabase client not available" };
-    }
-    
-    // Calculate cutoff time (24 hours ago)
-    const cutoffTime = new Date();
-    cutoffTime.setHours(cutoffTime.getHours() - 24);
-    
-    // Update status of expired pending payments
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('images')
-      .update({ 
-        image_status: IMAGE_STATUS.PAYMENT_TIMEOUT,
-        last_updated_at: new Date().toISOString()
+      .update({
+        status: PaymentStatus.TIMEOUT.toUpperCase(),
+        updated_at: new Date().toISOString()
       })
-      .in('image_status', [IMAGE_STATUS.PENDING_PAYMENT, IMAGE_STATUS.PAYMENT_RETRY])
-      .lt('created_at', cutoffTime.toISOString());
+      .eq('status', PaymentStatus.PENDING.toUpperCase())
+      .lt('created_at', new Date(Date.now() - timeoutMinutes * 60000).toISOString());
     
     if (error) {
-      console.error("Error cleaning up expired pending payments:", error);
-      throw error;
+      storageLogger.error('Error cleaning up expired payments:', error);
+      return { success: false, error };
     }
     
-    return { 
-      success: true, 
-      count: data?.length || 0 
-    };
+    return { success: true };
   } catch (error) {
-    console.error("Failed to clean up expired pending payments:", error);
+    storageLogger.error('Failed to cleanup expired payments:', error);
     return { success: false, error };
   }
 }

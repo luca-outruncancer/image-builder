@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
 import { IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
+import { imageLogger } from '@/utils/logger';
 
 interface ResizeOptions {
   width: number;
@@ -52,7 +53,8 @@ export async function resizeImage(
       ? options.highQuality 
       : IMAGE_SETTINGS.HIGH_QUALITY_MODE && FEATURES.HIGH_QUALITY_IMAGES;
     
-    console.log(`[ImageResizer] Starting resize operation for ${targetPath}`, {
+    imageLogger.info('Starting resize operation', {
+      targetPath,
       targetWidth: options.width,
       targetHeight: options.height,
       originalSize: `${(originalSize / 1024).toFixed(1)}KB`,
@@ -62,7 +64,12 @@ export async function resizeImage(
 
     // Get input image metadata
     const metadata = await sharp(sourceBuffer).metadata();
-    console.log(`[ImageResizer] Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+    imageLogger.debug('Original image metadata', {
+      width: metadata.width,
+      height: metadata.height,
+      format: metadata.format,
+      hasAlpha: metadata.hasAlpha
+    });
     
     // Choose output format based on needs and settings
     const hasTransparency = metadata.hasAlpha || metadata.format === 'png' || metadata.format === 'webp';
@@ -169,7 +176,7 @@ export async function resizeImage(
       case 'avif':
         sharpInstance = sharpInstance.avif({ 
           quality: determineQuality(),
-          speed: 5 // Range 0-10, lower is slower but better quality
+          effort: 5 // Range 0-9, lower is faster but lower quality
         });
         break;
     }
@@ -193,7 +200,7 @@ export async function resizeImage(
     
     // Log success with optimization metrics
     const compressionRatio = originalSize / fileStats.size;
-    console.log(`[ImageResizer] Successfully resized image:`, {
+    imageLogger.info('Successfully resized image', {
       path: targetPath,
       originalSize: `${(originalSize / 1024).toFixed(1)}KB`,
       newSize: `${(fileStats.size / 1024).toFixed(1)}KB`,
@@ -214,7 +221,12 @@ export async function resizeImage(
       processingTimeMs
     };
   } catch (error) {
-    console.error(`[ImageResizer] Error resizing image:`, error);
+    imageLogger.error('Error resizing image', error, {
+      targetPath,
+      width: options.width,
+      height: options.height,
+      format: options.format
+    });
     
     // If we have a resized buffer but writing failed, try saving it one more time
     if (resizedBuffer) {
@@ -223,7 +235,11 @@ export async function resizeImage(
         const fileStats = await fs.stat(targetPath);
         
         const endTime = performance.now();
-        console.log(`[ImageResizer] Recovered from write error on second attempt`);
+        imageLogger.info('Recovered from write error on second attempt', {
+          targetPath,
+          size: fileStats.size,
+          processingTimeMs: Math.round(endTime - startTime)
+        });
         
         return {
           success: true,
@@ -236,22 +252,28 @@ export async function resizeImage(
           processingTimeMs: Math.round(endTime - startTime)
         };
       } catch (secondError) {
-        console.error(`[ImageResizer] Failed second write attempt:`, secondError);
+        imageLogger.error('Failed second write attempt', secondError, {
+          targetPath,
+          bufferSize: resizedBuffer.length
+        });
       }
     }
     
     // If all else fails, write the original file as a fallback
     try {
-      console.log(`[ImageResizer] Falling back to original image`);
+      imageLogger.warn('Falling back to original image', {
+        targetPath,
+        originalSize
+      });
+      
       await fs.writeFile(targetPath, sourceBuffer);
       const fileStats = await fs.stat(targetPath);
-      
       const endTime = performance.now();
       
       return {
         success: false,
         path: targetPath,
-        format: 'original',
+        format: 'unknown',
         originalSize,
         resizedSize: fileStats.size,
         width: options.width,
@@ -260,7 +282,10 @@ export async function resizeImage(
         error
       };
     } catch (fallbackError) {
-      console.error(`[ImageResizer] Complete failure, could not save original:`, fallbackError);
+      imageLogger.error('Failed to save fallback image', fallbackError, {
+        targetPath,
+        originalSize
+      });
       
       return {
         success: false,
@@ -271,7 +296,7 @@ export async function resizeImage(
         width: options.width,
         height: options.height,
         processingTimeMs: Math.round(performance.now() - startTime),
-        error: error
+        error: fallbackError
       };
     }
   }

@@ -1,10 +1,13 @@
 // src/lib/payment/utils/transactionUtils.ts
+import { blockchainLogger } from '@/utils/logger';
 
 /**
  * Generate a unique transaction ID/nonce
  */
 export function getNonce(): string {
-  return Date.now().toString() + Math.random().toString().slice(2, 8);
+  const nonce = Date.now().toString() + Math.random().toString().slice(2, 8);
+  blockchainLogger.debug('Generated new nonce', { nonce });
+  return nonce;
 }
 
 /**
@@ -13,7 +16,9 @@ export function getNonce(): string {
 export function generatePaymentId(): string {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  return `pay_${timestamp}_${random}`;
+  const paymentId = `pay_${timestamp}_${random}`;
+  blockchainLogger.debug('Generated new payment ID', { paymentId });
+  return paymentId;
 }
 
 /**
@@ -39,11 +44,21 @@ export async function retryWithBackoff<T>(
     try {
       return await fn();
     } catch (error) {
-      console.warn(`Attempt ${i + 1}/${maxRetries} failed:`, error);
+      blockchainLogger.warn(`Retry attempt ${i + 1}/${maxRetries} failed`, {
+        attempt: i + 1,
+        maxRetries,
+        error,
+        nextDelayMs: initialDelayMs * Math.pow(2, i)
+      });
       lastError = error;
       
       // Don't retry if the custom retry function returns false
       if (!shouldRetry(error)) {
+        blockchainLogger.info('Retry aborted by shouldRetry function', {
+          error,
+          attempt: i + 1,
+          maxRetries
+        });
         throw error;
       }
       
@@ -53,6 +68,11 @@ export async function retryWithBackoff<T>(
     }
   }
   
+  blockchainLogger.error('All retry attempts failed', {
+    maxRetries,
+    initialDelayMs,
+    lastError
+  });
   throw lastError;
 }
 
@@ -63,6 +83,7 @@ export async function retryWithBackoff<T>(
 export function clearSessionBlockhashData(): void {
   try {
     if (typeof window === 'undefined' || !window.sessionStorage) {
+      blockchainLogger.debug('Session storage not available');
       return;
     }
     
@@ -85,13 +106,22 @@ export function clearSessionBlockhashData(): void {
       try {
         sessionStorage.removeItem(key);
       } catch (e) {
-        console.warn(`Failed to remove ${key} from session storage:`, e);
+        blockchainLogger.error('Failed to remove item from session storage', {
+          key,
+          error: e
+        });
       }
     });
     
-    console.log(`Cleared ${keysToRemove.length} blockhash-related items from session storage`);
+    blockchainLogger.info('Cleared blockhash data from session storage', {
+      itemsCleared: keysToRemove.length,
+      clearedKeys: keysToRemove
+    });
   } catch (error) {
-    console.error("Error clearing session storage:", error);
+    blockchainLogger.error('Error clearing session storage', {
+      error,
+      sessionStorageAvailable: typeof window !== 'undefined' && !!window.sessionStorage
+    });
   }
 }
 

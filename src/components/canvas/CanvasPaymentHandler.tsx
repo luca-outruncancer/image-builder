@@ -8,6 +8,8 @@ import { X } from 'lucide-react';
 import ConfirmPlacement from './ConfirmPlacement';
 import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
+import { canvasLogger } from '@/utils/logger';
+import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
 
 interface PlacedImage {
   id: string;
@@ -57,22 +59,40 @@ export default function CanvasPaymentHandler({
   const isErrorStep = error !== null;
   const isSuccessStep = successInfo !== null;
 
+  // Log state changes for debugging
+  useEffect(() => {
+    canvasLogger.debug('Payment handler state updated', {
+      isConfirmationStep,
+      isProcessingStep,
+      isErrorStep,
+      isSuccessStep,
+      connected,
+      paymentStatus,
+      error: error ? {
+        category: error.category,
+        message: error.message,
+        code: error.code
+      } : null,
+      successInfo: successInfo ? {
+        transactionHash: successInfo.transactionHash,
+        timestamp: successInfo.timestamp,
+        metadata: {
+          fileName: successInfo.metadata?.fileName,
+          positionX: successInfo.metadata?.positionX,
+          positionY: successInfo.metadata?.positionY
+        }
+      } : null
+    });
+  }, [isConfirmationStep, isProcessingStep, isErrorStep, isSuccessStep, connected, paymentStatus, error, successInfo]);
+
   // Clean up session storage when component unmounts
   useEffect(() => {
     return () => {
       try {
-        if (typeof window !== 'undefined') {
-          const keysToRemove = [];
-          for (let i = 0; i < sessionStorage.length; i++) {
-            const key = sessionStorage.key(i);
-            if (key && (key.includes('blockhash') || key.includes('transaction'))) {
-              keysToRemove.push(key);
-            }
-          }
-          keysToRemove.forEach(key => sessionStorage.removeItem(key));
-        }
+        canvasLogger.debug('Cleaning up payment handler session data');
+        clearSessionBlockhashData();
       } catch (e) {
-        console.error("Failed to clear session storage:", e);
+        canvasLogger.error('Failed to clear session storage', e);
       }
     };
   }, []);
@@ -96,7 +116,10 @@ export default function CanvasPaymentHandler({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
           <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
             <button 
-              onClick={onCloseError}
+              onClick={() => {
+                canvasLogger.debug('User closed error modal', { error });
+                onCloseError();
+              }}
               className="absolute top-3 right-3 text-white/70 hover:text-white"
             >
               <X size={20} />
@@ -130,13 +153,19 @@ export default function CanvasPaymentHandler({
 
             <div className="flex justify-end gap-3 border-t border-white/20 p-6">
               <button
-                onClick={onCancel}
+                onClick={() => {
+                  canvasLogger.debug('User canceled payment after error');
+                  onCancel();
+                }}
                 className="px-4 py-2 border border-white/30 text-white rounded-md hover:bg-white/10 font-medium transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={onRetry}
+                onClick={() => {
+                  canvasLogger.debug('User initiated payment retry', { error });
+                  onRetry();
+                }}
                 className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
               >
                 Try Again
@@ -171,7 +200,13 @@ export default function CanvasPaymentHandler({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
           <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
             <button 
-              onClick={onDone}
+              onClick={() => {
+                canvasLogger.debug('User closed success modal', {
+                  transactionHash: successInfo?.transactionHash,
+                  imageId: successInfo?.metadata?.imageId
+                });
+                onDone();
+              }}
               className="absolute top-3 right-3 text-white/70 hover:text-white"
             >
               <X size={20} />
@@ -213,7 +248,13 @@ export default function CanvasPaymentHandler({
 
             <div className="flex justify-end border-t border-white/20 p-6">
               <button
-                onClick={onDone}
+                onClick={() => {
+                  canvasLogger.debug('User completed payment flow', {
+                    transactionHash: successInfo?.transactionHash,
+                    imageId: successInfo?.metadata?.imageId
+                  });
+                  onDone();
+                }}
                 className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
               >
                 Done

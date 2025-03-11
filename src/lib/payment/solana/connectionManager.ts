@@ -1,8 +1,9 @@
 // src/lib/payment/solana/connectionManager.ts
-import { Connection, Commitment } from '@solana/web3.js';
+import { Connection, Commitment, TransactionSignature } from '@solana/web3.js';
 import { ErrorCategory } from '../types';
 import { createPaymentError } from '../utils/errorUtils';
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { blockchainLogger } from '@/utils/logger';
 
 /**
  * ConnectionManager handles all Solana RPC connection functionality
@@ -13,13 +14,13 @@ export class ConnectionManager {
   private currentConnection: Connection;
   
   constructor() {
-    this.primaryConnection = this.createConnection(RPC_ENDPOINT);
+    this.primaryConnection = this.createConnection();
     this.currentConnection = this.primaryConnection;
     
     // Initialize fallback connections
     if (FALLBACK_ENDPOINTS && FALLBACK_ENDPOINTS.length > 0) {
       this.fallbackConnections = FALLBACK_ENDPOINTS.map(endpoint => 
-        this.createConnection(endpoint)
+        this.createConnection()
       );
     }
   }
@@ -27,20 +28,22 @@ export class ConnectionManager {
   /**
    * Create a Solana connection with custom configuration
    */
-  private createConnection(endpoint: string): Connection {
+  private createConnection(): Connection {
     const commitment: Commitment = 'confirmed';
     
     try {
-      if (!endpoint) {
-        throw new Error('No RPC endpoint provided');
+      if (!RPC_ENDPOINT) {
+        throw new Error('No RPC endpoint configured');
       }
       
-      return new Connection(endpoint, {
+      const connection = new Connection(RPC_ENDPOINT, {
         commitment,
         confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
       });
+      
+      return connection;
     } catch (error) {
-      console.error("Failed to create Solana connection:", error);
+      blockchainLogger.error('Failed to create Solana connection:', error);
       throw createPaymentError(
         ErrorCategory.NETWORK_ERROR,
         'Connection initialization failed',
@@ -58,23 +61,29 @@ export class ConnectionManager {
   }
   
   /**
-   * Verify if a transaction has been confirmed
+   * Verify if a transaction has already been processed successfully
    */
-  public async verifyTransaction(signature: string): Promise<boolean> {
+  public async verifyTransaction(
+    signature: TransactionSignature
+  ): Promise<boolean> {
     try {
-      console.log(`Verifying transaction signature: ${signature}`);
+      blockchainLogger.info(`Verifying transaction signature: ${signature}`);
       const status = await this.currentConnection.getSignatureStatus(signature);
       
       // If we have a confirmation, the transaction succeeded
       if (status && status.value && !status.value.err) {
-        console.log(`Transaction verified: ${signature} was SUCCESSFUL`);
+        blockchainLogger.info(`Transaction verified: ${signature} was SUCCESSFUL`);
         return true;
       }
       
-      console.log(`Transaction verified: ${signature} was NOT successful`, status);
+      blockchainLogger.info(`Transaction verified: ${signature} was NOT successful`, {
+        status: status?.value || null
+      });
       return false;
     } catch (error) {
-      console.error("Error verifying transaction:", error);
+      blockchainLogger.error('Error verifying transaction:', error, {
+        signature
+      });
       
       // Try fallback connections if available
       if (this.fallbackConnections.length > 0) {
@@ -86,11 +95,11 @@ export class ConnectionManager {
           // Retry with the fallback
           const status = await fallback.getSignatureStatus(signature);
           if (status && status.value && !status.value.err) {
-            console.log(`Transaction verified on fallback: ${signature} was SUCCESSFUL`);
+            blockchainLogger.info(`Transaction verified on fallback: ${signature} was SUCCESSFUL`);
             return true;
           }
         } catch (fallbackError) {
-          console.error("Error verifying transaction on fallback:", fallbackError);
+          blockchainLogger.error('Error verifying transaction on fallback:', fallbackError);
         } finally {
           // Switch back to primary
           this.currentConnection = this.primaryConnection;

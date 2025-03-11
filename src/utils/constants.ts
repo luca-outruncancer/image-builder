@@ -18,8 +18,9 @@ export const FEATURES = {
 export enum LogLevel {
   DEBUG = 0,  // Most verbose
   INFO = 1,   // Standard information
-  ERROR = 2,  // Errors only
-  NONE = 3    // No logging
+  WARN = 2,   // Warnings
+  ERROR = 3,  // Errors only
+  NONE = 4    // No logging
 }
 
 export const LOGGING = {
