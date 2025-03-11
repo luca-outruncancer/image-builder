@@ -22,13 +22,13 @@ import {
   isTxAlreadyProcessedError,
   extractSignatureFromError
 } from './utils';
-import SolanaPaymentProvider from './solanaPaymentProvider';
-import PaymentStorageProvider from './paymentStorageProvider';
+import { PaymentStorageProvider } from './storage';
+import { SolanaPaymentProvider } from './solana/solanaPaymentProvider';
 import { ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS, getMintAddress } from '@/utils/constants';
 import { paymentLogger } from '@/utils/logger';
 import { generateRequestId } from '@/utils/logger';
 
-const PAYMENT_TIMEOUT_MS = 180000; // 3 minutes
+const PAYMENT_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 /**
  * Core PaymentService that orchestrates the payment flow

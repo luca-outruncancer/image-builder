@@ -6,7 +6,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { getImageRecords, updateImageStatus, IMAGE_STATUS, ImageRecord } from '@/lib/imageStorage';
-import { usePaymentContext } from '@/lib/payment/PaymentContext';
+import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 

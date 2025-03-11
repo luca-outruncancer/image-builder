@@ -6,7 +6,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import { X } from 'lucide-react';
 import ConfirmPlacement from './ConfirmPlacement';
-import { usePaymentContext } from '@/lib/payment/PaymentContext';
+import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 
 interface PlacedImage {
