@@ -102,64 +102,41 @@ export function isTxAlreadyProcessedError(error: any): boolean {
 }
 
 /**
- * Extract transaction signature from error if possible
+ * Extract transaction signature from error message
  */
 export function extractSignatureFromError(error: any): string | null {
   if (!error) return null;
   
-  try {
-    // Check if it's a SendTransactionError with logs
-    if (error instanceof SendTransactionError && error.logs) {
-      // First look for direct signature mentions in logs
-      for (const log of error.logs) {
-        const matches = log.match(/signature: ([A-Za-z0-9]+)/);
-        if (matches && matches[1]) {
-          return matches[1];
-        }
-      }
-
-      // Then check for transaction signature in log format
-      for (const log of error.logs) {
-        // Look for typical transaction signature format (base58 string of ~80-90 chars)
-        const sigMatch = log.match(/([1-9A-HJ-NP-Za-km-z]{80,90})/);
-        if (sigMatch && sigMatch[1]) {
-          return sigMatch[1];
-        }
+  // Check error message for signature
+  const errorMessage = error.message || String(error);
+  const signatureMatch = errorMessage.match(/signature: ([A-Za-z0-9]{32,})/);
+  if (signatureMatch) {
+    return signatureMatch[1];
+  }
+  
+  // Check error logs if available
+  if (error.logs) {
+    for (const log of error.logs) {
+      const logMatch = log.match(/signature: ([A-Za-z0-9]{32,})/);
+      if (logMatch) {
+        return logMatch[1];
       }
     }
-    
-    // Try to extract from error message
-    const errorMessage = error.message || String(error);
-    
-    // First check for explicit signature mention
-    const sigMatches = errorMessage.match(/signature ([A-Za-z0-9]{80,90})/);
-    if (sigMatches && sigMatches[1]) {
-      return sigMatches[1];
-    }
-    
-    // Then try to extract any base58-looking string that might be a signature
-    const base58Matches = errorMessage.match(/([1-9A-HJ-NP-Za-km-z]{80,90})/);
-    if (base58Matches && base58Matches[1]) {
-      return base58Matches[1];
-    }
-  } catch (e) {
-    console.error("Error extracting signature from error:", e);
   }
   
   return null;
 }
 
 /**
- * Generate a unique transaction ID/nonce based on multiple entropy sources
- * This creates a more robust nonce that's unique even across sessions
+ * Generate a unique nonce for transactions
  */
-export function getNonce(): string {
-  const timestamp = Date.now();
-  const randomValue = Math.random().toString().slice(2, 10);
-  const entropy = crypto.getRandomValues(new Uint8Array(4))
-    .reduce((acc, val) => acc + val.toString(16).padStart(2, '0'), '');
-  
-  return `${timestamp}_${randomValue}_${entropy}`;
+export function getNonce(): number {
+  // Use timestamp as base (last 6 digits)
+  const timestamp = Date.now() % 1000000;
+  // Add random number (0-999)
+  const random = Math.floor(Math.random() * 1000);
+  // Combine them
+  return timestamp * 1000 + random;
 }
 
 /**

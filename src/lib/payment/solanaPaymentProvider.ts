@@ -31,11 +31,33 @@ import { processPayment as processBlockchainPayment } from './solana';
 export class SolanaPaymentProvider {
   private connection: Connection;
   private wallet: WalletConfig;
-  private cachedTransactions: Map<string, string> = new Map(); // Map of txId -> signature
+  private cachedTransactions: Map<string, {
+    signature: string;
+    timestamp: number;
+    status: 'pending' | 'confirmed' | 'failed';
+  }> = new Map();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly CLEANUP_INTERVAL = 60 * 1000; // 1 minute
   
   constructor(wallet: WalletConfig) {
     this.wallet = wallet;
     this.connection = this.createConnection();
+    this.startCacheCleanup();
+  }
+  
+  private startCacheCleanup() {
+    setInterval(() => {
+      this.cleanupCache();
+    }, this.CLEANUP_INTERVAL);
+  }
+  
+  private cleanupCache() {
+    const now = Date.now();
+    for (const [key, value] of this.cachedTransactions.entries()) {
+      if (now - value.timestamp > this.CACHE_DURATION) {
+        this.cachedTransactions.delete(key);
+      }
+    }
   }
   
   /**
@@ -92,25 +114,32 @@ export class SolanaPaymentProvider {
    * Check if a transaction with these parameters is already in progress or completed
    */
   private async checkExistingTransaction(paymentId: string): Promise<string | null> {
-    const cachedSignature = this.cachedTransactions.get(paymentId);
-    if (cachedSignature) {
-      // Verify it's a successful transaction
-      const isValid = await this.verifyTransaction(cachedSignature);
-      if (isValid) {
-        return cachedSignature;
-      }
-      // If not valid, remove from cache
-      this.cachedTransactions.delete(paymentId);
+    const cached = this.cachedTransactions.get(paymentId);
+    if (!cached) return null;
+    
+    // If transaction is already confirmed, return the signature
+    if (cached.status === 'confirmed') {
+      return cached.signature;
     }
+    
+    // If transaction is pending, check its status
+    if (cached.status === 'pending') {
+      try {
+        const status = await this.connection.getSignatureStatus(cached.signature);
+        if (status.value?.confirmationStatus === 'confirmed' || status.value?.confirmationStatus === 'finalized') {
+          // Update cache with confirmed status
+          this.cachedTransactions.set(paymentId, {
+            ...cached,
+            status: 'confirmed'
+          });
+          return cached.signature;
+        }
+      } catch (error) {
+        console.error(`Error checking transaction status: ${error}`);
+      }
+    }
+    
     return null;
-  }
-  
-  /**
-   * Clear the cached transactions
-   */
-  public clearTransactionCache(): void {
-    console.log("Clearing transaction cache");
-    this.cachedTransactions.clear();
   }
   
   /**
@@ -125,6 +154,9 @@ export class SolanaPaymentProvider {
         token: request.token,
         hasMintAddress: !!mintAddress
       });
+      
+      // Clear any cached transaction data for this payment ID
+      this.cachedTransactions.delete(paymentId);
       
       // Check for existing transaction first
       const existingSignature = await this.checkExistingTransaction(paymentId);
@@ -145,7 +177,11 @@ export class SolanaPaymentProvider {
       
       // Cache successful transactions for future reference
       if (result.success && result.transactionHash) {
-        this.cachedTransactions.set(paymentId, result.transactionHash);
+        this.cachedTransactions.set(paymentId, {
+          signature: result.transactionHash,
+          timestamp: Date.now(),
+          status: 'pending'
+        });
         console.log(`[SolanaPaymentProvider] Cached transaction signature: ${result.transactionHash}`);
       }
       
@@ -212,6 +248,23 @@ export class SolanaPaymentProvider {
           true
         )
       };
+    }
+  }
+  
+  public clearTransactionCache() {
+    this.cachedTransactions.clear();
+  }
+
+  /**
+   * Get the status of a transaction
+   */
+  public async getTransactionStatus(signature: string): Promise<{ err: any } | null> {
+    try {
+      const status = await this.connection.getSignatureStatus(signature);
+      return status.value;
+    } catch (error) {
+      console.error(`Error getting transaction status for ${signature}:`, error);
+      return null;
     }
   }
 }

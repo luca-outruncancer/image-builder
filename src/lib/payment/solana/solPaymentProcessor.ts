@@ -22,7 +22,8 @@ import {
   retryWithBackoff,
   isTxAlreadyProcessedError,
   getNonce,
-  extractSignatureFromError
+  extractSignatureFromError,
+  clearSessionBlockhashData
 } from '../utils';
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 
@@ -96,8 +97,10 @@ export async function processSolPayment(
     
     // Add a unique identifier to transaction to prevent duplicates
     const nonce = getNonce();
+    const timestamp = Date.now();
+    const uniqueId = `${nonce}_${timestamp}`;
     
-    console.log(`[SolPayment:${paymentId}] Creating transaction with nonce: ${nonce}`);
+    console.log(`[SolPayment:${paymentId}] Creating transaction with unique ID: ${uniqueId}`);
     
     // Add the main transfer instruction
     const mainTransferInstruction = SystemProgram.transfer({
@@ -108,32 +111,58 @@ export async function processSolPayment(
     
     transaction.add(mainTransferInstruction);
     
-    // Add a unique zero-value transfer to make transaction unique
+    // Add a unique transfer to make transaction unique
+    // Use a combination of nonce and timestamp to ensure uniqueness
+    const uniqueLamports = (nonce % 1000) + (timestamp % 1000);
     const nonceInstruction = SystemProgram.transfer({
       fromPubkey: walletConfig.publicKey,
       toPubkey: walletConfig.publicKey,
-      lamports: 0
+      lamports: uniqueLamports
     });
     
     transaction.add(nonceInstruction);
     
-    // Get recent blockhash
+    // Get recent blockhash with retry
     let blockHash;
-    try {
-      blockHash = await connection.getLatestBlockhash('confirmed');
-      console.log(`[SolPayment:${paymentId}] Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`);
-    } catch (blockHashError) {
+    let blockHashRetries = 0;
+    const maxBlockHashRetries = 3;
+    
+    while (blockHashRetries < maxBlockHashRetries) {
+      try {
+        blockHash = await connection.getLatestBlockhash('confirmed');
+        console.log(`[SolPayment:${paymentId}] Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`);
+        break;
+      } catch (blockHashError) {
+        blockHashRetries++;
+        if (blockHashRetries === maxBlockHashRetries) {
+          return {
+            success: false,
+            error: createPaymentError(
+              ErrorCategory.NETWORK_ERROR,
+              'Failed to get recent blockhash after multiple attempts',
+              blockHashError,
+              true
+            )
+          };
+        }
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * blockHashRetries));
+      }
+    }
+    
+    if (!blockHash) {
       return {
         success: false,
         error: createPaymentError(
           ErrorCategory.NETWORK_ERROR,
           'Failed to get recent blockhash',
-          blockHashError,
+          new Error('No blockhash received'),
           true
         )
       };
     }
     
+    // Set transaction parameters
     transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = walletConfig.publicKey;
     
@@ -173,64 +202,100 @@ export async function processSolPayment(
       feePayer: transaction.feePayer?.toString().slice(0, 8) + "...",
       instructions: transaction.instructions.length,
       signatures: transaction.signatures.length,
-      serializedSize: signedTransaction.serialize().length
+      serializedSize: signedTransaction.serialize().length,
+      uniqueId,
+      uniqueLamports,
+      timestamp
     });
     
-    // Send transaction
-    let signature;
-    try {
-      console.log(`[SolPayment:${paymentId}] Sending transaction...`);
-      signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      console.log(`[SolPayment:${paymentId}] Transaction sent, signature: ${signature}`);
-    } catch (sendError) {
-      console.error(`[SolPayment:${paymentId}] Error sending transaction:`, sendError);
-      
-      // Check if this is a "Transaction already processed" error
-      if (isTxAlreadyProcessedError(sendError)) {
-        console.log(`[SolPayment:${paymentId}] Transaction already processed error detected`);
+    // Send transaction with retry logic
+    let signature: string | undefined;
+    let retryCount = 0;
+    const maxRetries = 2;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        // Clear any cached transaction data before sending
+        clearSessionBlockhashData();
         
-        // Try to extract the signature from the error
-        const existingSig = extractSignatureFromError(sendError);
+        console.log(`[SolPayment:${paymentId}] Sending transaction (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+        console.log(`[SolPayment:${paymentId}] Transaction details:`, {
+          uniqueId,
+          blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
+          instructions: transaction.instructions.length,
+          uniqueLamports
+        });
         
-        if (existingSig) {
-          console.log(`[SolPayment:${paymentId}] Found existing signature: ${existingSig}`);
+        signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed'
+        });
+        
+        console.log(`[SolPayment:${paymentId}] Transaction sent, signature: ${signature}`);
+        break;
+      } catch (sendError) {
+        console.error(`[SolPayment:${paymentId}] Error sending transaction (attempt ${retryCount + 1}):`, sendError);
+        
+        // Check if this is a "Transaction already processed" error
+        if (isTxAlreadyProcessedError(sendError)) {
+          console.log(`[SolPayment:${paymentId}] Transaction already processed error detected`);
           
-          // Verify if the transaction was successful
-          try {
-            const status = await connection.getSignatureStatus(existingSig);
+          // Try to extract the signature from the error
+          const existingSig = extractSignatureFromError(sendError);
+          
+          if (existingSig) {
+            console.log(`[SolPayment:${paymentId}] Found existing signature: ${existingSig}`);
             
-            if (status && status.value && !status.value.err) {
-              console.log(`[SolPayment:${paymentId}] Found successful existing transaction`);
-              return {
-                success: true,
-                transactionHash: existingSig,
-                blockchainConfirmation: true,
-                reused: true
-              };
+            // Verify if the transaction was successful
+            try {
+              const status = await connection.getSignatureStatus(existingSig);
+              
+              if (status && status.value && !status.value.err) {
+                console.log(`[SolPayment:${paymentId}] Found successful existing transaction`);
+                return {
+                  success: true,
+                  transactionHash: existingSig,
+                  blockchainConfirmation: true,
+                  reused: true
+                };
+              }
+            } catch (statusError) {
+              console.log(`[SolPayment:${paymentId}] Error checking transaction status:`, statusError);
             }
-          } catch (statusError) {
-            console.log(`[SolPayment:${paymentId}] Error checking transaction status:`, statusError);
           }
+          
+          // If we've exhausted retries, return the error
+          if (retryCount === maxRetries) {
+            return {
+              success: false,
+              error: createPaymentError(
+                ErrorCategory.BLOCKCHAIN_ERROR,
+                'Transaction already processed. Please try again with a new transaction.',
+                sendError,
+                false,
+                'DUPLICATE_TRANSACTION'
+              )
+            };
+          }
+          
+          // For duplicate transaction errors, wait longer before retrying
+          await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1)));
+        } else {
+          // For other errors, use normal retry delay
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
         }
         
-        return {
-          success: false,
-          error: createPaymentError(
-            ErrorCategory.BLOCKCHAIN_ERROR,
-            'Transaction already processed. Please try again with a new transaction.',
-            sendError,
-            false,
-            'DUPLICATE_TRANSACTION'
-          )
-        };
+        retryCount++;
       }
-      
+    }
+    
+    if (!signature) {
       return {
         success: false,
         error: createPaymentError(
           ErrorCategory.BLOCKCHAIN_ERROR,
-          'Failed to send transaction',
-          sendError,
+          'Failed to send transaction after all retries',
+          new Error('No signature received'),
           true
         )
       };
