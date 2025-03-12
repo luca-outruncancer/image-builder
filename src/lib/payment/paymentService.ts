@@ -41,6 +41,13 @@ export class PaymentService {
   private wallet: WalletConfig;
   
   constructor(wallet: WalletConfig) {
+    if (!wallet.connected) {
+      paymentLogger.warn('Initializing payment service with disconnected wallet');
+    }
+    if (!wallet.publicKey) {
+      paymentLogger.warn('Initializing payment service without public key');
+    }
+    
     this.wallet = wallet;
     this.paymentProvider = new SolanaPaymentProvider(wallet);
     this.storageProvider = new PaymentStorageProvider();
@@ -718,20 +725,26 @@ export class PaymentService {
    * Clean up all resources
    */
   public dispose() {
-    paymentLogger.debug("Disposing PaymentService resources");
-    
-    // Clear all timeouts
-    for (const [paymentId, timeout] of this.paymentTimeouts.entries()) {
+    // Cancel all active payment timeouts
+    for (const [paymentId, timeout] of this.paymentTimeouts) {
       clearTimeout(timeout);
+      paymentLogger.debug(`Cleared timeout for payment ${paymentId}`);
     }
-    
     this.paymentTimeouts.clear();
+
+    // Clear active payments
+    const activePaymentIds = Array.from(this.activePayments.keys());
+    if (activePaymentIds.length > 0) {
+      paymentLogger.warn('Disposing payment service with active payments', {
+        activePayments: activePaymentIds
+      });
+    }
     this.activePayments.clear();
-    
+
     // Clean session storage
     clearSessionBlockhashData();
     
-    paymentLogger.debug("PaymentService cleanup complete");
+    paymentLogger.debug('Payment service disposed');
   }
 }
 

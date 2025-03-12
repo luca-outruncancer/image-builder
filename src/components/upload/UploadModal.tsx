@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { X, FileImage } from 'lucide-react';
-import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN } from '@/utils/constants';
+import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN, MAX_FILE_SIZE } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 
 interface ImageInfo {
@@ -27,9 +27,8 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Increase size limit to 5MB
-      if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
         return;
       }
       if (!file.type.startsWith('image/')) {
@@ -219,7 +218,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                       <FileImage className="mr-2" size={20} />
                       <span>{selectedFile.name}</span>
                     </div>
-                  ) : 'Click to upload image'}
+                  ) : 'Click to upload image (maxsize 1MB)'}
                 </button>
                 
                 {isLoadingMetadata && (

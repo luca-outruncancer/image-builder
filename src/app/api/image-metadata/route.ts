@@ -1,6 +1,7 @@
 // src/app/api/image-metadata/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { MAX_FILE_SIZE } from '@/utils/constants';
 
 /**
  * Simplified API endpoint to get basic metadata for an image file
@@ -13,6 +14,18 @@ export async function POST(request: NextRequest) {
     if (!body.filename) {
       return NextResponse.json(
         { error: 'Filename is required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate file size if provided
+    if (body.size && body.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'File size exceeds limit',
+          message: `File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`
+        },
         { status: 400 }
       );
     }

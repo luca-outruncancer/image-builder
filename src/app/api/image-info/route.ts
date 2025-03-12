@@ -64,9 +64,7 @@ export async function POST(request: NextRequest) {
         updated_at,
         cost
       } = matchingImage;
-      
-      console.log('[ImageInfo] Sender wallet:', sender_wallet);
-      
+            
       return NextResponse.json({
         success: true,
         wallet: sender_wallet || "Unknown",

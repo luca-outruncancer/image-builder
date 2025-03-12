@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
 import { createImageRecord } from '@/lib/imageStorage';
-import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
+import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES, MAX_FILE_SIZE } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErrorHandler';
 import { imageLogger } from '@/utils/logger';
@@ -40,6 +40,23 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         ApiErrorType.BAD_REQUEST,
         'File, position, and size are required',
         { missingFields: [!file && 'file', !positionString && 'position', !sizeString && 'size'].filter(Boolean) },
+        undefined,
+        requestId
+      );
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      imageLogger.error(`[Upload:${uploadId}] File size exceeds limit`, {
+        fileSize: file.size,
+        maxSize: MAX_FILE_SIZE,
+        requestId
+      });
+      
+      return createApiError(
+        ApiErrorType.BAD_REQUEST,
+        `File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+        { fileSize: file.size, maxSize: MAX_FILE_SIZE },
         undefined,
         requestId
       );
