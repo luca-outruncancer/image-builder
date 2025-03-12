@@ -5,6 +5,7 @@ import { createPaymentError } from '../utils';
 import { ErrorCategory } from '../types';
 import { statusMapper } from './statusMapper';
 import { validateDatabaseConnection, getCurrentTimestamp } from '../utils/storageUtils';
+import { generateUniqueNonce } from '../utils/transactionUtils';
 
 /**
  * TransactionRepository handles all database operations related to payment transactions
@@ -44,7 +45,8 @@ export class TransactionRepository {
           recipient_wallet: recipientWallet,
           transaction_hash: `pending_${paymentId}`,
           sender_wallet: walletAddress,
-          token: token
+          token: token,
+          unique_nonce: generateUniqueNonce(imageId, 0)
         }])
         .select();
       
@@ -219,7 +221,8 @@ export class TransactionRepository {
           token: record.token,
           created_at: now,
           attempt_count: retryCount,
-          signature: record.signature
+          signature: record.signature,
+          unique_nonce: record.unique_nonce || generateUniqueNonce(record.image_id, retryCount)
         }])
         .select();
       

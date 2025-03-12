@@ -1,10 +1,31 @@
 // src/utils/logger.ts
 import { LogLevel, LOGGING } from '@/utils/constants';
-import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase, isSupabaseInitialized, getSupabaseError } from '@/lib/supabase';
 
 // Track current request ID
 let currentRequestId: string | null = null;
+
+// Initialize logging state
+let isDbLoggingEnabled = false;
+
+// Initialize logging
+async function initializeLogging() {
+  if (!isDbLoggingEnabled && LOGGING.ENABLE_DB_LOGGING) {
+    if (isSupabaseInitialized()) {
+      isDbLoggingEnabled = true;
+      console.log('[IMGBLDR] [INFO] [SYSTEM] Database logging enabled');
+    } else {
+      const error = getSupabaseError();
+      console.warn('[IMGBLDR] [WARN] [SYSTEM] Database logging is disabled', {
+        reason: error ? `Supabase initialization failed: ${error.message}` : 'Supabase client not available'
+      });
+    }
+  }
+}
+
+// Initialize logging on module load
+initializeLogging();
 
 // Generate a new request ID for the current request lifecycle
 export function generateRequestId(): string {
@@ -88,25 +109,6 @@ function logToConsole(
   }
 }
 
-// Use environment variables for Supabase connection
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-// Initialize Supabase client
-let supabase: any = null;
-let dbLoggingEnabled = false;
-
-// Initialize only if DB logging is enabled
-if (LOGGING.ENABLE_DB_LOGGING && supabaseUrl && supabaseKey) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseKey);
-    dbLoggingEnabled = true;
-    logToConsole('INFO', 'SYSTEM', 'Supabase client initialized for logging');
-  } catch (error) {
-    logToConsole('ERROR', 'SYSTEM', 'Failed to initialize Supabase client for logging', error);
-  }
-}
-
 /**
  * Log to the database with retry logic
  */
@@ -114,66 +116,50 @@ async function logToDatabase(
   level: string,
   component: string,
   message: string,
-  data?: any,
-  context?: any,
-  userWallet?: string,
-  retryCount: number = 0
+  data: any = null,
+  context: any = null,
+  retryCount = 0
 ): Promise<boolean> {
-  if (!dbLoggingEnabled) return false;
-  
-  const maxRetries = 2;
-  const retryDelay = 1000; // 1 second
-  
+  if (!isDbLoggingEnabled || !supabase) {
+    logToConsole('WARN', 'SYSTEM', 'Database logging is disabled', {
+      reason: !LOGGING.ENABLE_DB_LOGGING ? 'ENABLE_DB_LOGGING is false' :
+              !supabase ? 'Supabase client not available' :
+              'Supabase client failed to initialize'
+    });
+    return false;
+  }
+
   try {
-    // Get or generate a request ID
-    const requestId = getRequestId();
-    
-    // Format data and context for database storage
-    const formattedData = data ? (data instanceof Error ? formatError(data) : 
-      (typeof data === 'object' ? JSON.stringify(data) : String(data))) : null;
-    const formattedContext = context ? 
-      (typeof context === 'object' ? JSON.stringify(context) : String(context)) : null;
-    
+    const logEntry = {
+      level: level.toUpperCase(),
+      component,
+      message,
+      data: data ? JSON.stringify(data) : null,
+      context: context ? JSON.stringify(context) : null,
+      request_id: getRequestId(),
+      environment: LOGGING.ENVIRONMENT || 'development',
+      ttimestamp: new Date().toISOString()
+    };
+
     const { error } = await supabase
       .from('application_logs')
-      .insert({
-        level: level.toUpperCase(),  // Ensure correct case for enum
-        component,
-        message,
-        data: formattedData ? JSON.parse(formattedData) : null,
-        context: formattedContext ? JSON.parse(formattedContext) : null,
-        environment: LOGGING.ENVIRONMENT,
-        request_id: requestId,
-        sender_wallet: userWallet,
-        ttimestamp: new Date().toISOString()  // Changed from timestamp to ttimestamp
-      });
-    
+      .insert(logEntry);
+
     if (error) {
-      // Only log database errors to console if it's not a retry attempt
-      if (retryCount === 0) {
-        logToConsole('ERROR', 'SYSTEM', 'Failed to log to database', error);
-      }
-      
-      // Retry if we haven't exceeded max retries
-      if (retryCount < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-        return logToDatabase(level, component, message, data, context, userWallet, retryCount + 1);
-      }
-      return false;
+      throw error;
     }
-    
+
     return true;
   } catch (error) {
-    // Only log to console if it's not a retry attempt
-    if (retryCount === 0) {
-      logToConsole('ERROR', 'SYSTEM', 'Error logging to database', error);
+    if (retryCount < 3) {
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+      return logToDatabase(level, component, message, data, context, retryCount + 1);
     }
     
-    // Retry if we haven't exceeded max retries
-    if (retryCount < maxRetries) {
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      return logToDatabase(level, component, message, data, context, userWallet, retryCount + 1);
-    }
+    logToConsole('ERROR', 'SYSTEM', 'Failed to write to database log', {
+      error,
+      entry: { level, component, message }
+    });
     return false;
   }
 }
@@ -186,8 +172,7 @@ export async function log(
   component: string,
   message: string,
   data?: any,
-  context?: any,
-  userWallet?: string
+  context?: any
 ): Promise<void> {
   // Check if we should log based on the configured level
   if (level < LOGGING.LEVEL) return;
@@ -215,37 +200,37 @@ export async function log(
   
   // Then attempt to log to database
   if (LOGGING.ENABLE_DB_LOGGING) {
-    await logToDatabase(levelString, component, message, data, context, userWallet);
+    await logToDatabase(levelString, component, message, data, context);
   }
 }
 
 // Convenience methods for different log levels
 export const logger = {
-  debug: (component: string, message: string, data?: any, context?: any, userWallet?: string) => 
-    log(LogLevel.DEBUG, component, message, data, context, userWallet),
+  debug: (component: string, message: string, data?: any, context?: any) => 
+    log(LogLevel.DEBUG, component, message, data, context),
   
-  info: (component: string, message: string, data?: any, context?: any, userWallet?: string) => 
-    log(LogLevel.INFO, component, message, data, context, userWallet),
+  info: (component: string, message: string, data?: any, context?: any) => 
+    log(LogLevel.INFO, component, message, data, context),
   
-  warn: (component: string, message: string, data?: any, context?: any, userWallet?: string) => 
-    log(LogLevel.WARN, component, message, data, context, userWallet),
+  warn: (component: string, message: string, data?: any, context?: any) => 
+    log(LogLevel.WARN, component, message, data, context),
   
-  error: (component: string, message: string, data?: any, context?: any, userWallet?: string) => 
-    log(LogLevel.ERROR, component, message, data, context, userWallet),
+  error: (component: string, message: string, data?: any, context?: any) => 
+    log(LogLevel.ERROR, component, message, data, context),
   
   // Create logger for specific component
   component: (component: string) => ({
-    debug: (message: string, data?: any, context?: any, userWallet?: string) => 
-      log(LogLevel.DEBUG, component, message, data, context, userWallet),
+    debug: (message: string, data?: any, context?: any) => 
+      log(LogLevel.DEBUG, component, message, data, context),
     
-    info: (message: string, data?: any, context?: any, userWallet?: string) => 
-      log(LogLevel.INFO, component, message, data, context, userWallet),
+    info: (message: string, data?: any, context?: any) => 
+      log(LogLevel.INFO, component, message, data, context),
     
-    warn: (message: string, data?: any, context?: any, userWallet?: string) => 
-      log(LogLevel.WARN, component, message, data, context, userWallet),
+    warn: (message: string, data?: any, context?: any) => 
+      log(LogLevel.WARN, component, message, data, context),
     
-    error: (message: string, data?: any, context?: any, userWallet?: string) => 
-      log(LogLevel.ERROR, component, message, data, context, userWallet)
+    error: (message: string, data?: any, context?: any) => 
+      log(LogLevel.ERROR, component, message, data, context)
   })
 };
 

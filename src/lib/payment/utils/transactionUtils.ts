@@ -1,5 +1,36 @@
 // src/lib/payment/utils/transactionUtils.ts
 import { blockchainLogger } from '@/utils/logger';
+import crypto from 'crypto';
+import { supabase } from '@/lib/supabase';
+
+/**
+ * Generate a unique nonce for transaction uniqueness
+ * Combines imageId, attempt number, timestamp, and random bytes
+ */
+export function generateUniqueNonce(imageId: number, attempt: number): string {
+  const timestamp = Date.now();
+  const random = crypto.randomBytes(4).toString('hex');
+  const nonce = `${imageId}_${attempt}_${timestamp}_${random}`;
+  blockchainLogger.debug('Generated unique nonce', { nonce, imageId, attempt });
+  return nonce;
+}
+
+/**
+ * Verify if a transaction with the given nonce exists
+ */
+export async function verifyTransactionUniqueness(
+  imageId: number,
+  nonce: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('transaction_records')
+    .select('tx_id, status')
+    .eq('image_id', imageId)
+    .eq('unique_nonce', nonce)
+    .single();
+
+  return !data;  // Return true if no existing transaction found
+}
 
 /**
  * Generate a unique transaction ID/nonce

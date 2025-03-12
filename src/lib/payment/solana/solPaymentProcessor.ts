@@ -6,7 +6,10 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL,
   Commitment,
-  SendTransactionError
+  SendTransactionError,
+  TransactionInstruction,
+  SignatureResult,
+  TransactionError
 } from '@solana/web3.js';
 import { 
   PaymentRequest,
@@ -28,6 +31,10 @@ import {
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
+
+// Memo Program ID
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 /**
  * Process a SOL payment transaction
@@ -40,6 +47,15 @@ export async function processSolPayment(
   const paymentId = metadata?.paymentId || 'unknown';
   
   try {
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Starting SOL payment process', {
+      paymentId,
+      amount,
+      recipientWallet,
+      metadata,
+      walletPublicKey: walletConfig.publicKey?.toString()
+    });
+    
     blockchainLogger.info(`Processing SOL payment for amount ${amount} SOL`, {
       paymentId,
       amount,
@@ -56,11 +72,24 @@ export async function processSolPayment(
       confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
     });
     
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Created Solana connection', {
+      endpoint: RPC_ENDPOINT,
+      timeout: CONNECTION_TIMEOUT
+    });
+    
     // Check SOL balance
     let balance;
     try {
       balance = await connection.getBalance(walletConfig.publicKey);
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Retrieved wallet balance', {
+        balanceInLamports: balance,
+        balanceInSOL: balance / LAMPORTS_PER_SOL
+      });
     } catch (balanceError) {
+      // -- EXTREMELOGGING
+      console.error('🔍 [PAYMENT-DEBUG] Failed to check balance', balanceError);
       throw new Error('Failed to check SOL balance');
     }
     
@@ -78,17 +107,57 @@ export async function processSolPayment(
     // Calculate lamports (1 SOL = 1,000,000,000 lamports)
     const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
     
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Creating transaction', {
+      amountInSOL: amount,
+      amountInLamports: lamports,
+      from: walletConfig.publicKey.toString(),
+      to: recipientWallet
+    });
+    
     // Create transaction
     const transaction = new Transaction();
     
-    // Add a unique identifier to transaction to prevent duplicates
-    const nonce = getNonce();
-    const timestamp = Date.now();
-    const uniqueId = `${nonce}_${timestamp}`;
+    // Generate unique nonce for this transaction
+    const nonce = generateUniqueNonce(metadata.imageId, 0);
     
-    blockchainLogger.info(`Creating transaction with unique ID: ${uniqueId}`, {
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Generated nonce', {
+      nonce,
+      imageId: metadata.imageId
+    });
+    
+    // Verify transaction uniqueness
+    const isUnique = await verifyTransactionUniqueness(metadata.imageId, nonce);
+    
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Verified transaction uniqueness', {
+      isUnique,
+      nonce,
+      imageId: metadata.imageId
+    });
+    
+    if (!isUnique) {
+      blockchainLogger.warn(`Duplicate transaction detected with nonce: ${nonce}`, {
+        paymentId,
+        imageId: metadata.imageId,
+        nonce
+      });
+      return {
+        success: false,
+        error: createPaymentError(
+          ErrorCategory.BLOCKCHAIN_ERROR,
+          'Duplicate transaction detected',
+          new Error('Transaction with this nonce already exists'),
+          false,
+          'DUPLICATE_TRANSACTION'
+        )
+      };
+    }
+
+    blockchainLogger.info(`Creating transaction with unique nonce: ${nonce}`, {
       paymentId,
-      uniqueId
+      nonce
     });
     
     // Add the main transfer instruction
@@ -98,18 +167,30 @@ export async function processSolPayment(
       lamports: lamports,
     });
     
-    transaction.add(mainTransferInstruction);
-    
-    // Add a unique transfer to make transaction unique
-    // Use a combination of nonce and timestamp to ensure uniqueness
-    const uniqueLamports = (nonce % 1000) + (timestamp % 1000);
-    const nonceInstruction = SystemProgram.transfer({
-      fromPubkey: walletConfig.publicKey,
-      toPubkey: walletConfig.publicKey,
-      lamports: uniqueLamports
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Created transfer instruction', {
+      from: walletConfig.publicKey.toString(),
+      to: recipientWallet,
+      lamports,
+      instructionData: mainTransferInstruction.data.toString('hex')
     });
     
-    transaction.add(nonceInstruction);
+    transaction.add(mainTransferInstruction);
+    
+    // Add nonce as memo instruction
+    const memoInstruction = new TransactionInstruction({
+      keys: [],
+      programId: MEMO_PROGRAM_ID,
+      data: Buffer.from(nonce, 'utf8')
+    });
+    
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Added memo instruction', {
+      nonce,
+      memoData: memoInstruction.data.toString()
+    });
+    
+    transaction.add(memoInstruction);
     
     // Get recent blockhash with retry
     let blockHash;
@@ -119,18 +200,23 @@ export async function processSolPayment(
     while (blockHashRetries < maxBlockHashRetries) {
       try {
         blockHash = await connection.getLatestBlockhash('confirmed');
-        blockchainLogger.info(`Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`, {
-          paymentId,
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Got blockhash', {
           blockhash: blockHash.blockhash,
-          lastValidBlockHeight: blockHash.lastValidBlockHeight
+          lastValidBlockHeight: blockHash.lastValidBlockHeight,
+          attempt: blockHashRetries + 1
         });
         break;
       } catch (blockHashError) {
+        // -- EXTREMELOGGING
+        console.error('🔍 [PAYMENT-DEBUG] Failed to get blockhash', {
+          attempt: blockHashRetries + 1,
+          error: blockHashError
+        });
         blockHashRetries++;
         if (blockHashRetries === maxBlockHashRetries) {
           throw new Error('Failed to get recent blockhash after multiple attempts');
         }
-        // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, 1000 * blockHashRetries));
       }
     }
@@ -143,12 +229,28 @@ export async function processSolPayment(
     transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = walletConfig.publicKey;
     
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Transaction prepared for signing', {
+      blockhash: transaction.recentBlockhash,
+      feePayer: transaction.feePayer.toString(),
+      numInstructions: transaction.instructions.length
+    });
+    
     // Sign transaction
     let signedTransaction;
     try {
       signedTransaction = await walletConfig.signTransaction(transaction);
-      blockchainLogger.info(`Transaction signed successfully`, { paymentId });
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Transaction signed successfully', {
+        signatures: signedTransaction.signatures.map(sig => ({
+          publicKey: sig.publicKey.toString(),
+          signature: sig.signature?.toString('hex')
+        }))
+      });
     } catch (signError) {
+      // -- EXTREMELOGGING
+      console.error('🔍 [PAYMENT-DEBUG] Transaction signing failed', signError);
+      
       if (isUserRejectionError(signError)) {
         blockchainLogger.info(`User declined to sign transaction`, { paymentId });
         return {
@@ -176,7 +278,7 @@ export async function processSolPayment(
     // Log transaction details for debugging
     blockchainLogger.debug(`Transaction details:`, {
       paymentId,
-      uniqueId,
+      nonce,
       blockhash: transaction.recentBlockhash,
       instructions: transaction.instructions.length,
       signers: transaction.signatures.length
@@ -192,17 +294,21 @@ export async function processSolPayment(
         // Clear any cached transaction data before sending
         clearSessionBlockhashData();
         
-        blockchainLogger.info(`Sending transaction (attempt ${retryCount + 1}/${maxRetries + 1})...`, {
-          paymentId,
-          attempt: retryCount + 1,
-          maxAttempts: maxRetries + 1
-        });
+        // Get fresh blockhash for each attempt
+        const freshBlockhash = await connection.getLatestBlockhash('confirmed');
+        transaction.recentBlockhash = freshBlockhash.blockhash;
         
-        blockchainLogger.debug(`Transaction details:`, {
-          paymentId,
-          uniqueId,
+        // Re-sign transaction with new blockhash
+        signedTransaction = await walletConfig.signTransaction(transaction);
+        
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Attempting to send transaction', {
           attempt: retryCount + 1,
-          blockhash: transaction.recentBlockhash
+          maxAttempts: maxRetries + 1,
+          paymentId,
+          nonce,
+          newBlockhash: freshBlockhash.blockhash,
+          serializedSize: signedTransaction.serialize().length
         });
         
         signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
@@ -210,171 +316,173 @@ export async function processSolPayment(
           preflightCommitment: 'confirmed'
         });
         
-        blockchainLogger.info(`Transaction sent, signature: ${signature}`, {
-          paymentId,
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Transaction sent successfully', {
           signature,
-          attempt: retryCount + 1
+          attempt: retryCount + 1,
+          paymentId
         });
+        
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Waiting for confirmation...');
+        
+        // Wait for confirmation with new blockhash
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: freshBlockhash.blockhash,
+          lastValidBlockHeight: freshBlockhash.lastValidBlockHeight
+        });
+        
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Transaction confirmation received', {
+          signature,
+          confirmed: !confirmation.value?.err,
+          err: confirmation.value?.err,
+          slot: confirmation.context.slot
+        });
+        
+        if (confirmation.value?.err) {
+          // -- EXTREMELOGGING
+          console.error('🔍 [PAYMENT-DEBUG] Transaction confirmed but has error', {
+            error: confirmation.value.err,
+            signature
+          });
+          throw new Error(`Transaction confirmed with error: ${JSON.stringify(confirmation.value.err)}`);
+        }
+        
         break;
       } catch (sendError) {
+        // -- EXTREMELOGGING
+        const errorDetails = {
+          attempt: retryCount + 1,
+          errorType: sendError instanceof Error ? sendError.constructor.name : typeof sendError,
+          isTransactionError: sendError instanceof SendTransactionError,
+          rawError: String(sendError),
+          errorJson: JSON.stringify(sendError, Object.getOwnPropertyNames(sendError || {})),
+          transactionDetails: {
+            blockhash: transaction.recentBlockhash,
+            numInstructions: transaction.instructions.length,
+            nonce,
+            paymentId
+          }
+        };
+
+        if (sendError instanceof Error) {
+          Object.assign(errorDetails, {
+            name: sendError.name,
+            message: sendError.message,
+            stack: sendError.stack,
+          });
+
+          // Additional details for SendTransactionError
+          if (sendError instanceof SendTransactionError) {
+            // -- EXTREMELOGGING
+            console.log('🔍 [PAYMENT-DEBUG] Getting logs from SendTransactionError');
+            
+            let parsedError = null;
+            let errorMessage = sendError.message;
+            
+            // Try to extract any JSON content from the error message
+            const jsonMatch = errorMessage.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                parsedError = JSON.parse(jsonMatch[0]);
+              } catch (parseError) {
+                // -- EXTREMELOGGING
+                console.log('🔍 [PAYMENT-DEBUG] Found JSON-like content but failed to parse:', jsonMatch[0]);
+              }
+            }
+
+            Object.assign(errorDetails, {
+              logs: sendError.logs || [],
+              message: errorMessage,
+              details: {
+                raw: errorMessage,
+                parsed: parsedError,
+                containedJson: !!parsedError
+              }
+            });
+            
+            // -- EXTREMELOGGING
+            console.log('🔍 [PAYMENT-DEBUG] Transaction error details:', {
+              logs: sendError.logs,
+              message: errorMessage,
+              parsedError,
+              error: sendError
+            });
+          }
+        }
+
+        // -- EXTREMELOGGING
+        console.error('🔍 [PAYMENT-DEBUG] Error in send/confirm cycle:', errorDetails);
+        
         blockchainLogger.error(`Error sending transaction (attempt ${retryCount + 1}):`, sendError, {
           paymentId,
-          attempt: retryCount + 1
+          attempt: retryCount + 1,
+          errorDetails
         });
         
         // Check if this is a "Transaction already processed" error
         if (isTxAlreadyProcessedError(sendError)) {
-          blockchainLogger.info(`Transaction already processed error detected`, {
-            paymentId,
-            error: sendError instanceof Error ? sendError.message : String(sendError)
+          // -- EXTREMELOGGING
+          console.log('🔍 [PAYMENT-DEBUG] Transaction already processed error detected', {
+            error: sendError instanceof Error ? sendError.message : String(sendError),
+            paymentId
           });
           
           // Try to extract the signature from the error
-          const existingSig = extractSignatureFromError(sendError);
-          
-          if (existingSig) {
-            blockchainLogger.info(`Found existing signature: ${existingSig}`, {
-              paymentId,
-              signature: existingSig
+          const existingSignature = extractSignatureFromError(sendError);
+          if (existingSignature) {
+            // -- EXTREMELOGGING
+            console.log('🔍 [PAYMENT-DEBUG] Found existing signature in error', {
+              signature: existingSignature,
+              paymentId
             });
             
-            // Verify if the transaction was successful
-            try {
-              const status = await connection.getSignatureStatus(existingSig);
-              
-              if (status && status.value && !status.value.err) {
-                blockchainLogger.info(`Found successful existing transaction`, {
-                  paymentId,
-                  signature: existingSig,
-                  status: status.value
-                });
-                return {
-                  success: true,
-                  transactionHash: existingSig,
-                  blockchainConfirmation: true,
-                  reused: true
-                };
-              }
-            } catch (statusError) {
-              blockchainLogger.error(`Error checking transaction status:`, statusError, {
-                paymentId,
-                signature: existingSig
-              });
-            }
+            signature = existingSignature;
+            break;
           }
-          
-          // If we've exhausted retries, return the error
-          if (retryCount === maxRetries) {
-            return {
-              success: false,
-              error: createPaymentError(
-                ErrorCategory.BLOCKCHAIN_ERROR,
-                'Transaction already processed. Please try again with a new transaction.',
-                sendError,
-                false,
-                'DUPLICATE_TRANSACTION'
-              )
-            };
-          }
-          
-          // For duplicate transaction errors, wait longer before retrying
-          await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1)));
-        } else {
-          // For other errors, use normal retry delay
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
         }
         
         retryCount++;
+        if (retryCount > maxRetries) {
+          // -- EXTREMELOGGING
+          console.error('🔍 [PAYMENT-DEBUG] Max retries exceeded', {
+            maxRetries,
+            paymentId,
+            lastError: sendError instanceof Error ? sendError.message : String(sendError)
+          });
+          throw sendError;
+        }
+        
+        // -- EXTREMELOGGING
+        console.log('🔍 [PAYMENT-DEBUG] Will retry transaction', {
+          nextAttempt: retryCount + 1,
+          maxRetries: maxRetries + 1,
+          paymentId
+        });
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
     
     if (!signature) {
-      return {
-        success: false,
-        error: createPaymentError(
-          ErrorCategory.BLOCKCHAIN_ERROR,
-          'Failed to send transaction after all retries',
-          new Error('No signature received'),
-          true
-        )
-      };
+      throw new Error('Failed to send transaction after all retries');
     }
     
-    // Confirm transaction
-    blockchainLogger.info(`Confirming transaction...`, {
+    // -- EXTREMELOGGING
+    console.log('🔍 [PAYMENT-DEBUG] Payment process completed successfully', {
+      signature,
       paymentId,
-      signature
+      nonce
     });
     
-    try {
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: blockHash.blockhash,
-        lastValidBlockHeight: blockHash.lastValidBlockHeight,
-      }, 'confirmed');
-      
-      if (confirmation.value.err) {
-        blockchainLogger.error(`Transaction confirmation failed:`, confirmation.value.err, {
-          paymentId,
-          signature
-        });
-        
-        throw new Error(
-          typeof confirmation.value.err === 'string' 
-            ? confirmation.value.err 
-            : 'Transaction confirmation failed'
-        );
-      }
-      
-      blockchainLogger.info(`Transaction confirmed successfully!`, {
-        paymentId,
-        signature,
-        confirmationStatus: 'confirmed'
-      });
-      return {
-        success: true,
-        transactionHash: signature,
-        blockchainConfirmation: true
-      };
-    } catch (confirmError) {
-      blockchainLogger.error(`Error confirming transaction:`, confirmError, {
-        paymentId,
-        signature
-      });
-      
-      // Check status manually - may have succeeded despite confirmation error
-      try {
-        const status = await connection.getSignatureStatus(signature);
-        
-        if (status.value && !status.value.err) {
-          blockchainLogger.info(`Transaction succeeded despite confirmation error`, {
-            paymentId,
-            signature,
-            status: status.value
-          });
-          return {
-            success: true,
-            transactionHash: signature,
-            blockchainConfirmation: true
-          };
-        }
-      } catch (statusError) {
-        blockchainLogger.error(`Failed to check transaction status:`, statusError, {
-          paymentId,
-          signature
-        });
-      }
-      
-      return {
-        success: false,
-        error: createPaymentError(
-          ErrorCategory.BLOCKCHAIN_ERROR,
-          'Transaction confirmation failed',
-          confirmError,
-          true
-        )
-      };
-    }
+    return {
+      success: true,
+      transactionHash: signature,
+      blockchainConfirmation: true
+    };
   } catch (error) {
     blockchainLogger.error(`SOL payment error:`, error, {
       paymentId,

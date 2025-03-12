@@ -23,7 +23,25 @@ export enum LogLevel {
   NONE = 4    // No logging
 }
 
-export const LOGGING = {
+export const LOGGING: {
+  ENABLE_CONSOLE_LOGGING: boolean;
+  ENABLE_DB_LOGGING: boolean;
+  LEVEL: LogLevel;
+  APP_PREFIX: string;
+  ENVIRONMENT: string;
+  RETENTION_DAYS: number;
+  COMPONENTS: {
+    PAYMENT: string;
+    BLOCKCHAIN: string;
+    WALLET: string;
+    CANVAS: string;
+    IMAGE: string;
+    API: string;
+    STORAGE: string;
+    AUTH: string;
+    SYSTEM: string;
+  };
+} = {
   // General settings
   ENABLE_CONSOLE_LOGGING: true,     // Enable logging to console
   ENABLE_DB_LOGGING: true,          // Enable logging to database
@@ -33,7 +51,6 @@ export const LOGGING = {
   
   // Database settings
   RETENTION_DAYS: 30,               // How many days to retain logs
-  DB_TABLE: 'system_logs',          // Table name for logs
   
   // Component names for logging context
   COMPONENTS: {
@@ -112,22 +129,34 @@ export const RECIPIENT_WALLET_ADDRESS = "6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWR
 export const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
 export const MAX_RETRIES = 2; // Maximum retry attempts for payment
 
-// Token configuration
-export const PAYMENT_TOKENS = {
+// Payment token configuration
+type NetworkAddresses = {
+  [key in 'mainnet' | 'devnet' | 'testnet']: string;
+};
+
+type PaymentToken = {
+  name: string;
+  symbol: string;
+  decimals: number;
+  mint: NetworkAddresses;
+};
+
+type PaymentTokens = {
+  [key: string]: PaymentToken;
+};
+
+export const PAYMENT_TOKENS: PaymentTokens = {
   SOL: {
-    name: "SOL",
+    name: 'Solana',
+    symbol: 'SOL',
     decimals: 9,
-    // SOL doesn't need mint addresses
-  },
-  USDC: {
-    name: "USDC",
-    // Different mint addresses for different networks
     mint: {
-      [WalletAdapterNetwork.Devnet]: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-      [WalletAdapterNetwork.Mainnet]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    },
-    decimals: 6,
-  }
+      mainnet: '',
+      devnet: '',
+      testnet: ''
+    }
+  },
+  // Add other tokens as needed
 };
 
 // Active payment token - change to use different tokens

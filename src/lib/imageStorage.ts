@@ -3,18 +3,19 @@
 import { createClient } from '@supabase/supabase-js';
 import { PaymentStatus } from './payment/types';
 import { imageLogger, storageLogger } from '@/utils/logger';
+import { supabase } from '@/lib/supabase';
 
 // Use environment variables for Supabase connection
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 // Initialize Supabase client
-let supabase: any = null;
+let supabaseClient: any = null;
 
 // Initialize only if environment variables are available
 if (supabaseUrl && supabaseKey) {
   try {
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabaseClient = createClient(supabaseUrl, supabaseKey);
     storageLogger.info('Supabase client initialized in imageStorage');
   } catch (error) {
     storageLogger.error('Error initializing Supabase client in imageStorage:', error);
@@ -49,13 +50,13 @@ export async function createImageRecord(params: {
   status: string;
   sender_wallet: string;
 }): Promise<{ success: boolean; data?: ImageRecord; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('images')
       .insert({
         image_location: params.image_location,
@@ -89,7 +90,7 @@ export async function updateImageStatus(
   imageId: number,
   status: PaymentStatus
 ): Promise<{ success: boolean; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
@@ -100,7 +101,7 @@ export async function updateImageStatus(
       newStatus: status
     });
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('images')
       .update({
         status: status.toUpperCase(),
@@ -137,13 +138,13 @@ export async function updateImageStatus(
  * Get all placed images
  */
 export async function getPlacedImages(): Promise<{ success: boolean; data?: any[]; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('images')
       .select('*')
       .eq('status', PaymentStatus.CONFIRMED.toUpperCase());
@@ -164,13 +165,13 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
  * Get an image by ID
  */
 export async function getImageById(imageId: number): Promise<{ success: boolean; data?: any; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('images')
       .select('*')
       .eq('image_id', imageId)
@@ -198,14 +199,14 @@ export async function checkAreaAvailability(
   height: number,
   excludeImageId?: number
 ): Promise<{ success: boolean; available?: boolean; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
     // Query for any confirmed images that overlap with the target area
-    let query = supabase
+    let query = supabaseClient
       .from('images')
       .select('*')
       .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
@@ -238,13 +239,13 @@ export async function checkAreaAvailability(
 export async function cleanupExpiredPendingPayments(
   timeoutMinutes: number = 3
 ): Promise<{ success: boolean; error?: any }> {
-  if (!supabase) {
+  if (!supabaseClient) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('images')
       .update({
         status: PaymentStatus.TIMEOUT.toUpperCase(),
@@ -263,4 +264,13 @@ export async function cleanupExpiredPendingPayments(
     storageLogger.error('Failed to cleanup expired payments:', error);
     return { success: false, error };
   }
+}
+
+// Export storage functions that use the shared client
+export async function uploadImage(/* ... existing parameters ... */) {
+  if (!supabase) {
+    storageLogger.error('Unable to upload image - Supabase client not initialized');
+    return { error: 'Storage client not initialized' };
+  }
+  // ... rest of the existing function ...
 }
