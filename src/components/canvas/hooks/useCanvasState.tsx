@@ -5,9 +5,9 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { getPlacedImages, updateImageStatus, IMAGE_STATUS, ImageRecord } from '@/lib/imageStorage';
+import { getPlacedImages, updateImageStatus, ImageRecord } from '@/lib/imageStorage';
 import { usePaymentContext } from '@/lib/payment/context';
-import { PaymentStatus } from '@/lib/payment/types';
+import { PaymentStatus, ErrorCategory } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 import { canvasLogger } from '@/utils/logger';
 import { getImageStatusFromPaymentStatus } from '@/lib/payment/utils/storageUtils';
@@ -460,14 +460,14 @@ export function useCanvasState(): CanvasState {
         
         if (!success) {
           // Change log level for user rejections
-          if (error?.category === 'user_rejection') {
+          if (error?.category === ErrorCategory.USER_REJECTION) {
             console.log("User rejected the transaction");
           } else {
             console.error("Payment failed:", error?.message);
           }
           
           // Handle user rejection 
-          if (error?.category === 'user_rejection') {
+          if (error?.category === ErrorCategory.USER_REJECTION) {
             console.log("User rejected the transaction - returning to confirmation screen");
             setIsSubmitting(false);
             return;
@@ -486,7 +486,7 @@ export function useCanvasState(): CanvasState {
               
               // Update image status to success
               try {
-                await updateImageStatus(imageId, PaymentStatus.CONFIRMED, true);
+                await updateImageStatus(imageId, PaymentStatus.CONFIRMED);
                 
                 // Update the UI
                 setPlacedImages(prev => prev.map(img => 
@@ -514,7 +514,7 @@ export function useCanvasState(): CanvasState {
           }
           
           // Handle timeout specifically
-          if (error?.category === 'timeout_error') {
+          if (error?.category === ErrorCategory.TIMEOUT_ERROR) {
             // Clean up any records created for this session
             try {
               await updateImageStatus(imageId, PaymentStatus.TIMEOUT);
@@ -597,7 +597,7 @@ export function useCanvasState(): CanvasState {
     setIsSubmitting(false);
     
     // If there was an error about already processed transaction, reset completely
-    if (error?.category === 'blockchain_error' && error.code === 'DUPLICATE_TRANSACTION') {
+    if (error?.category === ErrorCategory.BLOCKCHAIN_ERROR && error.code === 'DUPLICATE_TRANSACTION') {
       resetState();
       window.location.reload();
       return;

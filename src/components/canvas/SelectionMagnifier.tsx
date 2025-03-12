@@ -265,8 +265,8 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
                   <div className="w-full text-left whitespace-nowrap overflow-hidden text-ellipsis px-1">
                     {walletInfo?.image_location || 'Unknown'}
                   </div>
-                  <p className="text-xs text-gray-400">
-                    {walletInfo?.sender_wallet || 'Unknown'}
+                  <p className="w-full text-left whitespace-nowrap overflow-hidden text-ellipsis px-1">
+                    {walletInfo?.wallet || 'Unknown'}
                   </p>
                 </>
               )}
