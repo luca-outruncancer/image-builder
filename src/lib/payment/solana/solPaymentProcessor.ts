@@ -32,9 +32,16 @@ import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/sola
 import { blockchainLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
+import { WalletContextState } from '@solana/wallet-adapter-react';
+import { PaymentError } from '../types';
 
 // Memo Program ID
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+
+interface SendTransactionOpts {
+  skipPreflight?: boolean;
+  maxRetries?: number;
+}
 
 /**
  * Process a SOL payment transaction
@@ -236,7 +243,11 @@ export async function processSolPayment(
       numInstructions: transaction.instructions.length
     });
     
-    // Sign transaction
+    // Get fresh blockhash before sending
+    const freshBlockhash = await connection.getLatestBlockhash('confirmed');
+    transaction.recentBlockhash = freshBlockhash.blockhash;
+    
+    // Sign transaction with fresh blockhash
     let signedTransaction;
     try {
       signedTransaction = await walletConfig.signTransaction(transaction);
@@ -284,191 +295,151 @@ export async function processSolPayment(
       signers: transaction.signatures.length
     });
     
-    // Send transaction with retry logic
+    // Send transaction
     let signature: string | undefined;
-    let retryCount = 0;
-    const maxRetries = 2;
-    
-    while (retryCount <= maxRetries) {
-      try {
-        // Clear any cached transaction data before sending
-        clearSessionBlockhashData();
-        
-        // Get fresh blockhash for each attempt
-        const freshBlockhash = await connection.getLatestBlockhash('confirmed');
-        transaction.recentBlockhash = freshBlockhash.blockhash;
-        
-        // Re-sign transaction with new blockhash
-        signedTransaction = await walletConfig.signTransaction(transaction);
-        
+    try {
+      // Clear any cached transaction data before sending
+      clearSessionBlockhashData();
+      
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Attempting to send transaction', {
+        paymentId,
+        nonce,
+        newBlockhash: freshBlockhash.blockhash,
+        serializedSize: signedTransaction.serialize().length
+      });
+      
+      signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed'
+      });
+      
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Transaction sent successfully', {
+        signature,
+        paymentId
+      });
+      
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Waiting for confirmation...');
+      
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash: freshBlockhash.blockhash,
+        lastValidBlockHeight: freshBlockhash.lastValidBlockHeight
+      });
+      
+      // -- EXTREMELOGGING
+      console.log('🔍 [PAYMENT-DEBUG] Transaction confirmation received', {
+        signature,
+        confirmed: !confirmation.value?.err,
+        err: confirmation.value?.err,
+        slot: confirmation.context.slot
+      });
+      
+      if (confirmation.value?.err) {
         // -- EXTREMELOGGING
-        console.log('🔍 [PAYMENT-DEBUG] Attempting to send transaction', {
-          attempt: retryCount + 1,
-          maxAttempts: maxRetries + 1,
-          paymentId,
+        console.error('🔍 [PAYMENT-DEBUG] Transaction confirmed but has error', {
+          error: confirmation.value.err,
+          signature
+        });
+        throw new Error(`Transaction confirmed with error: ${JSON.stringify(confirmation.value.err)}`);
+      }
+      
+    } catch (sendError) {
+      // -- EXTREMELOGGING
+      const errorDetails = {
+        errorType: sendError instanceof Error ? sendError.constructor.name : typeof sendError,
+        isTransactionError: sendError instanceof SendTransactionError,
+        rawError: String(sendError),
+        errorJson: JSON.stringify(sendError, Object.getOwnPropertyNames(sendError || {})),
+        transactionDetails: {
+          blockhash: transaction.recentBlockhash,
+          numInstructions: transaction.instructions.length,
           nonce,
-          newBlockhash: freshBlockhash.blockhash,
-          serializedSize: signedTransaction.serialize().length
+          paymentId
+        }
+      };
+
+      if (sendError instanceof Error) {
+        Object.assign(errorDetails, {
+          name: sendError.name,
+          message: sendError.message,
+          stack: sendError.stack,
         });
-        
-        signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-          skipPreflight: false,
-          preflightCommitment: 'confirmed'
-        });
-        
+
+        // Additional details for SendTransactionError
+        if (sendError instanceof SendTransactionError) {
+          // -- EXTREMELOGGING
+          console.log('🔍 [PAYMENT-DEBUG] Getting logs from SendTransactionError');
+          
+          let parsedError = null;
+          let errorMessage = sendError.message;
+          
+          // Try to extract any JSON content from the error message
+          const jsonMatch = errorMessage.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsedError = JSON.parse(jsonMatch[0]);
+            } catch (parseError) {
+              // -- EXTREMELOGGING
+              console.log('🔍 [PAYMENT-DEBUG] Found JSON-like content but failed to parse:', jsonMatch[0]);
+            }
+          }
+
+          Object.assign(errorDetails, {
+            logs: sendError.logs || [],
+            message: errorMessage,
+            details: {
+              raw: errorMessage,
+              parsed: parsedError,
+              containedJson: !!parsedError
+            }
+          });
+          
+          // -- EXTREMELOGGING
+          console.log('🔍 [PAYMENT-DEBUG] Transaction error details:', {
+            logs: sendError.logs,
+            message: errorMessage,
+            parsedError,
+            error: sendError
+          });
+        }
+      }
+
+      // -- EXTREMELOGGING
+      console.error('🔍 [PAYMENT-DEBUG] Error in send/confirm cycle:', errorDetails);
+      
+      blockchainLogger.error(`Error sending transaction:`, sendError, {
+        paymentId,
+        errorDetails
+      });
+      
+      // Check if this is a "Transaction already processed" error
+      if (isTxAlreadyProcessedError(sendError)) {
         // -- EXTREMELOGGING
-        console.log('🔍 [PAYMENT-DEBUG] Transaction sent successfully', {
-          signature,
-          attempt: retryCount + 1,
+        console.log('🔍 [PAYMENT-DEBUG] Transaction already processed error detected', {
+          error: sendError instanceof Error ? sendError.message : String(sendError),
           paymentId
         });
         
-        // -- EXTREMELOGGING
-        console.log('🔍 [PAYMENT-DEBUG] Waiting for confirmation...');
-        
-        // Wait for confirmation with new blockhash
-        const confirmation = await connection.confirmTransaction({
-          signature,
-          blockhash: freshBlockhash.blockhash,
-          lastValidBlockHeight: freshBlockhash.lastValidBlockHeight
-        });
-        
-        // -- EXTREMELOGGING
-        console.log('🔍 [PAYMENT-DEBUG] Transaction confirmation received', {
-          signature,
-          confirmed: !confirmation.value?.err,
-          err: confirmation.value?.err,
-          slot: confirmation.context.slot
-        });
-        
-        if (confirmation.value?.err) {
+        // Try to extract the signature from the error
+        const existingSignature = extractSignatureFromError(sendError);
+        if (existingSignature) {
           // -- EXTREMELOGGING
-          console.error('🔍 [PAYMENT-DEBUG] Transaction confirmed but has error', {
-            error: confirmation.value.err,
-            signature
-          });
-          throw new Error(`Transaction confirmed with error: ${JSON.stringify(confirmation.value.err)}`);
-        }
-        
-        break;
-      } catch (sendError) {
-        // -- EXTREMELOGGING
-        const errorDetails = {
-          attempt: retryCount + 1,
-          errorType: sendError instanceof Error ? sendError.constructor.name : typeof sendError,
-          isTransactionError: sendError instanceof SendTransactionError,
-          rawError: String(sendError),
-          errorJson: JSON.stringify(sendError, Object.getOwnPropertyNames(sendError || {})),
-          transactionDetails: {
-            blockhash: transaction.recentBlockhash,
-            numInstructions: transaction.instructions.length,
-            nonce,
-            paymentId
-          }
-        };
-
-        if (sendError instanceof Error) {
-          Object.assign(errorDetails, {
-            name: sendError.name,
-            message: sendError.message,
-            stack: sendError.stack,
-          });
-
-          // Additional details for SendTransactionError
-          if (sendError instanceof SendTransactionError) {
-            // -- EXTREMELOGGING
-            console.log('🔍 [PAYMENT-DEBUG] Getting logs from SendTransactionError');
-            
-            let parsedError = null;
-            let errorMessage = sendError.message;
-            
-            // Try to extract any JSON content from the error message
-            const jsonMatch = errorMessage.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              try {
-                parsedError = JSON.parse(jsonMatch[0]);
-              } catch (parseError) {
-                // -- EXTREMELOGGING
-                console.log('🔍 [PAYMENT-DEBUG] Found JSON-like content but failed to parse:', jsonMatch[0]);
-              }
-            }
-
-            Object.assign(errorDetails, {
-              logs: sendError.logs || [],
-              message: errorMessage,
-              details: {
-                raw: errorMessage,
-                parsed: parsedError,
-                containedJson: !!parsedError
-              }
-            });
-            
-            // -- EXTREMELOGGING
-            console.log('🔍 [PAYMENT-DEBUG] Transaction error details:', {
-              logs: sendError.logs,
-              message: errorMessage,
-              parsedError,
-              error: sendError
-            });
-          }
-        }
-
-        // -- EXTREMELOGGING
-        console.error('🔍 [PAYMENT-DEBUG] Error in send/confirm cycle:', errorDetails);
-        
-        blockchainLogger.error(`Error sending transaction (attempt ${retryCount + 1}):`, sendError, {
-          paymentId,
-          attempt: retryCount + 1,
-          errorDetails
-        });
-        
-        // Check if this is a "Transaction already processed" error
-        if (isTxAlreadyProcessedError(sendError)) {
-          // -- EXTREMELOGGING
-          console.log('🔍 [PAYMENT-DEBUG] Transaction already processed error detected', {
-            error: sendError instanceof Error ? sendError.message : String(sendError),
+          console.log('🔍 [PAYMENT-DEBUG] Found existing signature in error', {
+            signature: existingSignature,
             paymentId
           });
           
-          // Try to extract the signature from the error
-          const existingSignature = extractSignatureFromError(sendError);
-          if (existingSignature) {
-            // -- EXTREMELOGGING
-            console.log('🔍 [PAYMENT-DEBUG] Found existing signature in error', {
-              signature: existingSignature,
-              paymentId
-            });
-            
-            signature = existingSignature;
-            break;
-          }
+          signature = existingSignature;
         }
-        
-        retryCount++;
-        if (retryCount > maxRetries) {
-          // -- EXTREMELOGGING
-          console.error('🔍 [PAYMENT-DEBUG] Max retries exceeded', {
-            maxRetries,
-            paymentId,
-            lastError: sendError instanceof Error ? sendError.message : String(sendError)
-          });
-          throw sendError;
-        }
-        
-        // -- EXTREMELOGGING
-        console.log('🔍 [PAYMENT-DEBUG] Will retry transaction', {
-          nextAttempt: retryCount + 1,
-          maxRetries: maxRetries + 1,
-          paymentId
-        });
-        
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
     
     if (!signature) {
-      throw new Error('Failed to send transaction after all retries');
+      throw new Error('Failed to send transaction');
     }
     
     // -- EXTREMELOGGING
@@ -573,6 +544,42 @@ export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balan
     return { 
       balance: 0, 
       error: error instanceof Error ? error.message : 'Unknown error checking SOL balance'
+    };
+  }
+}
+
+async function sendTransaction(
+  connection: Connection,
+  transaction: Transaction,
+  wallet: WalletContextState,
+  opts: SendTransactionOpts = {}
+): Promise<{ success: boolean; signature?: string; error?: PaymentError }> {
+  try {
+    // Get latest blockhash
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.lastValidBlockHeight = lastValidBlockHeight;
+
+    // Sign and send transaction
+    const signature = await wallet.sendTransaction(transaction, connection);
+    
+    blockchainLogger.info('Transaction sent successfully', {
+      signature,
+      blockhash,
+      lastValidBlockHeight
+    });
+
+    return {
+      success: true,
+      signature
+    };
+
+  } catch (error: any) {
+    blockchainLogger.error('Error sending transaction:', error);
+
+    return {
+      success: false,
+      error: createPaymentError(ErrorCategory.BLOCKCHAIN_ERROR, error.message, error, false)
     };
   }
 }

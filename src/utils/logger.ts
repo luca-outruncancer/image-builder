@@ -110,15 +110,14 @@ function logToConsole(
 }
 
 /**
- * Log to the database with retry logic
+ * Log to the database
  */
 async function logToDatabase(
   level: string,
   component: string,
   message: string,
   data: any = null,
-  context: any = null,
-  retryCount = 0
+  context: any = null
 ): Promise<boolean> {
   if (!isDbLoggingEnabled || !supabase) {
     logToConsole('WARN', 'SYSTEM', 'Database logging is disabled', {
@@ -151,11 +150,6 @@ async function logToDatabase(
 
     return true;
   } catch (error) {
-    if (retryCount < 3) {
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-      return logToDatabase(level, component, message, data, context, retryCount + 1);
-    }
-    
     logToConsole('ERROR', 'SYSTEM', 'Failed to write to database log', {
       error,
       entry: { level, component, message }

@@ -127,7 +127,6 @@ export const RECIPIENT_WALLET_ADDRESS = "6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWR
 
 // Payment related constants
 export const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
-export const MAX_RETRIES = 2; // Maximum retry attempts for payment
 
 // Payment token configuration
 type NetworkAddresses = {

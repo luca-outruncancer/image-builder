@@ -18,8 +18,6 @@ import {
   isUserRejectionError,
   isNetworkError,
   isBalanceError,
-  retryWithBackoff,
-  isTxAlreadyProcessedError,
   clearSessionBlockhashData
 } from '../utils';
 import { processSolPayment } from './solPaymentProcessor';
@@ -145,7 +143,7 @@ export class SolanaPaymentProvider {
   }
   
   /**
-   * Process payment with automatic token type selection and retry logic
+   * Process payment with automatic token type selection
    */
   public async processPayment(request: PaymentRequest, mintAddress?: string | null): Promise<TransactionResult> {
     try {
@@ -171,32 +169,17 @@ export class SolanaPaymentProvider {
         };
       }
       
-      // Process the payment with retry logic
-      const result = await retryWithBackoff(async () => {
-        // Clear any cached transaction data before each attempt
-        clearSessionBlockhashData();
-        
-        if (request.token === 'SOL') {
-          return await processSolPayment(request, this.wallet);
-        } else if (mintAddress) {
-          return await processTokenPayment(request, mintAddress, this.wallet);
-        } else {
-          throw new Error(`Unsupported payment token: ${request.token}`);
-        }
-      }, 2, 500, (error) => {
-        // Don't retry user rejections or balance errors
-        if (isUserRejectionError(error) || isBalanceError(error)) {
-          return false;
-        }
-        
-        // Don't retry duplicate transaction errors
-        if (isTxAlreadyProcessedError(error)) {
-          return false;
-        }
-        
-        // Only retry network errors and unknown errors
-        return isNetworkError(error) || true;
-      });
+      // Clear any cached transaction data before attempting
+      clearSessionBlockhashData();
+      
+      let result: TransactionResult;
+      if (request.token === 'SOL') {
+        result = await processSolPayment(request, this.wallet);
+      } else if (mintAddress) {
+        result = await processTokenPayment(request, mintAddress, this.wallet);
+      } else {
+        throw new Error(`Unsupported payment token: ${request.token}`);
+      }
       
       // Cache successful transactions for future reference
       if (result.success && result.transactionHash) {
@@ -212,7 +195,6 @@ export class SolanaPaymentProvider {
     } catch (error) {
       console.error(`[SolanaPaymentProvider] Payment error [ID: ${request.metadata?.paymentId || 'unknown'}]:`, error);
       
-      // Handle errors that weren't automatically retried
       if (isUserRejectionError(error)) {
         return {
           success: false,
@@ -249,26 +231,13 @@ export class SolanaPaymentProvider {
         };
       }
       
-      if (isTxAlreadyProcessedError(error)) {
-        return {
-          success: false,
-          error: createPaymentError(
-            ErrorCategory.BLOCKCHAIN_ERROR,
-            'Transaction already processed. Please try again with a new transaction.',
-            error,
-            false,
-            'DUPLICATE_TRANSACTION'
-          )
-        };
-      }
-      
       return {
         success: false,
         error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
+          ErrorCategory.BLOCKCHAIN_ERROR,
           error instanceof Error ? error.message : 'Payment processing failed',
           error,
-          true
+          false
         )
       };
     }
