@@ -1,7 +1,7 @@
 // src/lib/payment/hooks/usePayment.ts
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import PaymentService from '../paymentService';
 import { 
@@ -25,27 +25,19 @@ export function usePayment() {
   const [error, setError] = useState<PaymentError | null>(null);
   const [successInfo, setSuccessInfo] = useState<PaymentStatusResponse | null>(null);
   
-  // Create payment service - memoized to only recreate when wallet connection changes
-  const paymentService = useMemo(() => {
-    paymentLogger.debug('Creating new payment service instance', {
-      walletConnected: wallet.connected,
-      hasPublicKey: !!wallet.publicKey
-    });
-    
-    return new PaymentService({
-      publicKey: wallet.publicKey,
-      signTransaction: wallet.signTransaction,
-      connected: wallet.connected
-    });
-  }, [wallet.connected, wallet.publicKey, wallet.signTransaction]);
+  // Create payment service
+  const paymentService = new PaymentService({
+    publicKey: wallet.publicKey,
+    signTransaction: wallet.signTransaction,
+    connected: wallet.connected
+  });
   
-  // Clean up resources when component unmounts or wallet connection changes
+  // Clean up resources when component unmounts
   useEffect(() => {
     return () => {
-      paymentLogger.debug('Disposing payment service');
       paymentService.dispose();
     };
-  }, [paymentService]);
+  }, []);
   
   /**
    * Initialize a new payment
