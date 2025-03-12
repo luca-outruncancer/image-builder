@@ -1,10 +1,6 @@
 // src/lib/payment/storage/statusMapper.ts
-import { IMAGE_STATUS } from '@/lib/imageStorage';
 import { PaymentStatus } from '../types';
-import { 
-  PAYMENT_TO_TRANSACTION_STATUS, 
-  PAYMENT_TO_IMAGE_STATUS 
-} from '../utils/storageUtils';
+import { PAYMENT_TO_TRANSACTION_STATUS } from '../utils/storageUtils';
 
 /**
  * StatusMapper handles the conversion between various status types
@@ -12,17 +8,10 @@ import {
  */
 export class StatusMapper {
   /**
-   * Convert a payment status to a database transaction status
+   * Convert a payment status to a database status
    */
   public getTransactionStatus(paymentStatus: PaymentStatus): string {
-    return PAYMENT_TO_TRANSACTION_STATUS[paymentStatus] || 'unknown';
-  }
-  
-  /**
-   * Convert a payment status to an image status
-   */
-  public getImageStatus(paymentStatus: PaymentStatus): number {
-    return PAYMENT_TO_IMAGE_STATUS[paymentStatus] || IMAGE_STATUS.PENDING_PAYMENT;
+    return PAYMENT_TO_TRANSACTION_STATUS[paymentStatus] || 'UNKNOWN';
   }
   
   /**

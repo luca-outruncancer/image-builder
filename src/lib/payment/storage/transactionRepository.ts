@@ -11,53 +11,40 @@ import { validateDatabaseConnection, getCurrentTimestamp } from '../utils/storag
  */
 export class TransactionRepository {
   /**
-   * Initialize a transaction record for a new payment
+   * Initialize a new transaction record
    */
   public async initializeTransaction(
     paymentSession: PaymentSession
   ): Promise<{ success: boolean; transactionId?: number; error?: PaymentError }> {
+    const { imageId, amount, token, paymentId, walletAddress, recipientWallet } = paymentSession;
+    
+    if (!supabase) {
+      console.error("Database client not available");
+      return { 
+        success: false, 
+        error: createPaymentError(
+          ErrorCategory.UNKNOWN_ERROR,
+          "Database client not available",
+          null,
+          true
+        )
+      };
+    }
+    
     try {
-      if (!validateDatabaseConnection(supabase)) {
-        return { 
-          success: false, 
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            "Database client not available",
-            null,
-            false
-          )
-        };
-      }
-      
-      const { imageId, amount, token, walletAddress, recipientWallet, paymentId } = paymentSession;
-      
-      // Validate input data
-      if (!imageId || !amount || !token || !walletAddress || !recipientWallet) {
-        return {
-          success: false,
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            "Missing required fields for transaction initialization",
-            null,
-            false
-          )
-        };
-      }
-      
-      // Create transaction record with INITIATED status
       const { data, error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .insert([{
           image_id: imageId,
-          sender_wallet: walletAddress,
+          amount: amount,
+          status: PaymentStatus.INITIALIZED.toUpperCase(),
+          signature: `pending_${paymentId}`,
+          created_at: new Date().toISOString(),
+          attempt_count: 0,
           recipient_wallet: recipientWallet,
           transaction_hash: `pending_${paymentId}`,
-          transaction_status: statusMapper.getTransactionStatus(PaymentStatus.INITIALIZED),
-          amount: amount,
-          token: token,
-          timestamp: getCurrentTimestamp(),
-          retry_count: 0,
-          blockchain_confirmation: false
+          sender_wallet: walletAddress,
+          token: token
         }])
         .select();
       
@@ -76,7 +63,7 @@ export class TransactionRepository {
       
       return { 
         success: true, 
-        transactionId: data[0].transaction_id 
+        transactionId: data[0].tx_id 
       };
     } catch (error) {
       console.error('Failed to initialize transaction:', error);
@@ -115,24 +102,25 @@ export class TransactionRepository {
       }
       
       const updateData: any = {
-        transaction_status: statusMapper.getTransactionStatus(status)
+        status: status.toUpperCase()
       };
       
       // Add transaction hash if provided
       if (transactionHash) {
         updateData.transaction_hash = transactionHash;
+        updateData.signature = transactionHash;
       }
       
       // Add blockchain confirmation if provided
       if (blockchainConfirmation !== undefined) {
-        updateData.blockchain_confirmation = blockchainConfirmation;
+        updateData.confirmed_at = blockchainConfirmation ? new Date().toISOString() : null;
       }
       
       // Update the transaction
       const { error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .update(updateData)
-        .eq('transaction_id', transactionId);
+        .eq('tx_id', transactionId);
       
       if (error) {
         console.error("Database error updating transaction status:", error);
@@ -202,16 +190,16 @@ export class TransactionRepository {
       
       try {
         const { data: existingTx } = await supabase
-          .from('transactions')
-          .select('retry_count')
+          .from('transaction_records')
+          .select('attempt_count')
           .eq('image_id', record.image_id)
-          .eq('transaction_status', 'failed')
-          .order('timestamp', { ascending: false })
+          .eq('status', PaymentStatus.FAILED)
+          .order('created_at', { ascending: false })
           .limit(1)
           .single();
         
-        if (existingTx?.retry_count !== undefined) {
-          retryCount = existingTx.retry_count + 1;
+        if (existingTx?.attempt_count !== undefined) {
+          retryCount = existingTx.attempt_count + 1;
         }
       } catch (countError) {
         // It's okay if there's no previous transaction
@@ -220,18 +208,18 @@ export class TransactionRepository {
       
       // Insert the transaction record
       const { data, error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .insert([{
           image_id: record.image_id,
           sender_wallet: record.sender_wallet,
           recipient_wallet: record.recipient_wallet,
           transaction_hash: record.transaction_hash,
-          transaction_status: record.transaction_status,
+          status: record.status,
           amount: record.amount,
           token: record.token,
-          timestamp: now,
-          retry_count: retryCount,
-          blockchain_confirmation: record.blockchain_confirmation || true
+          created_at: now,
+          attempt_count: retryCount,
+          signature: record.signature
         }])
         .select();
       
@@ -250,7 +238,7 @@ export class TransactionRepository {
       
       return { 
         success: true, 
-        transactionId: data[0].transaction_id 
+        transactionId: data[0].tx_id 
       };
     } catch (error) {
       console.error('Failed to save transaction:', error);
@@ -284,9 +272,9 @@ export class TransactionRepository {
       }
       
       const { data, error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .select('*')
-        .eq('transaction_id', transactionId)
+        .eq('tx_id', transactionId)
         .single();
       
       if (error) {
@@ -335,10 +323,10 @@ export class TransactionRepository {
       }
       
       const { data, error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .select('*')
         .eq('image_id', imageId)
-        .order('timestamp', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .single();
       
@@ -393,10 +381,10 @@ export class TransactionRepository {
       }
       
       const { data, error } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .select('*')
         .eq('sender_wallet', walletAddress)
-        .order('timestamp', { ascending: false });
+        .order('created_at', { ascending: false });
       
       if (error) {
         console.error("Error getting transactions for wallet:", error);
@@ -447,13 +435,13 @@ export class TransactionRepository {
       
       // Update the existing transaction record for this image
       const { error: txError } = await supabase
-        .from('transactions')
+        .from('transaction_records')
         .update({
-          transaction_status: 'timeout',
-          last_verified_at: now
+          status: PaymentStatus.TIMEOUT,
+          confirmed_at: now
         })
         .eq('image_id', imageId)
-        .in('transaction_status', ['initiated', 'pending', 'in_progress']);
+        .in('status', [PaymentStatus.INITIALIZED, PaymentStatus.PENDING, PaymentStatus.PROCESSING]);
       
       if (txError) {
         console.log("Note: Could not update transaction status for timeout:", txError);

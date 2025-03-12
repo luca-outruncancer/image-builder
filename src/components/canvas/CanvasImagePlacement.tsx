@@ -1,21 +1,7 @@
 // src/components/canvas/CanvasImagePlacement.tsx
 'use client';
 
-interface PlacedImage {
-  id: string;
-  src: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  status: number;
-  file?: File;
-  cost?: number;
-}
-
-interface CanvasImagePlacementProps {
-  tempImage: PlacedImage;
-}
+import { PlacedImage, CanvasImagePlacementProps } from '@/types/canvas';
 
 export default function CanvasImagePlacement({ tempImage }: CanvasImagePlacementProps) {
   return (

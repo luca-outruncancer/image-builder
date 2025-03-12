@@ -144,7 +144,7 @@ async function logToDatabase(
         context: formattedContext ? JSON.parse(formattedContext) : null,
         environment: LOGGING.ENVIRONMENT,
         request_id: requestId,
-        user_wallet: userWallet,
+        sender_wallet: userWallet,
         ttimestamp: new Date().toISOString()  // Changed from timestamp to ttimestamp
       });
     

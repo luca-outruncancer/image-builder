@@ -3,24 +3,24 @@ import { PublicKey, Transaction } from '@solana/web3.js';
 
 // Payment status constants
 export enum PaymentStatus {
-  INITIALIZED = 'initialized',
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  CONFIRMED = 'confirmed',
-  FAILED = 'failed',
-  TIMEOUT = 'timeout',
-  CANCELED = 'canceled'
+  INITIALIZED = 'INITIALIZED',
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  CONFIRMED = 'CONFIRMED',
+  FAILED = 'FAILED',
+  TIMEOUT = 'TIMEOUT',
+  CANCELED = 'CANCELED'
 }
 
 // Error categories for better handling
 export enum ErrorCategory {
-  USER_REJECTION = 'user_rejection',
-  NETWORK_ERROR = 'network_error',
-  BALANCE_ERROR = 'balance_error',
-  TIMEOUT_ERROR = 'timeout_error',
-  WALLET_ERROR = 'wallet_error',
-  BLOCKCHAIN_ERROR = 'blockchain_error',
-  UNKNOWN_ERROR = 'unknown_error'
+  USER_REJECTION = 'USER_REJECTION',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  BALANCE_ERROR = 'BALANCE_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+  WALLET_ERROR = 'WALLET_ERROR',
+  BLOCKCHAIN_ERROR = 'BLOCKCHAIN_ERROR',
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
 // Structured error object
@@ -90,18 +90,18 @@ export interface WalletConfig {
 
 // Database transaction record
 export interface TransactionRecord {
-  transaction_id?: number;
+  tx_id?: number;
   image_id: number;
-  sender_wallet: string;
-  recipient_wallet: string;
   transaction_hash: string;
-  transaction_status: string;
-  amount: number;
+  sender_wallet: string;
   token: string;
-  timestamp?: string;
-  retry_count?: number;
-  blockchain_confirmation?: boolean;
-  last_verified_at?: string;
+  amount: number;
+  status: string;
+  signature?: string;
+  created_at: string;
+  confirmed_at?: string;
+  attempt_count: number;
+  recipient_wallet: string;
 }
 
 // Payment session tracking

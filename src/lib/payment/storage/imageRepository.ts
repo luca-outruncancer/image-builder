@@ -1,10 +1,12 @@
 // src/lib/payment/storage/imageRepository.ts
 import { supabase } from '@/lib/supabase';
-import { PaymentStatus, PaymentError, PaymentImageRecord } from '../types';
+import { PaymentStatus, PaymentError } from '../types';
+import { PaymentImageRecord } from '../types/storageTypes';
 import { createPaymentError } from '../utils';
 import { ErrorCategory } from '../types';
-import { statusMapper } from './statusMapper';
+import { PAYMENT_TO_TRANSACTION_STATUS } from '../utils/storageUtils';
 import { validateDatabaseConnection, getCurrentTimestamp } from '../utils/storageUtils';
+import { storageLogger } from '@/utils/logger';
 
 /**
  * ImageRepository handles all database operations related to image status updates for payments
@@ -15,8 +17,7 @@ export class ImageRepository {
    */
   public async updateImageStatus(
     imageId: number,
-    status: PaymentStatus,
-    confirmed: boolean = false
+    status: PaymentStatus
   ): Promise<{ success: boolean; error?: PaymentError }> {
     try {
       if (!validateDatabaseConnection(supabase)) {
@@ -31,62 +32,57 @@ export class ImageRepository {
         };
       }
       
-      const updateData: any = {
-        image_status: statusMapper.getImageStatus(status),
-        last_updated_at: getCurrentTimestamp()
+      const dbStatus = PAYMENT_TO_TRANSACTION_STATUS[status].toUpperCase();
+      const updateData: {
+        status: string;
+        updated_at: string;
+      } = {
+        status: dbStatus,
+        updated_at: getCurrentTimestamp()
       };
       
-      // For confirmed payments, add confirmation timestamp
-      if (confirmed || status === PaymentStatus.CONFIRMED) {
-        updateData.confirmed_at = getCurrentTimestamp();
-      }
+      storageLogger.debug('Updating image status', {
+        imageId,
+        newStatus: dbStatus,
+        updateData
+      });
       
-      // Increment payment attempts counter if retrying
-      if (status === PaymentStatus.PROCESSING) {
-        // Get current image data first
-        const { data: currentImage, error: fetchError } = await supabase
-          .from('images')
-          .select('payment_attempts')
-          .eq('image_id', imageId)
-          .single();
-        
-        if (fetchError) {
-          console.error("Error fetching current image data:", fetchError);
-          // Continue with update without incrementing
-        } else {
-          // Increment attempts counter
-          const currentAttempts = currentImage?.payment_attempts || 0;
-          updateData.payment_attempts = currentAttempts + 1;
-        }
-      }
-      
-      // If failed or timed out, record the final status
-      if (status === PaymentStatus.FAILED || status === PaymentStatus.TIMEOUT) {
-        updateData.payment_final_status = statusMapper.getImageStatus(status);
-      }
-      
-      // Update the image record
       const { error } = await supabase
         .from('images')
         .update(updateData)
         .eq('image_id', imageId);
       
       if (error) {
-        console.error("Error updating image status:", error);
+        storageLogger.error("Error updating image status:", {
+          error,
+          imageId,
+          status: dbStatus,
+          errorCode: error.code,
+          errorMessage: error.message
+        });
         return { 
           success: false, 
           error: createPaymentError(
             ErrorCategory.UNKNOWN_ERROR,
-            "Failed to update image status",
+            `Failed to update image status: ${error.message}`,
             error,
             true
           )
         };
       }
       
+      storageLogger.debug('Successfully updated image status', {
+        imageId,
+        status: dbStatus
+      });
+      
       return { success: true };
     } catch (error) {
-      console.error('Failed to update image status:', error);
+      storageLogger.error('Failed to update image status:', {
+        error,
+        imageId,
+        status: PAYMENT_TO_TRANSACTION_STATUS[status]
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -170,7 +166,7 @@ export class ImageRepository {
       const { data, error } = await supabase
         .from('images')
         .select('*')
-        .eq('user_wallet', walletAddress)
+        .eq('sender_wallet', walletAddress)
         .order('created_at', { ascending: false });
       
       if (error) {
@@ -222,14 +218,14 @@ export class ImageRepository {
       const { error } = await supabase
         .from('images')
         .update({ 
-          image_status: statusMapper.getImageStatus(PaymentStatus.TIMEOUT),
-          last_updated_at: getCurrentTimestamp()
+          status: PAYMENT_TO_TRANSACTION_STATUS[PaymentStatus.TIMEOUT],
+          updated_at: getCurrentTimestamp()
         })
         .eq('image_id', imageId)
-        .in('image_status', [
-          statusMapper.getImageStatus(PaymentStatus.PENDING),
-          statusMapper.getImageStatus(PaymentStatus.PROCESSING),
-          statusMapper.getImageStatus(PaymentStatus.INITIALIZED)
+        .in('status', [
+          PAYMENT_TO_TRANSACTION_STATUS[PaymentStatus.PENDING],
+          PAYMENT_TO_TRANSACTION_STATUS[PaymentStatus.PROCESSING],
+          PAYMENT_TO_TRANSACTION_STATUS[PaymentStatus.INITIALIZED]
         ]);
       
       if (error) {

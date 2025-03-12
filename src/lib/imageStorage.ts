@@ -23,16 +23,6 @@ if (supabaseUrl && supabaseKey) {
   storageLogger.error('Unable to initialize Supabase client due to missing environment variables in imageStorage');
 }
 
-// Image status constants
-export const IMAGE_STATUS = {
-  CONFIRMED: 1,       // Payment successful
-  PENDING_PAYMENT: 2, // Awaiting payment
-  PAYMENT_FAILED: 3,  // Payment attempt failed
-  PAYMENT_TIMEOUT: 4, // Payment timed out
-  NOT_INITIATED: 5,   // Payment not initiated or abandoned
-  PAYMENT_RETRY: 6    // Payment being retried
-};
-
 export interface ImageRecord {
   image_id: number;
   image_location: string;
@@ -40,52 +30,52 @@ export interface ImageRecord {
   start_position_y: number;
   size_x: number;
   size_y: number;
-  image_status: number;
+  status: string; // payment_status enum
   created_at: string;
-  confirmed_at?: string;
-  payment_attempts?: number;
-  last_updated_at?: string;
-  sender_wallet?: string; 
+  updated_at?: string;
+  payment_attempts: number;
+  sender_wallet: string;
 }
 
 /**
  * Create a new image record in the database
  */
-export async function createImageRecord(
-  imageId: number,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  walletAddress: string,
-  cost: number,
-  status: PaymentStatus = PaymentStatus.PENDING
-): Promise<{ success: boolean; error?: any }> {
+export async function createImageRecord(params: {
+  image_location: string;
+  start_position_x: number;
+  start_position_y: number;
+  size_x: number;
+  size_y: number;
+  status: string;
+  sender_wallet: string;
+}): Promise<{ success: boolean; data?: ImageRecord; error?: any }> {
   if (!supabase) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('images')
       .insert({
-        image_id: imageId,
-        x,
-        y,
-        width,
-        height,
-        wallet_address: walletAddress,
-        cost,
-        status: status.toUpperCase()
-      });
+        image_location: params.image_location,
+        start_position_x: params.start_position_x,
+        start_position_y: params.start_position_y,
+        size_x: params.size_x,
+        size_y: params.size_y,
+        status: params.status,
+        sender_wallet: params.sender_wallet,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
     
     if (error) {
       storageLogger.error('Error creating image record:', error);
       return { success: false, error };
     }
     
-    return { success: true };
+    return { success: true, data };
   } catch (error) {
     storageLogger.error('Failed to create image record:', error);
     return { success: false, error };
@@ -97,8 +87,7 @@ export async function createImageRecord(
  */
 export async function updateImageStatus(
   imageId: number,
-  status: PaymentStatus,
-  confirmed: boolean = false
+  status: PaymentStatus
 ): Promise<{ success: boolean; error?: any }> {
   if (!supabase) {
     storageLogger.info('Skipping database operation: Supabase client not available');
@@ -106,38 +95,40 @@ export async function updateImageStatus(
   }
   
   try {
-    // First get the current image data
-    const { data: currentData, error: fetchError } = await supabase
+    storageLogger.debug('Updating image status', {
+      imageId,
+      newStatus: status
+    });
+
+    const { error } = await supabase
       .from('images')
-      .select('status')
-      .eq('image_id', imageId)
-      .single();
+      .update({
+        status: status.toUpperCase(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('image_id', imageId);
     
-    if (fetchError) {
-      storageLogger.error('Error fetching current image data:', fetchError);
-      return { success: false, error: fetchError };
+    if (error) {
+      storageLogger.error('Error updating image status:', {
+        error,
+        imageId,
+        status
+      });
+      return { success: false, error };
     }
     
-    // Only update if status is different or confirmation is being set
-    if (currentData.status !== status || confirmed) {
-      const { error } = await supabase
-        .from('images')
-        .update({
-          status,
-          confirmed,
-          updated_at: new Date().toISOString()
-        })
-        .eq('image_id', imageId);
-      
-      if (error) {
-        storageLogger.error('Error updating image status:', error);
-        return { success: false, error };
-      }
-    }
+    storageLogger.debug('Successfully updated image status', {
+      imageId,
+      status
+    });
     
     return { success: true };
   } catch (error) {
-    storageLogger.error('Failed to update image status:', error);
+    storageLogger.error('Failed to update image status:', {
+      error,
+      imageId,
+      status
+    });
     return { success: false, error };
   }
 }
@@ -155,8 +146,7 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
     const { data, error } = await supabase
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
-      .eq('confirmed', true);
+      .eq('status', PaymentStatus.CONFIRMED.toUpperCase());
     
     if (error) {
       storageLogger.error('Error fetching image records:', error);
@@ -219,7 +209,6 @@ export async function checkAreaAvailability(
       .from('images')
       .select('*')
       .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
-      .eq('confirmed', true)
       .or(`and(x.gte.${x},x.lt.${x + width}),and(x.lte.${x},x.plus.width.gt.${x})`)
       .or(`and(y.gte.${y},y.lt.${y + height}),and(y.lte.${y},y.plus.height.gt.${y})`);
     

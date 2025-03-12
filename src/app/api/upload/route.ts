@@ -4,11 +4,12 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
-import { createImageRecord, IMAGE_STATUS } from '@/lib/imageStorage';
+import { createImageRecord } from '@/lib/imageStorage';
 import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErrorHandler';
 import { imageLogger } from '@/utils/logger';
+import { PaymentStatus } from '@/lib/payment/types';
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const requestId = request.headers.get('x-request-id') || 'unknown';
@@ -193,17 +194,15 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     // Step 6: Store in database (notice we store the ORIGINAL requested size, not the multiplied one)
     // This ensures that the image appears at the size the user requested on the canvas
     try {
-      const initialStatus = IMAGE_STATUS.PENDING_PAYMENT;
-      
       imageLogger.info(`[Upload:${uploadId}] Creating database record with display size: ${size.width}x${size.height}`, { requestId });
       const { success, data: imageRecord, error } = await createImageRecord({
         image_location: publicUrl,
         start_position_x: position.x,
         start_position_y: position.y,
-        size_x: size.width,  // Original requested width (for display)
-        size_y: size.height, // Original requested height (for display)
-        image_status: initialStatus,
-        user_wallet: walletAddress
+        size_x: size.width,
+        size_y: size.height,
+        status: PaymentStatus.INITIALIZED,
+        sender_wallet: walletAddress
       });
       
       if (!success || !imageRecord) {
@@ -214,13 +213,12 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
           success: true,
           url: publicUrl,
           record: {
-            image_id: Date.now(),
             image_location: publicUrl,
             start_position_x: position.x,
             start_position_y: position.y,
             size_x: size.width,
             size_y: size.height,
-            image_status: initialStatus,
+            status: PaymentStatus.INITIALIZED,
             created_at: new Date().toISOString()
           },
           optimization: {
@@ -262,13 +260,12 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         success: true, // Still mark as success since file was saved
         url: publicUrl,
         record: {
-          image_id: Date.now(),
           image_location: publicUrl,
           start_position_x: position.x,
           start_position_y: position.y,
           size_x: size.width,
           size_y: size.height,
-          image_status: IMAGE_STATUS.PENDING_PAYMENT,
+          status: PaymentStatus.INITIALIZED,
           created_at: new Date().toISOString()
         },
         optimization: {

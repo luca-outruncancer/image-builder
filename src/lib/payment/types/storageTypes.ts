@@ -2,18 +2,18 @@
 
 // Database transaction record
 export interface TransactionRecord {
-  transaction_id?: number;
+  tx_id?: number;
   image_id: number;
-  sender_wallet: string;
-  recipient_wallet: string;
   transaction_hash: string;
-  transaction_status: string;
-  amount: number;
+  sender_wallet: string;
   token: string;
-  timestamp?: string;
-  retry_count?: number;
-  blockchain_confirmation?: boolean;
-  last_verified_at?: string;
+  amount: number;
+  status: string; // payment_status enum
+  signature?: string;
+  created_at: string;
+  confirmed_at?: string;
+  attempt_count: number;
+  recipient_wallet: string;
 }
 
 // Database image record for payments

@@ -106,13 +106,11 @@ export class PaymentStorageProvider {
         }
         
         const imageId = txData.image_id;
-        const confirmed = status === PaymentStatus.CONFIRMED;
         
         // Update the image status
         const imageResult = await imageRepository.updateImageStatus(
           imageId,
-          status,
-          confirmed
+          status
         );
         
         if (!imageResult.success) {
@@ -135,7 +133,7 @@ export class PaymentStorageProvider {
         success: false, 
         error: createPaymentError(
           ErrorCategory.UNKNOWN_ERROR,
-          "Failed to update transaction",
+          "Failed to update transaction status",
           error,
           true
         )
@@ -161,20 +159,18 @@ export class PaymentStorageProvider {
       
       // Map transaction status to image status
       let status: PaymentStatus;
-      let confirmed = false;
       
       switch (record.transaction_status) {
-        case 'success':
+        case 'SUCCESS':
           status = PaymentStatus.CONFIRMED;
-          confirmed = true;
           break;
-        case 'failed':
+        case 'FAILED':
           status = PaymentStatus.FAILED;
           break;
-        case 'timeout':
+        case 'TIMEOUT':
           status = PaymentStatus.TIMEOUT;
           break;
-        case 'pending':
+        case 'PENDING':
           status = PaymentStatus.PENDING;
           break;
         default:
@@ -184,8 +180,7 @@ export class PaymentStorageProvider {
       // Update the image status
       const imageResult = await imageRepository.updateImageStatus(
         record.image_id,
-        status,
-        confirmed
+        status
       );
       
       if (!imageResult.success) {

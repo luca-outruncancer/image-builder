@@ -1,93 +1,91 @@
--- Create enums
-CREATE TYPE log_level AS ENUM ('DEBUG', 'INFO', 'WARN', 'ERROR');
-CREATE TYPE payment_status AS ENUM ('INITIALIZED', 'PENDING', 'PROCESSING', 'CONFIRMED', 'FAILED', 'TIMEOUT', 'CANCELED');
+-- //src/database/schema.sql
+
 
 -- Application logs table
 CREATE TABLE IF NOT EXISTS application_logs (
-    id BIGSERIAL PRIMARY KEY,
-    ttimestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    level log_level NOT NULL,
-    component VARCHAR(50) NOT NULL,
-    message TEXT NOT NULL,
-    data JSONB,
-    context JSONB,
-    environment VARCHAR(20) NOT NULL,
-    request_id UUID NOT NULL,
-    user_wallet VARCHAR(44),
+    id SERIAL PRIMARY KEY, -- Unique identifier for each log entry
+    ttimestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the log was created
+    level VARCHAR(20) NOT NULL, -- Level of the log message
+    component VARCHAR(50) NOT NULL, -- Component that logged the message
+    message TEXT NOT NULL, -- Message to be logged
+    data JSONB, -- Additional data to be logged
+    context JSONB, -- Context of the log message
+    environment VARCHAR(20) NOT NULL, -- Environment where the log was created
+    request_id UUID NOT NULL, -- Unique identifier for the request
+    sender_wallet VARCHAR(44), -- Wallet address of the sender
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Images table
 CREATE TABLE IF NOT EXISTS images (
-    image_id BIGINT PRIMARY KEY,
-    x INTEGER NOT NULL,
-    y INTEGER NOT NULL,
-    width INTEGER NOT NULL,
-    height INTEGER NOT NULL,
-    wallet_address VARCHAR(44) NOT NULL,
-    cost DECIMAL(20,9) NOT NULL,
-    status payment_status NOT NULL DEFAULT 'INITIALIZED',
-    confirmed BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE,
-    payment_attempts INTEGER DEFAULT 0,
-    CONSTRAINT valid_dimensions CHECK (width > 0 AND height > 0),
-    CONSTRAINT valid_position CHECK (x >= 0 AND y >= 0)
+    image_id SERIAL PRIMARY KEY, -- Unique identifier for each image
+    start_position_x INTEGER NOT NULL, -- X coordinate of the top-left corner of the image
+    start_position_y INTEGER NOT NULL, -- Y coordinate of the top-left corner of the image
+    size_x INTEGER NOT NULL, -- Width of the image
+    size_y INTEGER NOT NULL, -- Height of the image
+    sender_wallet VARCHAR(44) NOT NULL, -- Wallet address of the sender
+    image_location TEXT NOT NULL, -- Location of the image on the filesystem or IPFS
+    status VARCHAR(20) NOT NULL DEFAULT 'INITIALIZED', -- Status of the image
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the image was created
+    updated_at TIMESTAMP WITH TIME ZONE, -- Timestamp when the image was last updated
+    payment_attempts INTEGER DEFAULT 0
 );
 
 -- Transaction records table
 CREATE TABLE IF NOT EXISTS transaction_records (
-    tx_id VARCHAR(88) PRIMARY KEY,
-    image_id BIGINT NOT NULL REFERENCES images(image_id),
-    wallet_address VARCHAR(44) NOT NULL,
-    amount DECIMAL(20,9) NOT NULL,
-    status payment_status NOT NULL,
+    tx_id SERIAL PRIMARY KEY, -- Unique identifier for each transaction
+    image_id INTEGER NOT NULL REFERENCES images(image_id), -- Reference to the image that was paid for
+    transaction_hash TEXT NOT NULL, -- Hash of the transaction
+    sender_wallet TEXT NOT NULL, -- Wallet address of the sender
+    token TEXT NOT NULL, -- Token used for the transaction
+    amount DECIMAL(20,9) NOT NULL, -- Amount of the transaction
+    status VARCHAR(20) NOT NULL, -- Status of the transaction
     signature VARCHAR(88),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the transaction was created
     confirmed_at TIMESTAMP WITH TIME ZONE,
-    CONSTRAINT valid_amount CHECK (amount > 0)
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    recipient_wallet VARCHAR(44) NOT NULL
 );
 
 -- Payment sessions table
 CREATE TABLE IF NOT EXISTS payment_sessions (
-    session_id UUID PRIMARY KEY,
-    image_id BIGINT NOT NULL REFERENCES images(image_id),
-    wallet_address VARCHAR(44) NOT NULL,
-    amount DECIMAL(20,9) NOT NULL,
-    status payment_status NOT NULL DEFAULT 'INITIALIZED',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    last_attempt_at TIMESTAMP WITH TIME ZONE,
-    attempt_count INTEGER DEFAULT 0,
-    CONSTRAINT valid_session_amount CHECK (amount > 0)
+    session_id UUID PRIMARY KEY, -- Unique identifier for each payment session
+    image_id INTEGER NOT NULL REFERENCES images(image_id), -- Reference to the image that was paid for
+    sender_wallet VARCHAR(44) NOT NULL, -- Wallet address of the sender
+    amount DECIMAL(20,9) NOT NULL, -- Amount of the transaction
+    token TEXT NOT NULL, -- Token used for the transaction
+    status VARCHAR(20) NOT NULL DEFAULT 'INITIALIZED', -- Status of the payment session
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the payment session was created
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL, -- Timestamp when the payment session will expire
+    last_attempt_at TIMESTAMP WITH TIME ZONE, -- Timestamp when the last attempt was made
+    attempt_count INTEGER DEFAULT 0 -- Number of attempts made for the payment session  
 );
 
 -- Indexes for application_logs
-CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON application_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON application_logs(ttimestamp);
 CREATE INDEX IF NOT EXISTS idx_logs_level ON application_logs(level);
 CREATE INDEX IF NOT EXISTS idx_logs_component ON application_logs(component);
 CREATE INDEX IF NOT EXISTS idx_logs_request_id ON application_logs(request_id);
-CREATE INDEX IF NOT EXISTS idx_logs_user_wallet ON application_logs(user_wallet);
+CREATE INDEX IF NOT EXISTS idx_logs_sender_wallet ON application_logs(sender_wallet);
 CREATE INDEX IF NOT EXISTS idx_logs_environment ON application_logs(environment);
 -- CREATE INDEX IF NOT EXISTS idx_logs_cleanup ON application_logs((timestamp < NOW() - INTERVAL '30 days'));
 
 -- Indexes for images
 CREATE INDEX IF NOT EXISTS idx_images_status ON images(status);
-CREATE INDEX IF NOT EXISTS idx_images_wallet ON images(wallet_address);
-CREATE INDEX IF NOT EXISTS idx_images_confirmed ON images(confirmed) WHERE confirmed = true;
+CREATE INDEX IF NOT EXISTS idx_images_wallet ON images(sender_wallet);
 CREATE INDEX IF NOT EXISTS idx_images_position ON images USING gist (
-    box(point(x, y), point(x + width, y + height))
+    box(point(start_position_x, start_position_y), point(start_position_x + size_x, start_position_y + size_y))
 );
 
 -- Indexes for transaction_records
 CREATE INDEX IF NOT EXISTS idx_tx_image_id ON transaction_records(image_id);
-CREATE INDEX IF NOT EXISTS idx_tx_wallet ON transaction_records(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_tx_wallet ON transaction_records(sender_wallet);
 CREATE INDEX IF NOT EXISTS idx_tx_status ON transaction_records(status);
 CREATE INDEX IF NOT EXISTS idx_tx_created ON transaction_records(created_at);
 
 -- Indexes for payment_sessions
 CREATE INDEX IF NOT EXISTS idx_sessions_image_id ON payment_sessions(image_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_wallet ON payment_sessions(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_sessions_wallet ON payment_sessions(sender_wallet);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON payment_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON payment_sessions(expires_at);
 

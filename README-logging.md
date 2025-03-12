@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS system_logs (
   context JSONB,                           -- Contextual information
   environment TEXT NOT NULL,               -- Environment (dev, prod, etc.)
   request_id TEXT NOT NULL,                -- Unique ID for tracking related log entries
-  user_wallet TEXT,                        -- Optional: Associated wallet address
+  sender_wallet TEXT,                        -- Optional: Associated wallet address
   timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```

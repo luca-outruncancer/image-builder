@@ -1,35 +1,24 @@
 // src/lib/payment/utils/storageUtils.ts
-import { IMAGE_STATUS } from '@/lib/imageStorage';
 import { PaymentStatus } from '../types';
 import { storageLogger, paymentLogger } from '@/utils/logger';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 // Map payment status to transaction status
 export const PAYMENT_TO_TRANSACTION_STATUS: Record<PaymentStatus, string> = {
-  [PaymentStatus.INITIALIZED]: 'initiated',
-  [PaymentStatus.PENDING]: 'pending',
-  [PaymentStatus.PROCESSING]: 'in_progress',
-  [PaymentStatus.CONFIRMED]: 'success',
-  [PaymentStatus.FAILED]: 'failed',
-  [PaymentStatus.TIMEOUT]: 'timeout',
-  [PaymentStatus.CANCELED]: 'canceled'
-};
-
-// Map payment status to image status
-export const PAYMENT_TO_IMAGE_STATUS: Record<PaymentStatus, number> = {
-  [PaymentStatus.INITIALIZED]: IMAGE_STATUS.PENDING_PAYMENT,
-  [PaymentStatus.PENDING]: IMAGE_STATUS.PENDING_PAYMENT,
-  [PaymentStatus.PROCESSING]: IMAGE_STATUS.PENDING_PAYMENT,
-  [PaymentStatus.CONFIRMED]: IMAGE_STATUS.CONFIRMED,
-  [PaymentStatus.FAILED]: IMAGE_STATUS.PAYMENT_FAILED,
-  [PaymentStatus.TIMEOUT]: IMAGE_STATUS.PAYMENT_TIMEOUT,
-  [PaymentStatus.CANCELED]: IMAGE_STATUS.NOT_INITIATED
+  [PaymentStatus.INITIALIZED]: 'INITIALIZED',
+  [PaymentStatus.PENDING]: 'PENDING',
+  [PaymentStatus.PROCESSING]: 'PROCESSING',
+  [PaymentStatus.CONFIRMED]: 'CONFIRMED',
+  [PaymentStatus.FAILED]: 'FAILED',
+  [PaymentStatus.TIMEOUT]: 'TIMEOUT',
+  [PaymentStatus.CANCELED]: 'CANCELED'
 };
 
 /**
  * Convert a payment status to a transaction database status
  */
 export function getTransactionStatusFromPaymentStatus(status: PaymentStatus): string {
-  const dbStatus = PAYMENT_TO_TRANSACTION_STATUS[status] || 'unknown';
+  const dbStatus = PAYMENT_TO_TRANSACTION_STATUS[status] || 'UNKNOWN';
   paymentLogger.debug('Converting payment status to transaction status', {
     paymentStatus: status,
     transactionStatus: dbStatus
@@ -38,33 +27,37 @@ export function getTransactionStatusFromPaymentStatus(status: PaymentStatus): st
 }
 
 /**
- * Convert a payment status to an image status
+ * Convert a payment status to a database status string
  */
-export function getImageStatusFromPaymentStatus(status: PaymentStatus): number {
-  const imageStatus = PAYMENT_TO_IMAGE_STATUS[status] || IMAGE_STATUS.PENDING_PAYMENT;
+export function getImageStatusFromPaymentStatus(status: PaymentStatus): string {
+  const dbStatus = PAYMENT_TO_TRANSACTION_STATUS[status] || 'PENDING';
   
-  // Find the status name in a type-safe way
-  const imageStatusEntries = Object.entries(IMAGE_STATUS) as [string, number][];
-  const statusName = imageStatusEntries.find(([_, value]) => value === imageStatus)?.[0] || 'UNKNOWN';
-  
-  paymentLogger.debug('Converting payment status to image status', {
+  paymentLogger.debug('Converting payment status to database status', {
     paymentStatus: status,
-    imageStatus,
-    imageStatusName: statusName
+    dbStatus
   });
-  return imageStatus;
+  return dbStatus;
 }
 
 /**
- * Validate a database connection
+ * Validate that the database connection is available
  */
-export function validateDatabaseConnection(db: any): boolean {
-  if (!db) {
-    storageLogger.error('Database client not available');
+export function validateDatabaseConnection(client: SupabaseClient | null): boolean {
+  if (!client) {
+    storageLogger.error('Database client is null');
     return false;
   }
-  
-  storageLogger.debug('Database connection validated');
+
+  // Check if the client has the required properties
+  if (!client.from || typeof client.from !== 'function') {
+    storageLogger.error('Invalid database client: missing or invalid from() method', {
+      hasFrom: !!client.from,
+      fromType: typeof client.from
+    });
+    return false;
+  }
+
+  storageLogger.debug('Database client validation successful');
   return true;
 }
 

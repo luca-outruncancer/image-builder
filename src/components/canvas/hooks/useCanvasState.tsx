@@ -10,18 +10,9 @@ import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 import { canvasLogger } from '@/utils/logger';
-
-interface PlacedImage {
-  id: string;
-  src: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  status: PaymentStatus;
-  file?: File;
-  cost?: number;
-}
+import { getImageStatusFromPaymentStatus } from '@/lib/payment/utils/storageUtils';
+import { PlacedImage } from '@/types/canvas';
+import { imageLogger } from '@/utils/logger';
 
 export interface CanvasState {
   placedImages: PlacedImage[];
@@ -43,12 +34,13 @@ export interface CanvasState {
   handleMouseUp: () => void;
   handleCancel: () => void;
   handleBack: () => void;
-  handleConfirmPlacement: () => Promise<void>;
+  handleConfirmPlacement: () => void;
   handleCancelPlacement: () => void;
   handleDone: () => void;
   handleRetryPayment: () => void;
   snapToGrid: (value: number) => number;
   isPositionEmpty: (x: number, y: number, width: number, height: number, excludeId?: string) => boolean;
+  handleImageUpload: (image: PlacedImage) => Promise<{ success: boolean; imageId?: number; error?: any }>;
 }
 
 export function useCanvasState(): CanvasState {
@@ -86,6 +78,40 @@ export function useCanvasState(): CanvasState {
     clearSessionBlockhashData();
   }, [resetPayment]);
 
+  // Handle image record update
+  const handleImageRecordUpdate = useCallback(async (imageRecord: ImageRecord | null, tempImage: PlacedImage) => {
+    if (!imageRecord) {
+      canvasLogger.error('Image record is null');
+      return null;
+    }
+
+    try {
+      // Map string status to PaymentStatus enum for updateImageStatus
+      const status = imageRecord.status === 'CONFIRMED' 
+        ? PaymentStatus.CONFIRMED 
+        : PaymentStatus.PENDING;
+      
+      await updateImageStatus(imageRecord.image_id, status);
+      
+      return {
+        id: imageRecord.image_id.toString(),
+        src: imageRecord.image_location,
+        x: imageRecord.start_position_x,
+        y: imageRecord.start_position_y,
+        width: imageRecord.size_x,
+        height: imageRecord.size_y,
+        status,
+        cost: tempImage.cost
+      };
+    } catch (error) {
+      canvasLogger.error('Failed to update image status', {
+        imageId: imageRecord.image_id,
+        error
+      });
+      return null;
+    }
+  }, []);
+
   // Load placed images from the database
   useEffect(() => {
     const loadPlacedImages = async () => {
@@ -99,8 +125,8 @@ export function useCanvasState(): CanvasState {
         if (success && records && Array.isArray(records)) {
           canvasLogger.info('Successfully loaded placed images', {
             count: records.length,
-            confirmedCount: records.filter(r => r.image_status === IMAGE_STATUS.CONFIRMED).length,
-            pendingCount: records.filter(r => r.image_status === IMAGE_STATUS.PENDING_PAYMENT).length
+            confirmedCount: records.filter(r => r.status === 'CONFIRMED').length,
+            pendingCount: records.filter(r => r.status === 'PENDING').length
           });
           
           const loadedImages = records.map(record => ({
@@ -110,9 +136,7 @@ export function useCanvasState(): CanvasState {
             y: record.start_position_y,
             width: record.size_x,
             height: record.size_y,
-            status: record.image_status === IMAGE_STATUS.CONFIRMED 
-              ? PaymentStatus.CONFIRMED 
-              : PaymentStatus.PENDING
+            status: record.status
           }));
           setPlacedImages(loadedImages);
         } else {
@@ -150,7 +174,7 @@ export function useCanvasState(): CanvasState {
         y: 0,
         width: imageToPlace.width,
         height: imageToPlace.height,
-        status: PaymentStatus.INITIALIZED,
+        status: 'INITIALIZED',
         file: imageToPlace.file,
         cost: imageToPlace.cost || 0
       });
@@ -185,7 +209,7 @@ export function useCanvasState(): CanvasState {
       // Update the placed image status in the UI
       setPlacedImages(prev => prev.map(img => 
         img.id === successInfo.metadata?.imageId.toString()
-          ? { ...img, status: PaymentStatus.CONFIRMED } 
+          ? { ...img, status: 'CONFIRMED' } 
           : img
       ));
       
@@ -355,14 +379,17 @@ export function useCanvasState(): CanvasState {
         const data = await response.json();
         console.log("Upload response:", data);
         
-        if (!data.success) {
-          throw new Error(data.error || "Unknown server error");
+        if (!data.success || !data.record) {
+          console.error("No image record created");
+          setPaymentError("Failed to create image record. Please try again.");
+          setIsSubmitting(false);
+          return;
         }
         
         // Store the image record
         imageRecord = data.record;
         
-        console.log("Image uploaded successfully, ID:", imageRecord.image_id);
+        console.log("Image uploaded successfully, ID:", imageRecord?.image_id);
         
         // Add the image to the canvas with pending status
         setPlacedImages(prev => [
@@ -374,7 +401,7 @@ export function useCanvasState(): CanvasState {
             y: imageRecord!.start_position_y,
             width: imageRecord!.size_x,
             height: imageRecord!.size_y,
-            status: PaymentStatus.PENDING,
+            status: imageRecord!.status,
             cost: tempImage.cost
           }
         ]);
@@ -394,14 +421,20 @@ export function useCanvasState(): CanvasState {
       }
       
       // STEP 2: Initialize payment
-      const imageId = parseInt(imageRecord.image_id.toString());
-      
+      const imageId = imageRecord.image_id;
+      if (!imageId) {
+        console.error("Invalid image ID:", imageRecord);
+        setPaymentError("Invalid image ID received from server");
+        setIsSubmitting(false);
+        return;
+      }
+
       const paymentId = await initializePayment(cost, {
-        imageId: imageId,
-        positionX: tempImage.x,
-        positionY: tempImage.y,
-        width: tempImage.width,
-        height: tempImage.height,
+        imageId,
+        positionX: imageRecord.start_position_x,
+        positionY: imageRecord.start_position_y,
+        width: imageRecord.size_x,
+        height: imageRecord.size_y,
         fileName: tempImage.file.name
       });
       
@@ -410,7 +443,7 @@ export function useCanvasState(): CanvasState {
         
         // Update image status to error
         try {
-          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+          await updateImageStatus(imageId, PaymentStatus.FAILED);
           // Remove the pending image from the canvas
           setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
         } catch (updateError) {
@@ -453,7 +486,7 @@ export function useCanvasState(): CanvasState {
               
               // Update image status to success
               try {
-                await updateImageStatus(imageId, IMAGE_STATUS.CONFIRMED, true);
+                await updateImageStatus(imageId, PaymentStatus.CONFIRMED, true);
                 
                 // Update the UI
                 setPlacedImages(prev => prev.map(img => 
@@ -484,7 +517,7 @@ export function useCanvasState(): CanvasState {
           if (error?.category === 'timeout_error') {
             // Clean up any records created for this session
             try {
-              await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_TIMEOUT);
+              await updateImageStatus(imageId, PaymentStatus.TIMEOUT);
               setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
             } catch (updateError) {
               console.log("Failed to update image status after timeout:", updateError);
@@ -493,7 +526,7 @@ export function useCanvasState(): CanvasState {
           
           // Otherwise, we update image status to failed and remove it from canvas
           try {
-            await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+            await updateImageStatus(imageId, PaymentStatus.FAILED);
             // Remove the pending image from the canvas
             setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
           } catch (updateError) {
@@ -513,7 +546,7 @@ export function useCanvasState(): CanvasState {
         
         // Update image status to failed
         try {
-          await updateImageStatus(imageId, IMAGE_STATUS.PAYMENT_FAILED);
+          await updateImageStatus(imageId, PaymentStatus.FAILED);
           // Remove the pending image from the canvas
           setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
         } catch (updateError) {
@@ -577,39 +610,61 @@ export function useCanvasState(): CanvasState {
     handleConfirmPlacement();
   };
 
-  // Handle image record update
-  const handleImageRecordUpdate = useCallback(async (imageRecord: ImageRecord | null, tempImage: PlacedImage) => {
-    if (!imageRecord) {
-      canvasLogger.error('Image record is null');
-      return null;
-    }
-
+  const handleImageUpload = async (tempImage: PlacedImage) => {
     try {
-      // Convert numeric status to PaymentStatus enum
-      const status = imageRecord.image_status === IMAGE_STATUS.CONFIRMED 
-        ? PaymentStatus.CONFIRMED 
-        : PaymentStatus.PENDING;
+      const formData = new FormData();
+      formData.append('file', tempImage.file!);
+      formData.append('position', JSON.stringify({ x: tempImage.x, y: tempImage.y }));
+      formData.append('size', JSON.stringify({ width: tempImage.width, height: tempImage.height }));
+
+      // Add wallet address if available
+      if (publicKey) {
+        formData.append('wallet', publicKey.toString());
+      }
+
+      console.log("Uploading image to server...");
       
-      await updateImageStatus(imageRecord.image_id, status);
-      
-      return {
-        id: imageRecord.image_id.toString(),
-        src: imageRecord.image_location,
-        x: imageRecord.start_position_x,
-        y: imageRecord.start_position_y,
-        width: imageRecord.size_x,
-        height: imageRecord.size_y,
-        status,
-        cost: tempImage.cost
-      };
-    } catch (error) {
-      canvasLogger.error('Failed to update image status', {
-        imageId: imageRecord.image_id,
-        error
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
       });
-      return null;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("Upload response:", data);
+
+      if (!data.success || !data.record) {
+        console.error("No image record created");
+        return { success: false, error: "Failed to create image record" };
+      }
+
+      const imageRecord = data.record;
+      console.log("Image uploaded successfully, ID:", imageRecord?.image_id);
+
+      setPlacedImages(prev => [
+        ...prev,
+        {
+          id: imageRecord.image_id.toString(),
+          src: imageRecord.image_location,
+          x: imageRecord.start_position_x,
+          y: imageRecord.start_position_y,
+          width: imageRecord.size_x,
+          height: imageRecord.size_y,
+          status: imageRecord.status,
+          cost: tempImage.cost
+        }
+      ]);
+
+      return { success: true, imageId: imageRecord.image_id };
+    } catch (error) {
+      imageLogger.error('Error uploading image:', error);
+      return { success: false, error };
     }
-  }, []);
+  };
 
   return {
     // State
@@ -642,5 +697,6 @@ export function useCanvasState(): CanvasState {
     // Utilities
     snapToGrid,
     isPositionEmpty,
+    handleImageUpload,
   };
 }
