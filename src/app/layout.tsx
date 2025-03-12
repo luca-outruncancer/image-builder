@@ -6,6 +6,7 @@ import Footer from '@/components/layout/Footer';
 import Header from '@/components/layout/Header';
 import { cn } from '@/lib/utils';
 import Providers from './providers';
+import ErrorBoundaryWrapper from '@/components/ErrorBoundaryWrapper';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -46,11 +47,13 @@ export default function RootLayout({
       </head>
       <body className={cn(inter.className, 'relative min-h-full')}>
         <Providers>
-          <div className="page-gradient">
-            <Header />
-            <div className="main-content">{children}</div>
-            <Footer className="w-full mt-auto" />
-          </div>
+          <ErrorBoundaryWrapper componentName="ApplicationRoot">
+            <div className="page-gradient">
+              <Header />
+              <div className="main-content">{children}</div>
+              <Footer className="w-full mt-auto" />
+            </div>
+          </ErrorBoundaryWrapper>
         </Providers>
       </body>
     </html>

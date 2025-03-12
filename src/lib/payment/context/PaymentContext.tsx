@@ -1,9 +1,9 @@
-// src/lib/payment/PaymentContext.tsx
+// src/lib/payment/context/PaymentContext.tsx
 'use client';
 
 import React, { createContext, useContext, ReactNode } from 'react';
-import { usePayment } from './usePayment';
-import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse } from './types';
+import { usePayment } from '../hooks/usePayment';
+import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse } from '../types';
 
 // Define the context type
 interface PaymentContextType {

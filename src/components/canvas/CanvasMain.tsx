@@ -13,7 +13,7 @@ import SelectionMagnifier from './SelectionMagnifier';
 interface WalletInfo {
   success: boolean;
   wallet?: string;
-  user_wallet?: string;
+  sender_wallet?: string;
   imageId?: number;
   position?: {
     x: number;

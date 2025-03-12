@@ -49,23 +49,29 @@ export async function POST(request: NextRequest) {
     
     if (data && data.length > 0) {
       const matchingImage = data[0]; // Get the most recent one if multiple
+      console.log('[ImageInfo] Found matching image:', matchingImage);
+      
       const { 
-        sender_wallet, 
-        user_wallet,
-        image_id, 
-        start_position_x, 
-        start_position_y, 
-        size_x, 
-        size_y, 
-        image_status,
-        image_location 
+        image_id,
+        image_location,
+        start_position_x,
+        start_position_y,
+        size_x,
+        size_y,
+        status,
+        sender_wallet,
+        created_at,
+        updated_at,
+        cost
       } = matchingImage;
+      
+      console.log('[ImageInfo] Sender wallet:', sender_wallet);
       
       return NextResponse.json({
         success: true,
+        wallet: sender_wallet || "Unknown",
         imageId: image_id,
-        wallet: sender_wallet || user_wallet || "Unknown",
-        user_wallet: user_wallet || "Unknown",
+        image_location,
         position: {
           x: start_position_x,
           y: start_position_y,
@@ -74,8 +80,10 @@ export async function POST(request: NextRequest) {
           clickedX: x,
           clickedY: y
         },
-        status: image_status === 1 ? 'confirmed' : 'pending',
-        image_location: image_location || "Unknown"
+        status,
+        createdAt: created_at,
+        updatedAt: updated_at,
+        cost
       });
     }
     

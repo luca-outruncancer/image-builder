@@ -7,7 +7,7 @@ import Image from 'next/image';
 interface WalletInfo {
   success: boolean;
   wallet?: string;
-  user_wallet?: string;
+  sender_wallet?: string;
   imageId?: number;
   position?: {
     x: number;
@@ -214,7 +214,6 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
             className="w-full relative"
             style={{ 
               height: magnifierSize,
-              backgroundColor: 'rgba(0,0,0,0.2)',
               backgroundColor: MAGNIFIER.EMPTY_BLOCK_COLOR,
               backgroundImage: `linear-gradient(to right, ${MAGNIFIER.GRID_COLOR} 1px, transparent 1px), linear-gradient(to bottom, ${MAGNIFIER.GRID_COLOR} 1px, transparent 1px)`,
               backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`
@@ -228,7 +227,7 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
                   backgroundImage: `url(${magnifierView.imageUrl})`,
                   backgroundSize: `${magnifierView.imageDimensions.width * MAGNIFIER.ZOOM_FACTOR}px ${magnifierView.imageDimensions.height * MAGNIFIER.ZOOM_FACTOR}px`,
                   backgroundPosition: `${-magnifierView.position.x * MAGNIFIER.ZOOM_FACTOR}px ${-magnifierView.position.y * MAGNIFIER.ZOOM_FACTOR}px`,
-                  imageRendering: MAGNIFIER.RENDER_QUALITY
+                  imageRendering: MAGNIFIER.RENDER_QUALITY as 'auto' | 'pixelated' | 'crisp-edges'
                 }}
               />
             ) : (
@@ -266,9 +265,9 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
                   <div className="w-full text-left whitespace-nowrap overflow-hidden text-ellipsis px-1">
                     {walletInfo?.image_location || 'Unknown'}
                   </div>
-                  <div className="w-full text-left whitespace-nowrap overflow-hidden text-ellipsis px-1">
-                    {walletInfo?.user_wallet || 'Unknown'}
-                  </div>
+                  <p className="w-full text-left whitespace-nowrap overflow-hidden text-ellipsis px-1">
+                    {walletInfo?.wallet || 'Unknown'}
+                  </p>
                 </>
               )}
             </div>
