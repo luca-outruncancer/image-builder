@@ -4,7 +4,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN, MAX_FILE_SIZE } from '@/utils/constants';
-import { useImageStore } from '@/store/useImageStore';
+import { useImageStore, type ImageToPlace } from '@/store/useImageStore';
+import { imageLogger } from '@/utils/logger';
 
 interface ImageInfo {
   width?: number;
@@ -12,10 +13,15 @@ interface ImageInfo {
   format?: string;
 }
 
+interface Size {
+  width: number;
+  height: number;
+}
+
 export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const [selectedSize, setSelectedSize] = useState(PRESET_SIZES[0]);
+  const [selectedSize, setSelectedSize] = useState<Size>(PRESET_SIZES[0]);
   const [isCustomSize, setIsCustomSize] = useState(false);
-  const [customSize, setCustomSize] = useState({ width: 100, height: 100 });
+  const [customSize, setCustomSize] = useState<Size>({ width: 100, height: 100 });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [step, setStep] = useState<'select' | 'preview'>('select');
@@ -63,7 +69,7 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
           }
         }
       } catch (error) {
-        console.error("Failed to get image metadata:", error);
+        imageLogger.error('Failed to get image metadata', error instanceof Error ? error : new Error(String(error)));
       } finally {
         setIsLoadingMetadata(false);
       }
@@ -92,17 +98,18 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
     // Calculate the cost based on dimensions
     const cost = calculateCost(dimensions.width, dimensions.height);
     
-    console.log("Calculated cost:", cost);
+    imageLogger.info('Calculated cost for image', {
+      dimensions,
+      cost,
+      token: ACTIVE_PAYMENT_TOKEN
+    });
     
     setImageToPlace({
       file: selectedFile,
       width: dimensions.width,
       height: dimensions.height,
       previewUrl: preview.url,
-      cost: cost,
-      originalWidth: imageInfo.width,
-      originalHeight: imageInfo.height,
-      originalSize: selectedFile.size // Just pass the original file size for reference
+      cost: cost
     });
     onClose();
   };

@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
 import { IMAGE_SETTINGS, FEATURES } from '@/utils/constants';
-import { imageLogger } from '@/utils/logger';
+import { imageLogger } from '@/utils/logger/index';
 
 interface ResizeOptions {
   width: number;
@@ -221,7 +221,8 @@ export async function resizeImage(
       processingTimeMs
     };
   } catch (error) {
-    imageLogger.error('Error resizing image', error, {
+    const err = error instanceof Error ? error : new Error(String(error));
+    imageLogger.error('Error resizing image', err, {
       targetPath,
       width: options.width,
       height: options.height,
@@ -251,11 +252,53 @@ export async function resizeImage(
           height: options.height,
           processingTimeMs: Math.round(endTime - startTime)
         };
-      } catch (secondError) {
-        imageLogger.error('Failed second write attempt', secondError, {
-          targetPath,
-          bufferSize: resizedBuffer.length
+      } catch (writeError) {
+        const writeErr = writeError instanceof Error ? writeError : new Error(String(writeError));
+        imageLogger.error('Failed to save image on second attempt', writeErr, {
+          targetPath
         });
+        
+        // If all else fails, write the original file as a fallback
+        try {
+          imageLogger.warn('Falling back to original image', {
+            targetPath,
+            originalSize
+          });
+          
+          await fs.writeFile(targetPath, sourceBuffer);
+          const fileStats = await fs.stat(targetPath);
+          const endTime = performance.now();
+          
+          return {
+            success: false,
+            path: targetPath,
+            format: 'unknown',
+            originalSize,
+            resizedSize: fileStats.size,
+            width: options.width,
+            height: options.height,
+            processingTimeMs: Math.round(endTime - startTime),
+            error: writeErr
+          };
+        } catch (fallbackError) {
+          const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
+          imageLogger.error('Failed to save fallback image', fallbackErr, {
+            targetPath,
+            originalSize
+          });
+          
+          return {
+            success: false,
+            path: targetPath,
+            format: 'unknown',
+            originalSize,
+            resizedSize: 0,
+            width: options.width,
+            height: options.height,
+            processingTimeMs: Math.round(performance.now() - startTime),
+            error: fallbackErr
+          };
+        }
       }
     }
     
@@ -279,10 +322,11 @@ export async function resizeImage(
         width: options.width,
         height: options.height,
         processingTimeMs: Math.round(endTime - startTime),
-        error
+        error: err
       };
     } catch (fallbackError) {
-      imageLogger.error('Failed to save fallback image', fallbackError, {
+      const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
+      imageLogger.error('Failed to save fallback image', fallbackErr, {
         targetPath,
         originalSize
       });
@@ -296,7 +340,7 @@ export async function resizeImage(
         width: options.width,
         height: options.height,
         processingTimeMs: Math.round(performance.now() - startTime),
-        error: fallbackError
+        error: fallbackErr
       };
     }
   }

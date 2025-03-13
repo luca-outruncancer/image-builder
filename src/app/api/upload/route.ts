@@ -8,7 +8,7 @@ import { createImageRecord } from '@/lib/imageStorage';
 import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES, MAX_FILE_SIZE } from '@/utils/constants';
 import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErrorHandler';
-import { imageLogger } from '@/utils/logger';
+import { imageLogger } from '@/utils/logger/index';
 import { PaymentStatus } from '@/lib/payment/types';
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
@@ -298,7 +298,16 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       });
     }
   } catch (error) {
-    imageLogger.error(`[Upload:${uploadId}] Unexpected error`, error, { requestId });
-    throw error; // The withErrorHandling HOF will catch and format this error
+    const err = error instanceof Error ? error : new Error(String(error));
+    imageLogger.error('Image upload failed', err, {
+      error: err.message
+    });
+    
+    return NextResponse.json({ 
+      success: false, 
+      error: err.message 
+    }, { 
+      status: 500 
+    });
   }
 });

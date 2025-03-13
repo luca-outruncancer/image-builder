@@ -9,10 +9,35 @@ import { getPlacedImages, updateImageStatus, ImageRecord } from '@/lib/imageStor
 import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus, ErrorCategory } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
-import { canvasLogger } from '@/utils/logger';
+import { canvasLogger, imageLogger } from '@/utils/logger/index';
 import { getImageStatusFromPaymentStatus } from '@/lib/payment/utils/storageUtils';
 import { PlacedImage } from '@/types/canvas';
-import { imageLogger } from '@/utils/logger';
+
+// Add error context interfaces
+interface LoggerErrorContext {
+  error?: Error;
+  imageId?: number | string;
+  transactionHash?: string;
+  cost?: number;
+}
+
+interface LoggerContext {
+  imageId?: number | string;
+  transactionHash?: string;
+  cost?: number;
+  error?: Error;
+  position?: { x: number; y: number };
+  size?: { width: number; height: number };
+}
+
+// Add metadata context interface
+interface LoggerMetadata {
+  imageId?: number | string;
+  transactionHash?: string;
+  cost?: number;
+  position?: { x: number; y: number };
+  size?: { width: number; height: number };
+}
 
 export interface CanvasState {
   placedImages: PlacedImage[];
@@ -81,7 +106,7 @@ export function useCanvasState(): CanvasState {
   // Handle image record update
   const handleImageRecordUpdate = useCallback(async (imageRecord: ImageRecord | null, tempImage: PlacedImage) => {
     if (!imageRecord) {
-      canvasLogger.error('Image record is null');
+      canvasLogger.error('Image record is null', undefined, { context: 'handleImageRecordUpdate' });
       return null;
     }
 
@@ -104,10 +129,11 @@ export function useCanvasState(): CanvasState {
         cost: tempImage.cost
       };
     } catch (error) {
-      canvasLogger.error('Failed to update image status', {
-        imageId: imageRecord.image_id,
-        error
-      });
+      const err = error instanceof Error ? error : new Error(String(error));
+      const metadata: LoggerMetadata = {
+        imageId: imageRecord.image_id
+      };
+      canvasLogger.error('Failed to update image status', err, metadata);
       return null;
     }
   }, []);
@@ -144,7 +170,8 @@ export function useCanvasState(): CanvasState {
           setPlacedImages([]);
         }
       } catch (error) {
-        canvasLogger.error('Failed to load placed images', error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        canvasLogger.error('Failed to load placed images', err);
         setPlacedImages([]);
       } finally {
         setIsLoadingImages(false);
@@ -311,36 +338,37 @@ export function useCanvasState(): CanvasState {
   const debouncedConfirmPlacement = useCallback(
     debounce(async () => {
       if (isSubmitting) {
-        console.log("Already processing submission, ignoring duplicate request");
+        canvasLogger.warn("Already processing submission, ignoring duplicate request");
         return;
       }
   
       if (!tempImage?.file) {
-        console.error("No file to upload");
+        canvasLogger.error("No file to upload");
         setPaymentError("Missing image file");
         setIsSubmitting(false);
         return;
       }
       
       if (!connected) {
-        console.error("Wallet not connected");
+        canvasLogger.error("Wallet not connected");
         setPaymentError("Please connect your wallet to continue");
         setIsSubmitting(false);
         return;
       }
       
       if (!publicKey) {
-        console.error("No public key available");
+        canvasLogger.error("No public key available");
         setPaymentError("Cannot access wallet public key");
         setIsSubmitting(false);
         return;
       }
   
-      const cost = tempImage.cost || 0;
-      console.log(`Processing payment of ${cost}`);
+      const cost = tempImage.cost;
+      canvasLogger.info(`Processing payment`, { cost });
       
-      if (cost <= 0) {
-        console.error("Invalid cost:", cost);
+      if (!cost || cost <= 0) {
+        const err = new Error(`Invalid cost: ${cost}`);
+        canvasLogger.error(err.message, err);
         setPaymentError("Invalid payment amount");
         setIsSubmitting(false);
         return;
@@ -363,7 +391,7 @@ export function useCanvasState(): CanvasState {
           formData.append('wallet', publicKey.toString());
         }
        
-        console.log("Uploading image to server...");
+        canvasLogger.info("Uploading image to server...");
         
         // Upload the image file first
         const response = await fetch('/api/upload', {
@@ -377,54 +405,54 @@ export function useCanvasState(): CanvasState {
         }
         
         const data = await response.json();
-        console.log("Upload response:", data);
+        canvasLogger.debug("Upload response received", { data });
         
         if (!data.success || !data.record) {
-          console.error("No image record created");
-          setPaymentError("Failed to create image record. Please try again.");
-          setIsSubmitting(false);
-          return;
+          throw new Error("No image record created in response");
         }
         
         // Store the image record
         imageRecord = data.record;
         
-        console.log("Image uploaded successfully, ID:", imageRecord?.image_id);
-        
-        // Add the image to the canvas with pending status
-        setPlacedImages(prev => [
-          ...prev,
-          {
-            id: imageRecord!.image_id.toString(),
-            src: imageRecord!.image_location,
-            x: imageRecord!.start_position_x,
-            y: imageRecord!.start_position_y,
-            width: imageRecord!.size_x,
-            height: imageRecord!.size_y,
-            status: imageRecord!.status,
-            cost: tempImage.cost
-          }
-        ]);
+        canvasLogger.info("Image uploaded successfully", { imageId: imageRecord?.image_id });
         
       } catch (uploadError) {
-        console.error("Failed to upload image:", uploadError);
-        setPaymentError(`Failed to upload image: ${uploadError instanceof Error ? uploadError.message : "Server error"}`);
+        const err = uploadError instanceof Error ? uploadError : new Error(String(uploadError));
+        canvasLogger.error("Failed to upload image", err);
+        setPaymentError(`Failed to upload image: ${err.message}`);
         setIsSubmitting(false);
         return;
       }
       
       if (!imageRecord) {
-        console.error("No image record created");
+        const err = new Error("No image record created");
+        canvasLogger.error(err.message, err);
         setPaymentError("Failed to create image record. Please try again.");
         setIsSubmitting(false);
         return;
       }
       
+      // Add the image to the canvas with pending status
+      setPlacedImages(prev => [
+        ...prev,
+        {
+          id: imageRecord!.image_id.toString(),
+          src: imageRecord!.image_location,
+          x: imageRecord!.start_position_x,
+          y: imageRecord!.start_position_y,
+          width: imageRecord!.size_x,
+          height: imageRecord!.size_y,
+          status: imageRecord!.status,
+          cost: tempImage.cost
+        }
+      ]);
+
       // STEP 2: Initialize payment
       const imageId = imageRecord.image_id;
       if (!imageId) {
-        console.error("Invalid image ID:", imageRecord);
-        setPaymentError("Invalid image ID received from server");
+        const err = new Error("Invalid image ID received from server");
+        canvasLogger.error(err.message, err);
+        setPaymentError(err.message);
         setIsSubmitting(false);
         return;
       }
@@ -439,7 +467,8 @@ export function useCanvasState(): CanvasState {
       });
       
       if (!paymentId) {
-        console.error("Failed to initialize payment");
+        const err = new Error("Failed to initialize payment");
+        canvasLogger.error(err.message, err);
         
         // Update image status to error
         try {
@@ -447,7 +476,8 @@ export function useCanvasState(): CanvasState {
           // Remove the pending image from the canvas
           setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
         } catch (updateError) {
-          console.error("Failed to update image status after init error:", updateError);
+          const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+          canvasLogger.error("Failed to update image status after init error", err);
         }
         
         setIsSubmitting(false);
@@ -461,28 +491,31 @@ export function useCanvasState(): CanvasState {
         if (!success) {
           // Change log level for user rejections
           if (error?.category === ErrorCategory.USER_REJECTION) {
-            console.log("User rejected the transaction");
+            canvasLogger.info("User rejected the transaction");
           } else {
-            console.error("Payment failed:", error?.message);
+            const err = new Error(error?.message || "Unknown payment error");
+            canvasLogger.error("Payment failed", err);
           }
           
           // Handle user rejection 
           if (error?.category === ErrorCategory.USER_REJECTION) {
-            console.log("User rejected the transaction - returning to confirmation screen");
+            canvasLogger.info("User rejected the transaction - returning to confirmation screen");
             setIsSubmitting(false);
             return;
           }
           
           // Handle duplicate transaction error specifically
           if (error?.code === 'DUPLICATE_TRANSACTION') {
-            console.log("Detected duplicate transaction, need to refresh");
+            canvasLogger.info("Detected duplicate transaction, need to refresh");
             
             // Clean up any session data
             clearSessionBlockhashData();
             
             // If we have a transaction hash, mark as success
             if (error.originalError?.transactionHash) {
-              console.log("Found transaction hash in error, marking as success:", error.originalError.transactionHash);
+              canvasLogger.info("Found transaction hash in error", { 
+                transactionHash: error.originalError.transactionHash 
+              });
               
               // Update image status to success
               try {
@@ -503,7 +536,8 @@ export function useCanvasState(): CanvasState {
                 setIsSubmitting(false);
                 return;
               } catch (updateError) {
-                console.error("Failed to update image status after handling duplicate transaction:", updateError);
+                const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+                canvasLogger.error("Failed to update image status after handling duplicate transaction", err);
               }
             }
             
@@ -520,7 +554,8 @@ export function useCanvasState(): CanvasState {
               await updateImageStatus(imageId, PaymentStatus.TIMEOUT);
               setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
             } catch (updateError) {
-              console.log("Failed to update image status after timeout:", updateError);
+              const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+              canvasLogger.warn("Failed to update image status after timeout", err);
             }
           }
           
@@ -530,7 +565,8 @@ export function useCanvasState(): CanvasState {
             // Remove the pending image from the canvas
             setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
           } catch (updateError) {
-            console.error("Failed to update image status after payment error:", updateError);
+            const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+            canvasLogger.error("Failed to update image status after payment error", err);
           }
           
           setIsSubmitting(false);
@@ -538,11 +574,12 @@ export function useCanvasState(): CanvasState {
         }
         
         // Clean up on successful payment
-        console.log("Payment successful, refreshing page...");
+        canvasLogger.info("Payment successful, refreshing page...");
         window.location.reload();
       } catch (processingError) {
-        console.error("Error during payment processing:", processingError);
-        setPaymentError(`Payment processing error: ${processingError instanceof Error ? processingError.message : "Unknown error"}`);
+        const err = processingError instanceof Error ? processingError : new Error(String(processingError));
+        canvasLogger.error("Error during payment processing", err);
+        setPaymentError(`Payment processing error: ${err.message}`);
         
         // Update image status to failed
         try {
@@ -550,7 +587,8 @@ export function useCanvasState(): CanvasState {
           // Remove the pending image from the canvas
           setPlacedImages(prev => prev.filter(img => img.id !== imageId.toString()));
         } catch (updateError) {
-          console.error("Failed to update image status after payment error:", updateError);
+          const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+          canvasLogger.error("Failed to update image status after payment error", err);
         }
         
         setIsSubmitting(false);
@@ -562,7 +600,7 @@ export function useCanvasState(): CanvasState {
   const handleConfirmPlacement = useCallback(async () => {
     // Check if we're already processing - prevent double clicks
     if (isPaymentProcessing || isSubmitting) {
-      console.log("Payment already in progress, ignoring duplicate request");
+      canvasLogger.warn("Payment already in progress, ignoring duplicate request");
       return;
     }
 
@@ -580,7 +618,7 @@ export function useCanvasState(): CanvasState {
   };
 
   const handleDone = () => {
-    console.log("Payment complete, resetting state for new transaction");
+    canvasLogger.info("Payment complete, resetting state for new transaction");
     
     // Clean up session storage
     clearSessionBlockhashData();
@@ -622,7 +660,11 @@ export function useCanvasState(): CanvasState {
         formData.append('wallet', publicKey.toString());
       }
 
-      console.log("Uploading image to server...");
+      imageLogger.info({
+        msg: "Uploading image to server...",
+        position: { x: tempImage.x, y: tempImage.y },
+        size: { width: tempImage.width, height: tempImage.height }
+      });
       
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -635,15 +677,24 @@ export function useCanvasState(): CanvasState {
       }
 
       const data = await response.json();
-      console.log("Upload response:", data);
+      imageLogger.debug({
+        msg: "Upload response received",
+        data
+      });
 
       if (!data.success || !data.record) {
-        console.error("No image record created");
+        const err = new Error("No image record created");
+        imageLogger.error(err.message, err);
         return { success: false, error: "Failed to create image record" };
       }
 
       const imageRecord = data.record;
-      console.log("Image uploaded successfully, ID:", imageRecord?.image_id);
+      imageLogger.info({
+        msg: "Image uploaded successfully",
+        imageId: imageRecord?.image_id,
+        position: { x: imageRecord.start_position_x, y: imageRecord.start_position_y },
+        size: { width: imageRecord.size_x, height: imageRecord.size_y }
+      });
 
       setPlacedImages(prev => [
         ...prev,
@@ -661,9 +712,19 @@ export function useCanvasState(): CanvasState {
 
       return { success: true, imageId: imageRecord.image_id };
     } catch (error) {
-      imageLogger.error('Error uploading image:', error);
-      return { success: false, error };
+      const err = error instanceof Error ? error : new Error(String(error));
+      imageLogger.error('Error uploading image', err);
+      return { success: false, error: err };
     }
+  };
+
+  const handleError = (error: unknown, context: string) => {
+    const err = error instanceof Error ? error : new Error(String(error));
+    canvasLogger.error(`Canvas error: ${context}`, err, {
+      action: context,
+      position: tempImage ? { x: tempImage.x, y: tempImage.y } : undefined,
+      size: tempImage ? { width: tempImage.width, height: tempImage.height } : undefined
+    });
   };
 
   return {

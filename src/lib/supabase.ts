@@ -1,6 +1,7 @@
 // src/lib/supabase.ts
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { systemLogger } from '@/utils/logger';
 
 // Use environment variables for Supabase connection
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,12 +22,12 @@ export function initializeSupabase() {
     
     supabase = createClient(supabaseUrl, supabaseKey);
     isInitialized = true;
-    console.log('[IMGBLDR] Supabase client initialized');
+    systemLogger.info('Supabase client initialized');
     
     return { supabase, error: null };
   } catch (error) {
     initError = error as Error;
-    console.error('[IMGBLDR] Failed to initialize Supabase client:', error);
+    systemLogger.error('Failed to initialize Supabase client', error instanceof Error ? error : new Error(String(error)));
     return { supabase: null, error: initError };
   }
 }

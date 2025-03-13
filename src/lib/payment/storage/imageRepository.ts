@@ -12,6 +12,19 @@ import { storageLogger } from '@/utils/logger';
  * ImageRepository handles all database operations related to image status updates for payments
  */
 export class ImageRepository {
+  private logError(message: string, error: unknown, context?: Record<string, any>) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    storageLogger.error(message, err, context);
+  }
+
+  private logInfo(message: string, context?: Record<string, any>) {
+    storageLogger.info(message, context);
+  }
+
+  private logDebug(message: string, context?: Record<string, any>) {
+    storageLogger.debug(message, context);
+  }
+
   /**
    * Update the status of an image
    */
@@ -41,7 +54,7 @@ export class ImageRepository {
         updated_at: getCurrentTimestamp()
       };
       
-      storageLogger.debug('Updating image status', {
+      this.logInfo('Updating image status', {
         imageId,
         newStatus: dbStatus,
         updateData
@@ -53,7 +66,7 @@ export class ImageRepository {
         .eq('image_id', imageId);
       
       if (error) {
-        storageLogger.error("Error updating image status:", {
+        this.logError("Error updating image status:", {
           error,
           imageId,
           status: dbStatus,
@@ -71,14 +84,14 @@ export class ImageRepository {
         };
       }
       
-      storageLogger.debug('Successfully updated image status', {
+      this.logInfo('Successfully updated image status', {
         imageId,
         status: dbStatus
       });
       
       return { success: true };
     } catch (error) {
-      storageLogger.error('Failed to update image status:', {
+      this.logError('Failed to update image status:', {
         error,
         imageId,
         status: PAYMENT_TO_TRANSACTION_STATUS[status]
@@ -119,7 +132,9 @@ export class ImageRepository {
         .single();
       
       if (error) {
-        console.error("Error getting image by ID:", error);
+        storageLogger.error('Error getting image by ID', error instanceof Error ? error : new Error(String(error)), {
+          imageId
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -133,7 +148,9 @@ export class ImageRepository {
       
       return { success: true, data };
     } catch (error) {
-      console.error(`Failed to get image with ID ${imageId}:`, error);
+      storageLogger.error('Failed to get image', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -170,7 +187,9 @@ export class ImageRepository {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error("Error getting images by wallet:", error);
+        storageLogger.error('Error getting images by wallet', error instanceof Error ? error : new Error(String(error)), {
+          walletAddress
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -184,7 +203,9 @@ export class ImageRepository {
       
       return { success: true, data };
     } catch (error) {
-      console.error(`Failed to get images for wallet ${walletAddress}:`, error);
+      storageLogger.error('Failed to get images for wallet', error instanceof Error ? error : new Error(String(error)), {
+        walletAddress
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -229,7 +250,9 @@ export class ImageRepository {
         ]);
       
       if (error) {
-        console.error("Error marking image payment as timed out:", error);
+        storageLogger.error('Error marking image payment as timed out', error instanceof Error ? error : new Error(String(error)), {
+          imageId
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -243,7 +266,9 @@ export class ImageRepository {
       
       return { success: true };
     } catch (error) {
-      console.error('Failed to mark payment as timed out:', error);
+      storageLogger.error('Failed to mark payment as timed out', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -293,7 +318,9 @@ export class ImageRepository {
       const { data, error } = await query;
       
       if (error) {
-        console.error("Error checking position availability:", error);
+        storageLogger.error('Error checking position availability', error instanceof Error ? error : new Error(String(error)), {
+          x, y, width, height
+        });
         return { 
           available: false,
           error: createPaymentError(
@@ -325,7 +352,9 @@ export class ImageRepository {
       
       return { available: true };
     } catch (error) {
-      console.error('Failed to check position availability:', error);
+      storageLogger.error('Failed to check position availability', error instanceof Error ? error : new Error(String(error)), {
+        x, y, width, height
+      });
       return { 
         available: false,
         error: createPaymentError(

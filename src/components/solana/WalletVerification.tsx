@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useWalletVerification } from '@/utils/solana';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { walletLogger } from '@/utils/logger';
 
 export const WalletVerification: React.FC = () => {
   const { connected } = useWallet();
@@ -31,8 +32,8 @@ export const WalletVerification: React.FC = () => {
         setVerificationStatus('error');
       }
     } catch (error) {
-      console.error('Error during verification:', error);
-      setMessage('Error during verification: ' + (error instanceof Error ? error.message : String(error)));
+      walletLogger.error('Error during verification', error instanceof Error ? error : new Error(String(error)));
+      setMessage('Failed to verify wallet ownership');
       setVerificationStatus('error');
     }
   };

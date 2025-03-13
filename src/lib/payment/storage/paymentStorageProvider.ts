@@ -7,6 +7,7 @@ import { ErrorCategory } from '../types';
 import { transactionRepository } from './transactionRepository';
 import { imageRepository } from './imageRepository';
 import { statusMapper } from './statusMapper';
+import { storageLogger } from '@/utils/logger';
 
 /**
  * PaymentStorageProvider handles database operations for payments
@@ -20,7 +21,10 @@ export class PaymentStorageProvider {
     paymentSession: PaymentSession
   ): Promise<{ success: boolean; transactionId?: number; error?: PaymentError }> {
     try {
-      console.log(`Initializing transaction for payment ${paymentSession.paymentId}`);
+      storageLogger.info('Initializing transaction', {
+        paymentId: paymentSession.paymentId,
+        imageId: paymentSession.imageId
+      });
       
       // First, create the transaction record
       const result = await transactionRepository.initializeTransaction(paymentSession);
@@ -37,7 +41,10 @@ export class PaymentStorageProvider {
       );
       
       if (!imageResult.success) {
-        console.warn(`Transaction initialized but failed to update image status for ID: ${imageId}`);
+        storageLogger.warn('Transaction initialized but failed to update image status', {
+          imageId,
+          error: imageResult.error instanceof Error ? imageResult.error : new Error(String(imageResult.error))
+        });
         return {
           success: true,
           transactionId: result.transactionId,
@@ -50,7 +57,10 @@ export class PaymentStorageProvider {
         transactionId: result.transactionId
       };
     } catch (error) {
-      console.error('Failed to initialize transaction:', error);
+      storageLogger.error('Failed to initialize transaction', error instanceof Error ? error : new Error(String(error)), {
+        paymentId: paymentSession.paymentId,
+        imageId: paymentSession.imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -73,7 +83,10 @@ export class PaymentStorageProvider {
     blockchainConfirmation?: boolean
   ): Promise<{ success: boolean; error?: PaymentError }> {
     try {
-      console.log(`Updating transaction ${transactionId} status to ${status}`);
+      storageLogger.info('Updating transaction status', {
+        transactionId,
+        status
+      });
       
       // First update the transaction
       const txResult = await transactionRepository.updateTransactionStatus(
@@ -93,7 +106,9 @@ export class PaymentStorageProvider {
         const { success, data: txData, error: txError } = await transactionRepository.getTransaction(transactionId);
         
         if (!success || !txData) {
-          console.error("Error getting image ID for transaction:", txError);
+          storageLogger.error('Error getting image ID for transaction', txError instanceof Error ? txError : new Error(String(txError)), {
+            transactionId
+          });
           return { 
             success: true, 
             error: createPaymentError(
@@ -128,7 +143,10 @@ export class PaymentStorageProvider {
       
       return { success: true };
     } catch (error) {
-      console.error('Failed to update transaction status:', error);
+      storageLogger.error('Failed to update transaction status', error instanceof Error ? error : new Error(String(error)), {
+        transactionId,
+        status
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -148,7 +166,10 @@ export class PaymentStorageProvider {
     record: TransactionRecord
   ): Promise<{ success: boolean; transactionId?: number; error?: PaymentError }> {
     try {
-      console.log(`Saving new transaction for image ID: ${record.image_id}`);
+      storageLogger.info('Saving new transaction', {
+        imageId: record.image_id,
+        transactionHash: record.transaction_hash
+      });
       
       // Insert the transaction
       const txResult = await transactionRepository.saveTransaction(record);
@@ -201,7 +222,10 @@ export class PaymentStorageProvider {
         transactionId: txResult.transactionId
       };
     } catch (error) {
-      console.error('Failed to save transaction:', error);
+      storageLogger.error('Failed to save transaction', error instanceof Error ? error : new Error(String(error)), {
+        imageId: record.image_id,
+        transactionHash: record.transaction_hash
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -240,7 +264,9 @@ export class PaymentStorageProvider {
    */
   public async markPaymentAsTimedOut(imageId: number): Promise<{ success: boolean; error?: PaymentError }> {
     try {
-      console.log(`Marking payment for image ${imageId} as timed out`);
+      storageLogger.info('Marking payment as timed out', {
+        imageId
+      });
       
       // First update the image status
       const imageResult = await imageRepository.markPaymentAsTimedOut(imageId);
@@ -267,7 +293,9 @@ export class PaymentStorageProvider {
       
       return { success: true };
     } catch (error) {
-      console.error('Failed to mark payment as timed out:', error);
+      storageLogger.error('Failed to mark payment as timed out', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(

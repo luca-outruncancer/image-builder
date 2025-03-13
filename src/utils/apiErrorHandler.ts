@@ -1,6 +1,6 @@
 // src/utils/apiErrorHandler.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { apiLogger } from '@/utils/logger';
+import { apiLogger } from '@/utils/logger/index';
 
 /**
  * API error response structure
@@ -86,36 +86,16 @@ export function createApiError(
 /**
  * Handles unexpected errors in API routes
  */
-export function handleApiError(error: unknown, request?: NextRequest): NextResponse {
-  // Extract request ID from headers if available
-  const requestId = request?.headers.get('x-request-id') || undefined;
+export function handleApiError(error: unknown, context?: Record<string, any>) {
+  const err = error instanceof Error ? error : new Error(String(error));
+  apiLogger.error('API error occurred', err, context);
   
-  // Determine error type and message
-  let errorMessage: string;
-  let errorType = ApiErrorType.INTERNAL_ERROR;
-  let errorDetails: any = {};
-  
-  if (error instanceof Error) {
-    errorMessage = error.message;
-    errorDetails = {
-      name: error.name,
-      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
-    };
-  } else if (typeof error === 'string') {
-    errorMessage = error;
-  } else {
-    errorMessage = 'An unexpected error occurred';
-    errorDetails = { error };
-  }
-
-  // Log and return the error response
-  return createApiError(
-    errorType,
-    errorMessage,
-    errorDetails,
-    undefined,
-    requestId
-  );
+  return {
+    error: {
+      message: err.message,
+      ...(context || {})
+    }
+  };
 }
 
 /**
@@ -129,4 +109,20 @@ export function withErrorHandling(handler: (req: NextRequest) => Promise<NextRes
       return handleApiError(error, req);
     }
   };
+}
+
+export function logApiRequest(method: string, path: string, context?: Record<string, any>) {
+  apiLogger.info('API request received', {
+    method,
+    path,
+    ...(context || {})
+  });
+}
+
+export function logApiResponse(status: number, path: string, context?: Record<string, any>) {
+  apiLogger.info('API response sent', {
+    status,
+    path,
+    ...(context || {})
+  });
 }

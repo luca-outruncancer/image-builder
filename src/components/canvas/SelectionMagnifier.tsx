@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { MAGNIFIER, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE, FEATURES } from '@/utils/constants';
 import Image from 'next/image';
+import { canvasLogger } from '@/utils/logger';
 
 interface WalletInfo {
   success: boolean;
@@ -68,7 +69,7 @@ const SelectionMagnifier: React.FC<HoverMagnifierProps> = ({
         onWalletInfoUpdate(null);
       }
     } catch (error) {
-      console.error('Error fetching image info:', error);
+      canvasLogger.error('Error fetching image info', error instanceof Error ? error : new Error(String(error)));
       setWalletInfo(null);
       if (onWalletInfoUpdate) onWalletInfoUpdate(null);
     } finally {

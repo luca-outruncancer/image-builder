@@ -2,7 +2,7 @@
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { systemLogger } from '@/utils/logger';
+import { systemLogger } from '@/utils/logger/index';
 
 interface Props {
   children?: ReactNode;
@@ -36,9 +36,8 @@ class ErrorBoundary extends Component<Props, State> {
     // Log the error to our logging system
     const componentName = this.props.componentName || 'UnknownComponent';
     
-    systemLogger.error(`Error in ${componentName}: ${error.message}`, {
+    systemLogger.error(`Error in ${componentName}`, error, {
       component: componentName,
-      stack: error.stack,
       componentStack: errorInfo.componentStack
     });
     
