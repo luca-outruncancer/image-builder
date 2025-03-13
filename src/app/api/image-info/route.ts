@@ -1,6 +1,7 @@
 // src/app/api/image-info/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { apiLogger } from '@/utils/logger';
 
 /**
  * API to fetch image information for a specific position on the canvas
@@ -9,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     // Check database connection
     if (!supabase) {
-      console.error('[ImageInfo] Database connection not available');
+      apiLogger.error('Database connection not available');
       return NextResponse.json(
         { error: 'Database connection not available' },
         { status: 500 }
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     
     // Validate coordinates
     if (body.x === undefined || body.y === undefined) {
-      console.error('[ImageInfo] Missing coordinates in request');
+      apiLogger.error('Missing coordinates in request');
       return NextResponse.json(
         { error: 'Coordinates (x,y) are required' },
         { status: 400 }
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     const x = parseInt(body.x);
     const y = parseInt(body.y);
     
-    console.log(`[ImageInfo] Looking up position (${x}, ${y})`);
+    apiLogger.info('Looking up position', { x, y });
     
     // Execute the stored procedure to find images at this position
     const { data, error } = await supabase.rpc('find_image_at_position', { 
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     });
     
     if (error) {
-      console.error('[ImageInfo] Stored procedure error:', error);
+      apiLogger.error('Stored procedure error', new Error(error.message));
       return NextResponse.json(
         { error: 'Database error while retrieving image information' },
         { status: 500 }
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     
     if (data && data.length > 0) {
       const matchingImage = data[0]; // Get the most recent one if multiple
-      console.log('[ImageInfo] Found matching image:', matchingImage);
+      apiLogger.info('Found matching image', { image: matchingImage });
       
       const { 
         image_id,
@@ -64,9 +65,7 @@ export async function POST(request: NextRequest) {
         updated_at,
         cost
       } = matchingImage;
-      
-      console.log('[ImageInfo] Sender wallet:', sender_wallet);
-      
+            
       return NextResponse.json({
         success: true,
         wallet: sender_wallet || "Unknown",
@@ -88,18 +87,20 @@ export async function POST(request: NextRequest) {
     }
     
     // No image found at this position
+    apiLogger.info('No image found at position', { x, y });
     return NextResponse.json({
       success: false,
       message: 'No image found at this position'
     });
     
   } catch (error) {
-    console.error('[ImageInfo] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    apiLogger.error('Error retrieving image information', new Error(errorMessage));
     return NextResponse.json(
       { 
         success: false,
         error: 'Failed to retrieve image information',
-        message: error instanceof Error ? error.message : String(error)
+        message: errorMessage
       },
       { status: 500 }
     );

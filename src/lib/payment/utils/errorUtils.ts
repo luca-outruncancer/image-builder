@@ -1,6 +1,7 @@
 // src/lib/payment/utils/errorUtils.ts
 import { ErrorCategory, PaymentError } from '../types';
 import { SendTransactionError } from '@solana/web3.js';
+import { paymentLogger } from '@/utils/logger';
 
 /**
  * Create a standardized payment error object
@@ -8,24 +9,31 @@ import { SendTransactionError } from '@solana/web3.js';
 export function createPaymentError(
   category: ErrorCategory,
   message: string,
-  originalError?: any,
-  retryable: boolean = false,
+  originalError: Error | unknown,
+  retryable: boolean,
   code?: string
 ): PaymentError {
-  // Only use console.error for unexpected errors
-  if (category === ErrorCategory.UNKNOWN_ERROR || 
-      category === ErrorCategory.BLOCKCHAIN_ERROR || 
-      category === ErrorCategory.NETWORK_ERROR) {
-    console.error(`Payment error [${category}]: ${message}`, originalError);
-  } else {
-    // Use console.log for expected errors (user rejection, timeouts, etc.)
-    console.log(`Payment note [${category}]: ${message}`, originalError);
-  }
+  const error = originalError instanceof Error ? originalError : new Error(String(originalError));
   
+  if (retryable) {
+    paymentLogger.error('Payment error', error, {
+      category,
+      message,
+      code
+    });
+  } else {
+    paymentLogger.info('Payment note', {
+      category,
+      message,
+      error: error.message,
+      code
+    });
+  }
+
   return {
     category,
     message,
-    originalError,
+    originalError: error,
     retryable,
     code
   };
@@ -125,7 +133,7 @@ export function extractSignatureFromError(error: any): string | null {
       return sigMatches[1];
     }
   } catch (e) {
-    console.error("Error extracting signature from error:", e);
+    paymentLogger.error('Error extracting signature', e instanceof Error ? e : new Error(String(e)));
   }
   
   return null;

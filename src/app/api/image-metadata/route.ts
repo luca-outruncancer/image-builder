@@ -1,6 +1,8 @@
 // src/app/api/image-metadata/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { MAX_FILE_SIZE } from '@/utils/constants';
+import { apiLogger } from '@/utils/logger';
 
 /**
  * Simplified API endpoint to get basic metadata for an image file
@@ -13,6 +15,18 @@ export async function POST(request: NextRequest) {
     if (!body.filename) {
       return NextResponse.json(
         { error: 'Filename is required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate file size if provided
+    if (body.size && body.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'File size exceeds limit',
+          message: `File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`
+        },
         { status: 400 }
       );
     }
@@ -32,7 +46,7 @@ export async function POST(request: NextRequest) {
           format: metadata.format
         });
       } catch (error) {
-        console.error('[Image Metadata] Error processing image data:', error);
+        apiLogger.error('Error processing image data', error instanceof Error ? error : new Error(String(error)));
         return NextResponse.json(
           { 
             success: false,
@@ -65,7 +79,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    console.error('[Image Metadata] Unexpected error:', error);
+    apiLogger.error('Unexpected error', error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Failed to process request: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }

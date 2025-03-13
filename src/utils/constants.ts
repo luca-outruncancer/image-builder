@@ -25,11 +25,9 @@ export enum LogLevel {
 
 export const LOGGING: {
   ENABLE_CONSOLE_LOGGING: boolean;
-  ENABLE_DB_LOGGING: boolean;
-  LEVEL: LogLevel;
+  LEVEL: string;
   APP_PREFIX: string;
   ENVIRONMENT: string;
-  RETENTION_DAYS: number;
   COMPONENTS: {
     PAYMENT: string;
     BLOCKCHAIN: string;
@@ -41,16 +39,25 @@ export const LOGGING: {
     AUTH: string;
     SYSTEM: string;
   };
+  PINO: {
+    TRANSPORT: {
+      OPTIONS: {
+        colorize: boolean;
+        translateTime: string;
+        ignore: string;
+      };
+    };
+    REDACT: {
+      paths: string[];
+      remove: boolean;
+    };
+  };
 } = {
   // General settings
   ENABLE_CONSOLE_LOGGING: true,     // Enable logging to console
-  ENABLE_DB_LOGGING: true,          // Enable logging to database
-  LEVEL: LogLevel.DEBUG,            // Current log level
+  LEVEL: process.env.NODE_ENV === 'development' ? 'debug' : 'info',  // Current log level
   APP_PREFIX: 'IMGBLDR',            // Application prefix for logs
   ENVIRONMENT: process.env.NODE_ENV || 'development',  // Current environment
-  
-  // Database settings
-  RETENTION_DAYS: 30,               // How many days to retain logs
   
   // Component names for logging context
   COMPONENTS: {
@@ -63,6 +70,21 @@ export const LOGGING: {
     STORAGE: 'STORAGE',             // Storage operations
     AUTH: 'AUTH',                   // Authentication
     SYSTEM: 'SYSTEM',               // System operations
+  },
+
+  // Pino specific configuration
+  PINO: {
+    TRANSPORT: {
+      OPTIONS: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname'
+      }
+    },
+    REDACT: {
+      paths: ['wallet.privateKey', '*.privateKey', 'password'],
+      remove: true
+    }
   }
 };
 

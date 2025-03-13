@@ -1,6 +1,6 @@
 // src/lib/solana/walletConfig.ts
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import { walletLogger } from '@/utils/logger';
+import { walletLogger } from '@/utils/logger/index';
 
 // Define RPC endpoints for different networks with rate limit handling
 const RPC_ENDPOINTS = {

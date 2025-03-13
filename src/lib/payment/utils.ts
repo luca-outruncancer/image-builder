@@ -1,6 +1,7 @@
 // src/lib/payment/utils.ts
 import { ErrorCategory, PaymentError } from './types';
 import { SendTransactionError } from '@solana/web3.js';
+import { paymentLogger } from '@/utils/logger';
 
 /**
  * Create a standardized payment error object
@@ -12,14 +13,17 @@ export function createPaymentError(
     retryable: boolean = false,
     code?: string
   ): PaymentError {
-    // Only use console.error for unexpected errors
+    // Only use error logging for unexpected errors
     if (category === ErrorCategory.UNKNOWN_ERROR || 
         category === ErrorCategory.BLOCKCHAIN_ERROR || 
         category === ErrorCategory.NETWORK_ERROR) {
-      console.error(`Payment error [${category}]: ${message}`, originalError);
+      paymentLogger.error(`Payment error [${category}]: ${message}`, originalError instanceof Error ? originalError : new Error(String(originalError)));
     } else {
-      // Use console.log for expected errors (user rejection, timeouts, etc.)
-      console.log(`Payment note [${category}]: ${message}`, originalError);
+      // Use info logging for expected errors (user rejection, timeouts, etc.)
+      paymentLogger.info(`Payment note [${category}]: ${message}`, {
+        error: originalError instanceof Error ? originalError.message : String(originalError),
+        code
+      });
     }
     
     return {

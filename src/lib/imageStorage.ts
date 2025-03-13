@@ -2,7 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { PaymentStatus } from './payment/types';
-import { imageLogger, storageLogger } from '@/utils/logger';
+import { imageLogger, storageLogger } from '@/utils/logger/index';
 import { supabase } from '@/lib/supabase';
 
 // Use environment variables for Supabase connection
@@ -18,10 +18,13 @@ if (supabaseUrl && supabaseKey) {
     supabaseClient = createClient(supabaseUrl, supabaseKey);
     storageLogger.info('Supabase client initialized in imageStorage');
   } catch (error) {
-    storageLogger.error('Error initializing Supabase client in imageStorage:', error);
+    storageLogger.error('Error initializing Supabase client in imageStorage', error instanceof Error ? error : new Error(String(error)));
   }
 } else {
-  storageLogger.error('Unable to initialize Supabase client due to missing environment variables in imageStorage');
+  storageLogger.error('Unable to initialize Supabase client due to missing environment variables in imageStorage', undefined, {
+    hasUrl: !!supabaseUrl,
+    hasKey: !!supabaseKey
+  });
 }
 
 export interface ImageRecord {
@@ -72,13 +75,19 @@ export async function createImageRecord(params: {
       .single();
     
     if (error) {
-      storageLogger.error('Error creating image record:', error);
+      storageLogger.error('Error creating image record', error instanceof Error ? error : new Error(String(error)), {
+        location: params.image_location,
+        status: params.status
+      });
       return { success: false, error };
     }
     
     return { success: true, data };
   } catch (error) {
-    storageLogger.error('Failed to create image record:', error);
+    storageLogger.error('Failed to create image record', error instanceof Error ? error : new Error(String(error)), {
+      location: params.image_location,
+      status: params.status
+    });
     return { success: false, error };
   }
 }
@@ -110,8 +119,7 @@ export async function updateImageStatus(
       .eq('image_id', imageId);
     
     if (error) {
-      storageLogger.error('Error updating image status:', {
-        error,
+      storageLogger.error('Error updating image status', error instanceof Error ? error : new Error(String(error)), {
         imageId,
         status
       });
@@ -125,8 +133,7 @@ export async function updateImageStatus(
     
     return { success: true };
   } catch (error) {
-    storageLogger.error('Failed to update image status:', {
-      error,
+    storageLogger.error('Failed to update image status', error instanceof Error ? error : new Error(String(error)), {
       imageId,
       status
     });
@@ -150,13 +157,13 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
       .eq('status', PaymentStatus.CONFIRMED.toUpperCase());
     
     if (error) {
-      storageLogger.error('Error fetching image records:', error);
+      storageLogger.error('Error fetching image records', error instanceof Error ? error : new Error(String(error)));
       return { success: false, error };
     }
     
     return { success: true, data };
   } catch (error) {
-    storageLogger.error('Failed to get image records:', error);
+    storageLogger.error('Failed to get image records', error instanceof Error ? error : new Error(String(error)));
     return { success: false, error };
   }
 }
@@ -178,13 +185,17 @@ export async function getImageById(imageId: number): Promise<{ success: boolean;
       .single();
     
     if (error) {
-      storageLogger.error('Error fetching image record by ID:', error);
+      storageLogger.error('Error fetching image record by ID', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { success: false, error };
     }
     
     return { success: true, data };
   } catch (error) {
-    storageLogger.error(`Failed to get image with ID ${imageId}:`, error);
+    storageLogger.error('Failed to get image record', error instanceof Error ? error : new Error(String(error)), {
+      imageId
+    });
     return { success: false, error };
   }
 }
@@ -221,14 +232,18 @@ export async function checkAreaAvailability(
     const { data, error } = await query;
     
     if (error) {
-      storageLogger.error('Error checking area availability:', error);
+      storageLogger.error('Error checking area availability', error instanceof Error ? error : new Error(String(error)), {
+        x, y, width, height, excludeImageId
+      });
       return { success: false, error };
     }
     
     // Area is available if no overlapping images were found
     return { success: true, available: data.length === 0 };
   } catch (error) {
-    storageLogger.error('Failed to check area availability:', error);
+    storageLogger.error('Failed to check area availability', error instanceof Error ? error : new Error(String(error)), {
+      x, y, width, height, excludeImageId
+    });
     return { success: false, error };
   }
 }
@@ -255,13 +270,17 @@ export async function cleanupExpiredPendingPayments(
       .lt('created_at', new Date(Date.now() - timeoutMinutes * 60000).toISOString());
     
     if (error) {
-      storageLogger.error('Error cleaning up expired payments:', error);
+      storageLogger.error('Error cleaning up expired payments', error instanceof Error ? error : new Error(String(error)), {
+        timeoutMinutes
+      });
       return { success: false, error };
     }
     
     return { success: true };
   } catch (error) {
-    storageLogger.error('Failed to cleanup expired payments:', error);
+    storageLogger.error('Failed to cleanup expired payments', error instanceof Error ? error : new Error(String(error)), {
+      timeoutMinutes
+    });
     return { success: false, error };
   }
 }

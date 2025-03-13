@@ -6,6 +6,7 @@ import { ErrorCategory } from '../types';
 import { statusMapper } from './statusMapper';
 import { validateDatabaseConnection, getCurrentTimestamp } from '../utils/storageUtils';
 import { generateUniqueNonce } from '../utils/transactionUtils';
+import { storageLogger } from '@/utils/logger';
 
 /**
  * TransactionRepository handles all database operations related to payment transactions
@@ -20,7 +21,7 @@ export class TransactionRepository {
     const { imageId, amount, token, paymentId, walletAddress, recipientWallet } = paymentSession;
     
     if (!supabase) {
-      console.error("Database client not available");
+      storageLogger.error('Database client not available');
       return { 
         success: false, 
         error: createPaymentError(
@@ -51,7 +52,10 @@ export class TransactionRepository {
         .select();
       
       if (error) {
-        console.error("Database error initializing transaction:", error);
+        storageLogger.error('Database error initializing transaction', error instanceof Error ? error : new Error(String(error)), {
+          paymentId,
+          imageId
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -68,7 +72,10 @@ export class TransactionRepository {
         transactionId: data[0].tx_id 
       };
     } catch (error) {
-      console.error('Failed to initialize transaction:', error);
+      storageLogger.error('Failed to initialize transaction', error instanceof Error ? error : new Error(String(error)), {
+        paymentId,
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -125,7 +132,10 @@ export class TransactionRepository {
         .eq('tx_id', transactionId);
       
       if (error) {
-        console.error("Database error updating transaction status:", error);
+        storageLogger.error('Database error updating transaction status', error instanceof Error ? error : new Error(String(error)), {
+          transactionId,
+          status
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -139,7 +149,10 @@ export class TransactionRepository {
       
       return { success: true };
     } catch (error) {
-      console.error('Failed to update transaction status:', error);
+      storageLogger.error('Failed to update transaction status', error instanceof Error ? error : new Error(String(error)), {
+        transactionId,
+        status
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -205,7 +218,9 @@ export class TransactionRepository {
         }
       } catch (countError) {
         // It's okay if there's no previous transaction
-        console.log("No previous transaction found, this is the first attempt");
+        storageLogger.debug('No previous transaction found, this is the first attempt', {
+          imageId: record.image_id
+        });
       }
       
       // Insert the transaction record
@@ -227,7 +242,10 @@ export class TransactionRepository {
         .select();
       
       if (error) {
-        console.error("Database error saving transaction:", error);
+        storageLogger.error('Database error saving transaction', error instanceof Error ? error : new Error(String(error)), {
+          imageId: record.image_id,
+          paymentId: record.transaction_hash
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -244,7 +262,10 @@ export class TransactionRepository {
         transactionId: data[0].tx_id 
       };
     } catch (error) {
-      console.error('Failed to save transaction:', error);
+      storageLogger.error('Failed to save transaction', error instanceof Error ? error : new Error(String(error)), {
+        imageId: record.image_id,
+        paymentId: record.transaction_hash
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -281,7 +302,9 @@ export class TransactionRepository {
         .single();
       
       if (error) {
-        console.error("Error getting transaction:", error);
+        storageLogger.error('Error getting transaction', error instanceof Error ? error : new Error(String(error)), {
+          transactionId
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -295,7 +318,9 @@ export class TransactionRepository {
       
       return { success: true, data };
     } catch (error) {
-      console.error('Failed to get transaction:', error);
+      storageLogger.error('Failed to get transaction', error instanceof Error ? error : new Error(String(error)), {
+        transactionId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -339,7 +364,9 @@ export class TransactionRepository {
           return { success: true, data: undefined };
         }
         
-        console.error("Error getting transaction by image ID:", error);
+        storageLogger.error('Error getting transaction by image ID', error instanceof Error ? error : new Error(String(error)), {
+          imageId
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -353,7 +380,9 @@ export class TransactionRepository {
       
       return { success: true, data };
     } catch (error) {
-      console.error('Failed to get transaction by image ID:', error);
+      storageLogger.error('Failed to get transaction by image ID', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -390,7 +419,9 @@ export class TransactionRepository {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error("Error getting transactions for wallet:", error);
+        storageLogger.error('Error getting transactions for wallet', error instanceof Error ? error : new Error(String(error)), {
+          walletAddress
+        });
         return { 
           success: false, 
           error: createPaymentError(
@@ -404,7 +435,9 @@ export class TransactionRepository {
       
       return { success: true, data };
     } catch (error) {
-      console.error('Failed to get transactions for wallet:', error);
+      storageLogger.error('Failed to get transactions for wallet', error instanceof Error ? error : new Error(String(error)), {
+        walletAddress
+      });
       return { 
         success: false, 
         error: createPaymentError(
@@ -447,13 +480,18 @@ export class TransactionRepository {
         .in('status', [PaymentStatus.INITIALIZED, PaymentStatus.PENDING, PaymentStatus.PROCESSING]);
       
       if (txError) {
-        console.log("Note: Could not update transaction status for timeout:", txError);
+        storageLogger.warn('Could not update transaction status for timeout', {
+          error: txError instanceof Error ? txError : new Error(String(txError)),
+          transactionId: imageId
+        });
         // We'll continue even if this fails
       }
       
       return { success: true };
     } catch (error) {
-      console.error('Failed to mark payment as timed out:', error);
+      storageLogger.error('Failed to mark payment as timed out', error instanceof Error ? error : new Error(String(error)), {
+        imageId
+      });
       return { 
         success: false, 
         error: createPaymentError(

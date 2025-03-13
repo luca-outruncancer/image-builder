@@ -33,6 +33,7 @@ import {
 } from '../utils';
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { PAYMENT_TOKENS, ACTIVE_NETWORK } from '@/utils/constants';
+import { blockchainLogger } from '@/utils/logger';
 
 /**
  * Process a token payment transaction (e.g., USDC)
@@ -46,7 +47,11 @@ export async function processTokenPayment(
   const { amount, recipientWallet, metadata } = request;
   const paymentId = metadata?.paymentId || 'unknown';
   
-  console.log(`[TokenPayment:${paymentId}] Processing token payment for amount ${amount} ${request.token}`);
+  blockchainLogger.info('Processing token payment', {
+    paymentId,
+    amount,
+    token: request.token
+  });
   
   if (!walletConfig.publicKey || !walletConfig.signTransaction) {
     return {
@@ -72,7 +77,10 @@ export async function processTokenPayment(
     
     // Try to fetch mint info to get decimals
     const mintInfo = await getMint(connection, tokenMint);
-    console.log(`[TokenPayment:${paymentId}] Token mint info retrieved, decimals: ${mintInfo.decimals}`);
+    blockchainLogger.info('Token mint info retrieved', {
+      paymentId,
+      decimals: mintInfo.decimals
+    });
     
     // Calculate the token amount with decimals
     const tokenAmount = Math.floor(amount * (10 ** mintInfo.decimals));
@@ -99,10 +107,10 @@ export async function processTokenPayment(
     try {
       // Check payer token account
       payerTokenInfo = await getAccount(connection, payerTokenAccount);
-      console.log(`[TokenPayment:${paymentId}] Payer token account exists`);
+      blockchainLogger.info('Payer token account exists');
     } catch (error) {
       if (error instanceof TokenAccountNotFoundError) {
-        console.log(`[TokenPayment:${paymentId}] Payer doesn't have a token account`);
+        blockchainLogger.info('Payer doesn\'t have a token account');
         return {
           success: false,
           error: createPaymentError(
@@ -119,10 +127,10 @@ export async function processTokenPayment(
     try {
       // Check recipient token account
       await getAccount(connection, recipientTokenAccount);
-      console.log(`[TokenPayment:${paymentId}] Recipient token account exists`);
+      blockchainLogger.info('Recipient token account exists');
     } catch (error) {
       if (error instanceof TokenAccountNotFoundError) {
-        console.log(`[TokenPayment:${paymentId}] Recipient needs a token account - will create it`);
+        blockchainLogger.info('Recipient needs a token account - will create it');
         needsRecipientAccount = true;
       } else {
         throw error;
@@ -144,14 +152,17 @@ export async function processTokenPayment(
       };
     }
     
-    console.log(`[TokenPayment:${paymentId}] Token balance sufficient: ${balance.value.uiAmount} ${request.token}`);
+    blockchainLogger.info('Token balance sufficient', {
+      balance: balance.value.uiAmount,
+      token: request.token
+    });
     
     // Create transaction
     const transaction = new Transaction();
     
     // Create recipient token account if needed
     if (needsRecipientAccount) {
-      console.log(`[TokenPayment:${paymentId}] Adding instruction to create recipient token account`);
+      blockchainLogger.info('Creating recipient token account');
       transaction.add(
         createAssociatedTokenAccountInstruction(
           payer,
@@ -163,7 +174,10 @@ export async function processTokenPayment(
     }
     
     // Add the main token transfer instruction
-    console.log(`[TokenPayment:${paymentId}] Adding token transfer instruction for ${amount} ${request.token}`);
+    blockchainLogger.info('Adding token transfer instruction', {
+      amount,
+      token: request.token
+    });
     const transferInstruction = createTransferCheckedInstruction(
       payerTokenAccount,
       tokenMint,
@@ -177,7 +191,9 @@ export async function processTokenPayment(
     
     // Add a unique identifier to transaction to prevent duplicates
     const nonce = getNonce();
-    console.log(`[TokenPayment:${paymentId}] Adding nonce instruction: ${nonce}`);
+    blockchainLogger.info('Adding nonce instruction', {
+      nonce
+    });
     
     transaction.add(
       SystemProgram.transfer({
@@ -189,7 +205,9 @@ export async function processTokenPayment(
     
     // Get latest blockhash
     const blockHash = await connection.getLatestBlockhash('confirmed');
-    console.log(`[TokenPayment:${paymentId}] Got blockhash: ${blockHash.blockhash.slice(0, 8)}...`);
+    blockchainLogger.debug('Got blockhash', {
+      blockhash: blockHash.blockhash
+    });
     
     transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = payer;
@@ -198,10 +216,10 @@ export async function processTokenPayment(
     let signedTransaction;
     try {
       signedTransaction = await walletConfig.signTransaction(transaction);
-      console.log(`[TokenPayment:${paymentId}] Transaction signed successfully`);
+      blockchainLogger.debug('Transaction signed');
     } catch (signError) {
       if (isUserRejectionError(signError)) {
-        console.log(`[TokenPayment:${paymentId}] User declined to sign transaction`);
+        blockchainLogger.info('User declined transaction');
         return {
           success: false,
           error: createPaymentError(
@@ -225,39 +243,43 @@ export async function processTokenPayment(
     }
     
     // Log transaction details for debugging
-    console.log(`[TokenPayment:${paymentId}] Transaction details:`, {
-      blockHash: transaction.recentBlockhash?.slice(0, 8) + "...",
-      feePayer: transaction.feePayer?.toString().slice(0, 8) + "...",
+    blockchainLogger.debug('Transaction details', {
+      paymentId,
+      nonce,
+      blockhash: transaction.recentBlockhash,
       instructions: transaction.instructions.length,
-      signatures: transaction.signatures.length,
-      serializedSize: signedTransaction.serialize().length
+      signers: transaction.signatures.length
     });
     
     // Send transaction
     let signature;
     try {
-      console.log(`[TokenPayment:${paymentId}] Sending transaction...`);
+      blockchainLogger.info('Sending transaction...');
       signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      console.log(`[TokenPayment:${paymentId}] Transaction sent, signature: ${signature}`);
+      blockchainLogger.info('Transaction sent', {
+        signature
+      });
     } catch (sendError) {
-      console.error(`[TokenPayment:${paymentId}] Error sending transaction:`, sendError);
+      blockchainLogger.error('Error sending transaction', sendError instanceof Error ? sendError : new Error(String(sendError)));
       
       // Check if this is a "Transaction already processed" error
       if (isTxAlreadyProcessedError(sendError)) {
-        console.log(`[TokenPayment:${paymentId}] Transaction already processed error detected`);
+        blockchainLogger.debug('Transaction already processed');
         
         // Try to extract the signature from the error
         const existingSig = extractSignatureFromError(sendError);
         
         if (existingSig) {
-          console.log(`[TokenPayment:${paymentId}] Found existing signature: ${existingSig}`);
+          blockchainLogger.debug('Found existing signature', {
+            signature: existingSig
+          });
           
           // Verify if the transaction was successful
           try {
             const status = await connection.getSignatureStatus(existingSig);
             
             if (status && status.value && !status.value.err) {
-              console.log(`[TokenPayment:${paymentId}] Found successful existing transaction`);
+              blockchainLogger.info('Found successful existing transaction');
               return {
                 success: true,
                 transactionHash: existingSig,
@@ -266,7 +288,7 @@ export async function processTokenPayment(
               };
             }
           } catch (statusError) {
-            console.log(`[TokenPayment:${paymentId}] Error checking transaction status:`, statusError);
+            blockchainLogger.error('Error checking transaction status', statusError instanceof Error ? statusError : new Error(String(statusError)));
           }
         }
         
@@ -295,7 +317,7 @@ export async function processTokenPayment(
     
     // Confirm transaction
     try {
-      console.log(`[TokenPayment:${paymentId}] Confirming transaction...`);
+      blockchainLogger.info('Confirming transaction...');
       const confirmation = await connection.confirmTransaction({
         signature,
         blockhash: blockHash.blockhash,
@@ -303,7 +325,7 @@ export async function processTokenPayment(
       }, 'confirmed');
       
       if (confirmation.value.err) {
-        console.error(`[TokenPayment:${paymentId}] Transaction confirmation failed:`, confirmation.value.err);
+        blockchainLogger.error('Transaction confirmation failed', new Error(String(confirmation.value.err)));
         return {
           success: false,
           error: createPaymentError(
@@ -315,21 +337,21 @@ export async function processTokenPayment(
         };
       }
       
-      console.log(`[TokenPayment:${paymentId}] Transaction confirmed successfully!`);
+      blockchainLogger.info('Transaction confirmed successfully');
       return {
         success: true,
         transactionHash: signature,
         blockchainConfirmation: true
       };
     } catch (confirmError) {
-      console.error(`[TokenPayment:${paymentId}] Error confirming transaction:`, confirmError);
+      blockchainLogger.error('Error confirming transaction', confirmError instanceof Error ? confirmError : new Error(String(confirmError)));
       
       // Check status manually - may have succeeded despite confirmation error
       try {
         const status = await connection.getSignatureStatus(signature);
         
         if (status.value && !status.value.err) {
-          console.log(`[TokenPayment:${paymentId}] Transaction succeeded despite confirmation error`);
+          blockchainLogger.info('Transaction succeeded despite confirmation error');
           return {
             success: true,
             transactionHash: signature,
@@ -337,7 +359,7 @@ export async function processTokenPayment(
           };
         }
       } catch (statusError) {
-        console.error(`[TokenPayment:${paymentId}] Failed to check transaction status:`, statusError);
+        blockchainLogger.error('Failed to check transaction status', statusError instanceof Error ? statusError : new Error(String(statusError)));
       }
       
       return {
@@ -351,7 +373,7 @@ export async function processTokenPayment(
       };
     }
   } catch (error) {
-    console.error(`[TokenPayment:${paymentId}] Unexpected error:`, error);
+    blockchainLogger.error('Unexpected error in token payment', error instanceof Error ? error : new Error(String(error)));
     
     // Check if the mint exists or is valid
     if (error instanceof Error && 
@@ -430,7 +452,9 @@ export async function checkTokenBalance(
       throw error;
     }
   } catch (error) {
-    console.error(`Error checking token balance for ${tokenSymbol}:`, error);
+    blockchainLogger.error('Error checking token balance', error instanceof Error ? error : new Error(String(error)), {
+      token: tokenSymbol
+    });
     return { 
       hasToken: false, 
       balance: 0, 

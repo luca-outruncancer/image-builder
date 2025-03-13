@@ -8,7 +8,7 @@ import { X } from 'lucide-react';
 import ConfirmPlacement from './ConfirmPlacement';
 import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
-import { canvasLogger } from '@/utils/logger';
+import { canvasLogger } from '@/utils/logger/index';
 import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
 
 interface PlacedImage {
@@ -72,7 +72,7 @@ export default function CanvasPaymentHandler({
         category: error.category,
         message: error.message,
         code: error.code
-      } : null,
+      } : undefined,
       successInfo: successInfo ? {
         transactionHash: successInfo.transactionHash,
         timestamp: successInfo.timestamp,
@@ -81,7 +81,7 @@ export default function CanvasPaymentHandler({
           positionX: successInfo.metadata?.positionX,
           positionY: successInfo.metadata?.positionY
         }
-      } : null
+      } : undefined
     });
   }, [isConfirmationStep, isProcessingStep, isErrorStep, isSuccessStep, connected, paymentStatus, error, successInfo]);
 
@@ -91,8 +91,9 @@ export default function CanvasPaymentHandler({
       try {
         canvasLogger.debug('Cleaning up payment handler session data');
         clearSessionBlockhashData();
-      } catch (e) {
-        canvasLogger.error('Failed to clear session storage', e);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        canvasLogger.error('Failed to clear session storage', err);
       }
     };
   }, []);

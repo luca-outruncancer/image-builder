@@ -23,6 +23,7 @@ import {
 import { processSolPayment } from './solPaymentProcessor';
 import { processTokenPayment } from './tokenPaymentProcessor';
 import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
+import { blockchainLogger } from '@/utils/logger';
 
 /**
  * SolanaPaymentProvider handles the interaction with Solana blockchain
@@ -78,7 +79,7 @@ export class SolanaPaymentProvider {
       
       return connection;
     } catch (error) {
-      console.error("Failed to create Solana connection:", error);
+      blockchainLogger.error('Failed to create Solana connection', error instanceof Error ? error : new Error(String(error)));
       throw createPaymentError(
         ErrorCategory.NETWORK_ERROR,
         'Connection initialization failed',
@@ -93,19 +94,26 @@ export class SolanaPaymentProvider {
    */
   public async verifyTransaction(signature: string): Promise<boolean> {
     try {
-      console.log(`Verifying transaction signature: ${signature}`);
+      blockchainLogger.debug('Verifying transaction signature', {
+        signature
+      });
       const status = await this.connection.getSignatureStatus(signature);
       
       // If we have a confirmation, the transaction succeeded
       if (status && status.value && !status.value.err) {
-        console.log(`Transaction verified: ${signature} was SUCCESSFUL`);
+        blockchainLogger.info('Transaction verified successful', {
+          signature
+        });
         return true;
       }
       
-      console.log(`Transaction verified: ${signature} was NOT successful`, status);
+      blockchainLogger.info('Transaction verified unsuccessful', {
+        signature,
+        status
+      });
       return false;
     } catch (error) {
-      console.error("Error verifying transaction:", error);
+      blockchainLogger.error('Error verifying transaction', error instanceof Error ? error : new Error(String(error)));
       return false;
     }
   }
@@ -135,7 +143,7 @@ export class SolanaPaymentProvider {
           return cached.signature;
         }
       } catch (error) {
-        console.error(`Error checking transaction status: ${error}`);
+        blockchainLogger.error('Error checking transaction status', error instanceof Error ? error : new Error(String(error)));
       }
     }
     
@@ -148,10 +156,10 @@ export class SolanaPaymentProvider {
   public async processPayment(request: PaymentRequest, mintAddress?: string | null): Promise<TransactionResult> {
     try {
       const paymentId = request.metadata?.paymentId || 'unknown';
-      console.log(`[SolanaPaymentProvider] Processing payment [ID: ${paymentId}]`, {
+      blockchainLogger.info('Processing payment', {
+        paymentId: request.metadata?.paymentId || 'unknown',
         amount: request.amount,
-        token: request.token,
-        hasMintAddress: !!mintAddress
+        token: request.token
       });
       
       // Clear any cached transaction data for this payment ID
@@ -160,7 +168,9 @@ export class SolanaPaymentProvider {
       // Check for existing transaction first
       const existingSignature = await this.checkExistingTransaction(paymentId);
       if (existingSignature) {
-        console.log(`[SolanaPaymentProvider] Using existing transaction: ${existingSignature}`);
+        blockchainLogger.info('Using existing transaction', {
+          signature: existingSignature
+        });
         return {
           success: true,
           transactionHash: existingSignature,
@@ -188,12 +198,16 @@ export class SolanaPaymentProvider {
           timestamp: Date.now(),
           status: 'pending'
         });
-        console.log(`[SolanaPaymentProvider] Cached transaction signature: ${result.transactionHash}`);
+        blockchainLogger.info('Cached transaction signature', {
+          signature: result.transactionHash
+        });
       }
       
       return result;
     } catch (error) {
-      console.error(`[SolanaPaymentProvider] Payment error [ID: ${request.metadata?.paymentId || 'unknown'}]:`, error);
+      blockchainLogger.error('Payment error', error instanceof Error ? error : new Error(String(error)), {
+        paymentId: request.metadata?.paymentId || 'unknown'
+      });
       
       if (isUserRejectionError(error)) {
         return {
@@ -247,7 +261,7 @@ export class SolanaPaymentProvider {
    * Clear the transaction cache
    */
   public clearTransactionCache(): void {
-    console.log("Clearing transaction cache");
+    blockchainLogger.info('Clearing transaction cache');
     this.cachedTransactions.clear();
   }
 
@@ -259,7 +273,9 @@ export class SolanaPaymentProvider {
       const status = await this.connection.getSignatureStatus(signature);
       return status.value;
     } catch (error) {
-      console.error(`Error getting transaction status for ${signature}:`, error);
+      blockchainLogger.error('Error getting transaction status', error instanceof Error ? error : new Error(String(error)), {
+        signature
+      });
       return null;
     }
   }
