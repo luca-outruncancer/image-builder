@@ -8,18 +8,89 @@ import { transactionRepository } from './transactionRepository';
 import { imageRepository } from './imageRepository';
 import { statusMapper } from './statusMapper';
 import { storageLogger } from '@/utils/logger';
+import { createClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * PaymentStorageProvider handles database operations for payments
  * This is a facade that coordinates between repositories
  */
 export class PaymentStorageProvider {
+  private client: SupabaseClient;
+  private connectionValidated: boolean = false;
+  private lastValidationTime: number = 0;
+  private readonly VALIDATION_TTL = 30000; // 30 seconds
+
+  constructor() {
+    this.client = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+  }
+
+  /**
+   * Validate database connection before proceeding with operations
+   */
+  public async validateConnection(): Promise<{ success: boolean; error?: Error }> {
+    try {
+      // Check if we have a recent validation
+      const now = Date.now();
+      if (this.connectionValidated && (now - this.lastValidationTime) < this.VALIDATION_TTL) {
+        storageLogger.debug('Using cached database validation');
+        return { success: true };
+      }
+
+      // Simple query to validate connection
+      const { error } = await this.client.from('transaction_records').select('count(*)', { count: 'exact', head: true });
+      
+      if (error) {
+        this.connectionValidated = false;
+        storageLogger.error('Database connection validation failed', new Error(error.message));
+        return { success: false, error: new Error(error.message) };
+      }
+
+      // Cache successful validation
+      this.connectionValidated = true;
+      this.lastValidationTime = now;
+      storageLogger.debug('Database connection validated successfully');
+      return { success: true };
+    } catch (error) {
+      this.connectionValidated = false;
+      const err = error instanceof Error ? error : new Error(String(error));
+      storageLogger.error('Database connection validation failed', err);
+      return { success: false, error: err };
+    }
+  }
+
+  /**
+   * Get cached validation status
+   */
+  private isConnectionValid(): boolean {
+    const now = Date.now();
+    return this.connectionValidated && (now - this.lastValidationTime) < this.VALIDATION_TTL;
+  }
+
   /**
    * Initialize a transaction record for a new payment
    */
   public async initializeTransaction(
     paymentSession: PaymentSession
   ): Promise<{ success: boolean; transactionId?: number; error?: PaymentError }> {
+    if (!this.isConnectionValid()) {
+      const validation = await this.validateConnection();
+      if (!validation.success) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.NETWORK_ERROR,
+            'Database connection validation failed',
+            validation.error,
+            true
+          )
+        };
+      }
+    }
+
     try {
       storageLogger.info('Initializing transaction', {
         paymentId: paymentSession.paymentId,
@@ -42,8 +113,8 @@ export class PaymentStorageProvider {
       
       if (!imageResult.success) {
         storageLogger.warn('Transaction initialized but failed to update image status', {
-          imageId,
-          error: imageResult.error instanceof Error ? imageResult.error : new Error(String(imageResult.error))
+          imageId: paymentSession.imageId,
+          error: imageResult.error
         });
         return {
           success: true,
@@ -181,7 +252,7 @@ export class PaymentStorageProvider {
       // Map transaction status to image status
       let status: PaymentStatus;
       
-      switch (record.transaction_status) {
+      switch (record.status) {
         case 'SUCCESS':
           status = PaymentStatus.CONFIRMED;
           break;

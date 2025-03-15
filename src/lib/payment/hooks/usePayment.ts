@@ -1,7 +1,7 @@
 // src/lib/payment/hooks/usePayment.ts
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import PaymentService from '../paymentService';
 import { 
@@ -25,19 +25,19 @@ export function usePayment() {
   const [error, setError] = useState<PaymentError | null>(null);
   const [successInfo, setSuccessInfo] = useState<PaymentStatusResponse | null>(null);
   
-  // Create payment service
-  const paymentService = new PaymentService({
+  // Create payment service with useMemo to prevent multiple instances
+  const paymentService = useMemo(() => new PaymentService({
     publicKey: wallet.publicKey,
     signTransaction: wallet.signTransaction,
     connected: wallet.connected
-  });
+  }), [wallet.publicKey, wallet.signTransaction, wallet.connected]);
   
   // Clean up resources when component unmounts
   useEffect(() => {
     return () => {
       paymentService.dispose();
     };
-  }, []);
+  }, [paymentService]); // Add paymentService to dependency array since we're using it in cleanup
   
   /**
    * Initialize a new payment
@@ -48,126 +48,98 @@ export function usePayment() {
   ) => {
     try {
       if (!wallet.connected) {
-        setError({
-          category: ErrorCategory.WALLET_ERROR,
-          message: 'Wallet not connected',
-          retryable: false
-        });
-        return null;
+        paymentLogger.error('Failed to initialize payment:', new Error('Wallet not connected'));
+        throw new Error('Wallet not connected');
       }
-      
+
+      setError(null);
       const response = await paymentService.initializePayment(amount, metadata);
       
-      if (response.status === PaymentStatus.FAILED) {
-        setError(response.error || null);
+      if (response.error) {
+        setError(response.error);
         return null;
       }
       
       setPaymentId(response.paymentId);
       setPaymentStatus(response.status);
-      setError(null);
-      
-      return response.paymentId;
-    } catch (error) {
+      return response;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       paymentLogger.error('Failed to initialize payment:', error);
       setError({
         category: ErrorCategory.UNKNOWN_ERROR,
-        message: 'Payment initialization failed',
-        retryable: true,
-        originalError: error
+        message: 'Failed to initialize payment',
+        retryable: true
       });
       return null;
     }
   }, [wallet.connected, paymentService]);
   
   /**
-   * Process a payment
+   * Process the current payment
    */
-  const processPayment = useCallback(async (paymentIdToProcess?: string) => {
-    const currentPaymentId = paymentIdToProcess || paymentId;
-    
-    if (!currentPaymentId) {
-      setError({
-        category: ErrorCategory.UNKNOWN_ERROR,
-        message: 'No payment ID provided',
-        retryable: false
-      });
-      return false;
+  const processPayment = useCallback(async () => {
+    if (!paymentId) {
+      const error = new Error('No active payment to process');
+      paymentLogger.error('Failed to process payment:', error);
+      return;
     }
-    
+
     try {
       setIsProcessing(true);
       setError(null);
       
-      const response = await paymentService.processPayment(currentPaymentId);
+      const response = await paymentService.processPayment(paymentId);
       
-      // Update status
-      setPaymentStatus(response.status);
-      
-      if (response.status === PaymentStatus.FAILED) {
-        setError(response.error || null);
-        setIsProcessing(false);
-        return false;
-      }
-      
-      if (response.status === PaymentStatus.CONFIRMED) {
-        setSuccessInfo(response);
-        setIsProcessing(false);
-        return true;
-      }
-      
-      // Handle pending state (e.g., user rejection)
       if (response.error) {
         setError(response.error);
+        setPaymentStatus(response.status);
+        return;
       }
       
-      setIsProcessing(false);
-      return false;
-    } catch (error) {
+      setPaymentStatus(response.status);
+      setSuccessInfo(response);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       paymentLogger.error('Failed to process payment:', error);
       setError({
         category: ErrorCategory.UNKNOWN_ERROR,
-        message: 'Payment processing failed',
-        retryable: true,
-        originalError: error
+        message: 'Failed to process payment',
+        retryable: true
       });
+    } finally {
       setIsProcessing(false);
-      return false;
     }
   }, [paymentId, paymentService]);
   
   /**
-   * Cancel a payment
+   * Cancel the current payment
    */
-  const cancelPayment = useCallback(async (paymentIdToCancel?: string) => {
-    const currentPaymentId = paymentIdToCancel || paymentId;
-    
-    if (!currentPaymentId) {
-      return false;
+  const cancelPayment = useCallback(async () => {
+    if (!paymentId) {
+      const error = new Error('No active payment to cancel');
+      paymentLogger.error('Failed to cancel payment:', error);
+      return;
     }
-    
+
     try {
-      const result = await paymentService.cancelPayment(currentPaymentId);
+      const result = await paymentService.cancelPayment(paymentId);
       
-      if (result.success) {
-        setPaymentId(null);
-        setPaymentStatus(null);
-        setError(null);
-        setSuccessInfo(null);
-        return true;
-      } else {
-        setError(result.error || null);
-        return false;
+      if (result.error) {
+        setError(result.error);
+        return;
       }
-    } catch (error) {
+      
+      setPaymentStatus(PaymentStatus.CANCELED);
+      setPaymentId(null);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       paymentLogger.error('Failed to cancel payment:', error);
       setError({
         category: ErrorCategory.UNKNOWN_ERROR,
-        message: 'Payment cancellation failed',
-        retryable: true,
-        originalError: error
+        message: 'Failed to cancel payment',
+        retryable: true
       });
-      return false;
     }
   }, [paymentId, paymentService]);
   

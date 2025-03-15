@@ -1,4 +1,4 @@
-// src/utils/apiErrorHandler.ts
+// src/utils/ap iErrorHandler.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { apiLogger } from '@/utils/logger/index';
 
@@ -72,10 +72,13 @@ export function createApiError(
     ...(finalRequestId ? { requestId: finalRequestId } : {})
   };
   
-  // Log the error
-  apiLogger.error(`API Error [${type}]: ${message}`, {
-    code: errorResponse.code,
+  // Create an error object for logging
+  const errorObj = new Error(message);
+  
+  // Log the error with proper parameters
+  apiLogger.error(`API Error [${type}]`, errorObj, {
     status,
+    responseCode: errorResponse.code,
     details: details || {},
     requestId: finalRequestId
   });
@@ -86,16 +89,15 @@ export function createApiError(
 /**
  * Handles unexpected errors in API routes
  */
-export function handleApiError(error: unknown, context?: Record<string, any>) {
+export function handleApiError(error: unknown, context?: Record<string, any>): NextResponse {
   const err = error instanceof Error ? error : new Error(String(error));
   apiLogger.error('API error occurred', err, context);
   
-  return {
-    error: {
-      message: err.message,
-      ...(context || {})
-    }
-  };
+  return NextResponse.json({
+    success: false,
+    error: err.message,
+    ...(context ? { context } : {})
+  }, { status: 500 });
 }
 
 /**
@@ -106,7 +108,7 @@ export function withErrorHandling(handler: (req: NextRequest) => Promise<NextRes
     try {
       return await handler(req);
     } catch (error) {
-      return handleApiError(error, req);
+      return handleApiError(error, { path: req.nextUrl.pathname });
     }
   };
 }

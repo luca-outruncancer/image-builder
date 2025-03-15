@@ -125,10 +125,16 @@ export class PaymentService {
       const dbResult = await this.storageProvider.initializeTransaction(paymentSession);
       
       if (!dbResult.success) {
-        const error = dbResult.error instanceof Error ? dbResult.error : new Error(String(dbResult.error));
-        paymentLogger.error('Failed to initialize payment in database', error, {
+        const err = dbResult.error instanceof Error ? dbResult.error : new Error(String(dbResult.error));
+        const paymentError: PaymentError = {
+          category: ErrorCategory.NETWORK_ERROR,
+          message: 'Failed to initialize payment in database',
+          retryable: true,
+          originalError: err
+        };
+        paymentLogger.error('Failed to initialize payment in database', err, {
           ...context,
-          walletAddress: this.wallet.publicKey.toString()
+          error: paymentError
         });
         
         this.activePayments.delete(paymentId);
@@ -136,12 +142,7 @@ export class PaymentService {
         return {
           paymentId,
           status: PaymentStatus.FAILED,
-          error: createPaymentError(
-            ErrorCategory.DATABASE_ERROR,
-            'Failed to initialize payment in database',
-            error,
-            false
-          )
+          error: paymentError
         };
       }
       
@@ -174,91 +175,69 @@ export class PaymentService {
   public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
     const context = { paymentId, requestId: this.requestId };
     
-    paymentLogger.info('Processing payment', context);
-    
     try {
-      // Clean up any session data to ensure fresh transaction
-      clearSessionBlockhashData();
-      
-      // Check if payment exists
+      // Get payment session
       const paymentSession = this.activePayments.get(paymentId);
       if (!paymentSession) {
-        paymentLogger.error('Payment session not found', undefined, {
-          ...context,
-          activeSessionsIds: Array.from(this.activePayments.keys())
-        });
-        
-        return {
-          paymentId,
-          status: PaymentStatus.FAILED,
-          error: createPaymentError(
-            ErrorCategory.UNKNOWN_ERROR,
-            'Payment session not found',
-            undefined,
-            false
-          )
-        };
+        const error = new Error('Payment session not found');
+        paymentLogger.error('Payment session not found', error, context);
+        throw error;
       }
-      
-      // Update payment status
+
+      // Log payment attempt
+      paymentLogger.info('Processing payment', {
+        ...context,
+        attempt: paymentSession.attempts + 1,
+        walletAddress: paymentSession.walletAddress
+      });
+
+      // Update session status to processing
       paymentSession.status = PaymentStatus.PROCESSING;
       paymentSession.attempts += 1;
       paymentSession.updatedAt = new Date().toISOString();
       this.activePayments.set(paymentId, paymentSession);
-      
-      paymentLogger.debug('Payment updated to PROCESSING status', {
-        ...context,
-        attempt: paymentSession.attempts,
-        imageId: paymentSession.imageId,
+
+      // Create payment request
+      const request: PaymentRequest = {
         amount: paymentSession.amount,
-        token: paymentSession.token,
-        transactionId: paymentSession.transactionId,
-        walletAddress: paymentSession.walletAddress
-      });
-      
-      // Update database status
-      if (paymentSession.transactionId) {
-        await this.storageProvider.updateTransactionStatus(
-          paymentSession.transactionId,
-          PaymentStatus.PROCESSING
-        );
-      }
-      
-      // Create payment request object
-      const paymentRequest: PaymentRequest = {
-        amount: paymentSession.amount,
-        token: paymentSession.token,
         recipientWallet: paymentSession.recipientWallet,
-        metadata: { 
-          ...paymentSession.metadata,
-          paymentId // Make sure the payment ID is included
+        token: paymentSession.token,
+        metadata: {
+          paymentId,
+          ...paymentSession.metadata
         }
       };
-      
-      paymentLogger.info('Sending payment request to blockchain', {
-        ...context,
-        token: paymentRequest.token,
-        amount: paymentRequest.amount,
-        recipient: paymentRequest.recipientWallet.substring(0, 8) + "...",
-        imageId: paymentRequest.metadata.imageId,
-        walletAddress: paymentSession.walletAddress
-      });
-      
-      // Get token mint address if needed
-      const mintAddress = paymentSession.token === 'SOL' ? null : getMintAddress();
-      
-      // Process the payment
-      const result = await this.paymentProvider.processPayment(paymentRequest, mintAddress);
-      paymentLogger.info('Payment blockchain result received', {
-        ...context,
-        success: result.success,
-        hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
-        reused: result.reused || false,
-        errorCategory: result.error ? result.error.category : "none"
-      });
-      
-      // Handle the result
-      return await this.handlePaymentResult(paymentId, result);
+
+      // Process the payment - database validation is now handled by storage provider
+      const result = await this.paymentProvider.processPayment(
+        request,
+        paymentSession.token === 'SOL' ? null : getMintAddress()
+      );
+
+      // If successful, update database after confirmation
+      if (result.success && result.transactionHash) {
+        paymentLogger.info('Payment successful, updating database', {
+          ...context,
+          transactionHash: result.transactionHash
+        });
+
+        // Update session first
+        paymentSession.status = PaymentStatus.CONFIRMED;
+        paymentSession.transactionHash = result.transactionHash;
+        paymentSession.updatedAt = new Date().toISOString();
+        this.activePayments.set(paymentId, paymentSession);
+
+        // Then update database
+        if (paymentSession.transactionId) {
+          await this.storageProvider.updateTransactionStatus(
+            paymentSession.transactionId,
+            PaymentStatus.CONFIRMED,
+            result.transactionHash
+          );
+        }
+      }
+
+      return this.handlePaymentResult(paymentId, result);
     } catch (error) {
       // Special handling for "Transaction already processed" errors
       if (isTxAlreadyProcessedError(error)) {
@@ -356,55 +335,21 @@ export class PaymentService {
     paymentId: string,
     result: TransactionResult
   ): Promise<PaymentStatusResponse> {
-    const context = { 
-      paymentId,
-      success: result.success,
-      hash: result.transactionHash ? (result.transactionHash.substring(0, 8) + "...") : "none",
-      requestId: this.requestId
-    };
-    
-    paymentLogger.info('Handling payment result', context);
-    
+    const context = { paymentId, requestId: this.requestId };
     const paymentSession = this.activePayments.get(paymentId);
+
     if (!paymentSession) {
-      paymentLogger.error('Payment session not found when handling result', undefined, context);
-      return {
-        paymentId,
-        status: PaymentStatus.FAILED,
-        error: createPaymentError(
-          ErrorCategory.UNKNOWN_ERROR,
-          'Payment session not found',
-          undefined,
-          false
-        )
-      };
+      paymentLogger.error('Payment session not found in handlePaymentResult', undefined, context);
+      throw new Error('Payment session not found');
     }
-    
+
     if (result.success) {
-      // Payment successful
       paymentLogger.info('Payment successful', {
         ...context,
+        transactionHash: result.transactionHash,
         walletAddress: paymentSession.walletAddress
       });
-      
-      paymentSession.status = PaymentStatus.CONFIRMED;
-      paymentSession.transactionHash = result.transactionHash;
-      paymentSession.updatedAt = new Date().toISOString();
-      this.activePayments.set(paymentId, paymentSession);
-      
-      // Update database
-      if (paymentSession.transactionId) {
-        await this.storageProvider.updateTransactionStatus(
-          paymentSession.transactionId,
-          PaymentStatus.CONFIRMED,
-          result.transactionHash,
-          result.blockchainConfirmation
-        );
-      }
-      
-      // Clear timeout
-      this.clearPaymentTimeout(paymentId);
-      
+
       return {
         paymentId,
         status: PaymentStatus.CONFIRMED,
@@ -412,7 +357,6 @@ export class PaymentService {
         metadata: paymentSession.metadata,
         amount: paymentSession.amount,
         token: paymentSession.token,
-        timestamp: paymentSession.updatedAt,
         attempts: paymentSession.attempts
       };
     } else {

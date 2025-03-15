@@ -184,10 +184,6 @@ export async function processSolPayment(
     transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = walletConfig.publicKey;
     
-    // Get fresh blockhash before sending
-    const freshBlockhash = await connection.getLatestBlockhash('confirmed');
-    transaction.recentBlockhash = freshBlockhash.blockhash;
-    
     // Sign transaction with fresh blockhash
     let signedTransaction;
     try {
@@ -228,9 +224,29 @@ export async function processSolPayment(
     // Send transaction
     let signature: string | undefined;
     try {
+      // Get fresh blockhash right before sending
+      const finalBlockhash = await connection.getLatestBlockhash('confirmed');
+      
+      // Update transaction with fresh blockhash
+      signedTransaction.recentBlockhash = finalBlockhash.blockhash;
+      
+      // Log detailed transaction info before sending
+      blockchainLogger.debug('Pre-send transaction details', {
+        nonce,
+        originalBlockhash: transaction.recentBlockhash,
+        finalBlockhash: finalBlockhash.blockhash,
+        lastValidBlockHeight: finalBlockhash.lastValidBlockHeight,
+        numInstructions: transaction.instructions.length,
+        signers: transaction.signatures.map(s => s.publicKey.toString()),
+        serializedSize: signedTransaction.serialize().length,
+        paymentId,
+        timestamp: new Date().toISOString()
+      });
+
       // Clear any cached transaction data before sending
       clearSessionBlockhashData();
       
+      // Send immediately after getting fresh blockhash
       signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
         skipPreflight: false,
         preflightCommitment: 'confirmed'
@@ -238,14 +254,15 @@ export async function processSolPayment(
       
       blockchainLogger.info('Transaction sent', {
         signature,
-        paymentId
+        paymentId,
+        nonce
       });
       
-      // Wait for confirmation
+      // Wait for confirmation with the final blockhash
       const confirmation = await connection.confirmTransaction({
         signature,
-        blockhash: freshBlockhash.blockhash,
-        lastValidBlockHeight: freshBlockhash.lastValidBlockHeight
+        blockhash: finalBlockhash.blockhash,
+        lastValidBlockHeight: finalBlockhash.lastValidBlockHeight
       });
       
       blockchainLogger.info('Transaction confirmed', {

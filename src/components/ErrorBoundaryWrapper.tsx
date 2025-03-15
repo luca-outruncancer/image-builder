@@ -3,8 +3,11 @@
 import dynamic from 'next/dynamic';
 import React from 'react';
 
-// Dynamic import for ErrorBoundary
-const ErrorBoundary = dynamic(() => import('./ErrorBoundary'), { ssr: false });
+// Dynamic import for ErrorBoundary with proper type handling
+const ErrorBoundary = dynamic(
+  () => import('./ErrorBoundary').then((mod) => mod.ErrorBoundary),
+  { ssr: false }
+);
 
 interface ErrorBoundaryWrapperProps {
   children: React.ReactNode;
