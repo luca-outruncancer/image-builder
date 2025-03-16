@@ -7,6 +7,14 @@ import Header from '@/components/layout/Header';
 import { cn } from '@/lib/utils';
 import Providers from './providers';
 import ErrorBoundaryWrapper from '@/components/ErrorBoundaryWrapper';
+import { ensureServerInitialized } from '@/lib/server/init';
+
+// Initialize server-side modules
+if (typeof window === 'undefined') {
+  ensureServerInitialized().catch(error => {
+    console.error('Failed to initialize server:', error);
+  });
+}
 
 const inter = Inter({ subsets: ['latin'] });
 

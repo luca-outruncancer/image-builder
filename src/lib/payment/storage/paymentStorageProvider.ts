@@ -8,24 +8,27 @@ import { transactionRepository } from './transactionRepository';
 import { imageRepository } from './imageRepository';
 import { statusMapper } from './statusMapper';
 import { storageLogger } from '@/utils/logger';
-import { createClient } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseClient } from '@/lib/supabase';
 
 /**
  * PaymentStorageProvider handles database operations for payments
  * This is a facade that coordinates between repositories
  */
 export class PaymentStorageProvider {
-  private client: SupabaseClient;
   private connectionValidated: boolean = false;
   private lastValidationTime: number = 0;
   private readonly VALIDATION_TTL = 30000; // 30 seconds
 
   constructor() {
-    this.client = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    // No longer initializing Supabase here - using the shared client
+  }
+
+  /**
+   * Get the Supabase client
+   */
+  private getClient(): SupabaseClient | null {
+    return getSupabaseClient();
   }
 
   /**
@@ -40,8 +43,16 @@ export class PaymentStorageProvider {
         return { success: true };
       }
 
+      const client = this.getClient();
+      if (!client) {
+        return { 
+          success: false, 
+          error: new Error('Supabase client not initialized') 
+        };
+      }
+
       // Simple query to validate connection
-      const { error } = await this.client.from('transaction_records').select('count(*)', { count: 'exact', head: true });
+      const { error } = await client.from('transaction_records').select('count(*)', { count: 'exact', head: true });
       
       if (error) {
         this.connectionValidated = false;

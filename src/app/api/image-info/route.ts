@@ -2,21 +2,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { apiLogger } from '@/utils/logger';
+import { findImageAtPosition, refreshImageCacheIfNeeded } from '@/lib/server/imageCache';
 
 /**
  * API to fetch image information for a specific position on the canvas
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check database connection
-    if (!supabase) {
-      apiLogger.error('Database connection not available');
-      return NextResponse.json(
-        { error: 'Database connection not available' },
-        { status: 500 }
-      );
-    }
-    
     // Parse request body
     const body = await request.json();
     
@@ -34,6 +26,56 @@ export async function POST(request: NextRequest) {
     
     apiLogger.info('Looking up position', { x, y });
     
+    // Refresh cache if needed
+    await refreshImageCacheIfNeeded();
+    
+    // Try to find the image in the cache first
+    const cachedImage = findImageAtPosition(x, y);
+    
+    if (cachedImage) {
+      apiLogger.info('Found matching image in cache', { image: cachedImage });
+      
+      const { 
+        image_id,
+        image_location,
+        start_position_x,
+        start_position_y,
+        size_x,
+        size_y,
+        status,
+        sender_wallet,
+        created_at,
+        updated_at
+      } = cachedImage;
+            
+      return NextResponse.json({
+        success: true,
+        wallet: sender_wallet || "Unknown",
+        imageId: image_id,
+        image_location,
+        position: {
+          x: start_position_x,
+          y: start_position_y,
+          width: size_x,
+          height: size_y,
+          clickedX: x,
+          clickedY: y
+        },
+        status,
+        createdAt: created_at,
+        updatedAt: updated_at
+      });
+    }
+    
+    // If not in cache, fall back to database query
+    if (!supabase) {
+      apiLogger.error('Database connection not available');
+      return NextResponse.json(
+        { error: 'Database connection not available' },
+        { status: 500 }
+      );
+    }
+    
     // Execute the stored procedure to find images at this position
     const { data, error } = await supabase.rpc('find_image_at_position', { 
       x_pos: x, 
@@ -50,7 +92,7 @@ export async function POST(request: NextRequest) {
     
     if (data && data.length > 0) {
       const matchingImage = data[0]; // Get the most recent one if multiple
-      apiLogger.info('Found matching image', { image: matchingImage });
+      apiLogger.info('Found matching image in database', { image: matchingImage });
       
       const { 
         image_id,

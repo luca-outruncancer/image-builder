@@ -145,7 +145,7 @@ export function useCanvasState(): CanvasState {
         setIsLoadingImages(true);
         canvasLogger.info('Fetching placed images from database');
         
-        // Get images with status 1 (confirmed) or 2 (pending payment)
+        // Get images with status CONFIRMED
         const { success, data: records, error } = await getPlacedImages();
         
         if (success && records && Array.isArray(records)) {
@@ -166,13 +166,38 @@ export function useCanvasState(): CanvasState {
           }));
           setPlacedImages(loadedImages);
         } else {
-          canvasLogger.warn('No image records found or invalid records format', { error });
-          setPlacedImages([]);
+          canvasLogger.warn('No image records found or invalid records format', { 
+            success, 
+            error,
+            recordsExist: !!records,
+            isArray: Array.isArray(records)
+          });
+          
+          // If there's an error with Supabase, retry after a delay
+          if (error && error.message && (
+              error.message.includes('Failed to fetch') || 
+              error.message.includes('network') ||
+              error.message.includes('Database client not available')
+            )) {
+            canvasLogger.info('Will retry loading images in 2 seconds');
+            setTimeout(() => {
+              canvasLogger.info('Retrying image load');
+              loadPlacedImages();
+            }, 2000);
+          } else {
+            setPlacedImages([]);
+          }
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         canvasLogger.error('Failed to load placed images', err);
-        setPlacedImages([]);
+        
+        // Retry after a delay for any error
+        canvasLogger.info('Will retry loading images in 3 seconds after error');
+        setTimeout(() => {
+          canvasLogger.info('Retrying image load after error');
+          loadPlacedImages();
+        }, 3000);
       } finally {
         setIsLoadingImages(false);
       }

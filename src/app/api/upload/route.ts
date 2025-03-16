@@ -10,6 +10,7 @@ import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
 import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErrorHandler';
 import { imageLogger } from '@/utils/logger/index';
 import { PaymentStatus } from '@/lib/payment/types';
+import { updateImageInCache } from '@/lib/server/imageCache';
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const requestId = request.headers.get('x-request-id') || 'unknown';
@@ -251,9 +252,34 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         });
       }
       
-      imageLogger.info(`[Upload:${uploadId}] Upload process complete. ImageID: ${imageRecord.image_id}`, { requestId });
+      // Update the image cache with the new image
+      try {
+        updateImageInCache({
+          image_id: imageRecord.image_id,
+          image_location: publicUrl,
+          start_position_x: position.x,
+          start_position_y: position.y,
+          size_x: size.width,
+          size_y: size.height,
+          status: PaymentStatus.INITIALIZED,
+          sender_wallet: walletAddress,
+          created_at: imageRecord.created_at,
+          payment_attempts: 0
+        });
+        
+        imageLogger.debug(`[Upload:${uploadId}] Updated image cache with new image`, { 
+          imageId: imageRecord.image_id,
+          requestId
+        });
+      } catch (cacheError) {
+        // Non-critical error, just log it
+        imageLogger.warn(`[Upload:${uploadId}] Failed to update image cache`, cacheError, { 
+          imageId: imageRecord.image_id,
+          requestId
+        });
+      }
       
-      // Return success with optimization info
+      // Return success with the image record
       return NextResponse.json({
         success: true,
         url: publicUrl,
@@ -262,8 +288,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
           originalSize: resizeResult.originalSize,
           finalSize: resizeResult.resizedSize,
           format: resizeResult.format,
-          processingTimeMs: resizeResult.processingTimeMs,
-          compressionRatio: parseFloat((resizeResult.originalSize / resizeResult.resizedSize).toFixed(2)),
+          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
           storedSize: `${storageWidth}x${storageHeight}`,
           displaySize: `${size.width}x${size.height}`
         },

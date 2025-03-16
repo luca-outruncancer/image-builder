@@ -8,6 +8,7 @@ import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
 import SelectionMagnifier from './SelectionMagnifier';
+import CanvasDebug from './CanvasDebug';
 
 // Define the wallet info interface
 interface WalletInfo {
@@ -157,6 +158,9 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
           onDone={handleDone}
         />
       )}
+      
+      {/* Debug component */}
+      <CanvasDebug />
     </div>
   );
 }
