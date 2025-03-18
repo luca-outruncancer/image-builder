@@ -9,14 +9,19 @@ import { ACTIVE_NETWORK } from '@/utils/constants';
 
 // Determine the correct RPC endpoint based on environment
 const getRpcEndpoint = () => {
-  // ACTIVE_NETWORK is WalletAdapterNetwork.Devnet in constants.ts
-  const network = String(ACTIVE_NETWORK).toLowerCase();
+  // Use the network from constants, ensuring it's compared as a string
+  const network = String(ACTIVE_NETWORK);
   
-  if (network.includes('mainnet')) {
+  // Compare as strings to avoid TypeScript errors
+  if (network === 'mainnet-beta' || network === 'mainnet') {
     return 'https://api.mainnet-beta.solana.com';
-  } else if (network.includes('devnet')) {
+  } else if (network === 'devnet') {
     return 'https://api.devnet.solana.com';
+  } else if (network === 'testnet') {
+    return 'https://api.testnet.solana.com';
   } else {
+    // For any other network or custom networks
+    apiLogger.debug('Using default devnet endpoint, network was:', { network });
     return 'https://api.devnet.solana.com'; // Default to devnet
   }
 };

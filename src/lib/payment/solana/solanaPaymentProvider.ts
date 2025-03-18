@@ -22,7 +22,7 @@ import {
 } from '../utils';
 import { processSolPayment } from './solPaymentProcessor';
 import { processTokenPayment } from './tokenPaymentProcessor';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -74,7 +74,7 @@ export class SolanaPaymentProvider {
       
       const connection = new Connection(RPC_ENDPOINT, {
         commitment,
-        confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
       });
       
       return connection;

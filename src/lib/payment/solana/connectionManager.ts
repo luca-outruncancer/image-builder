@@ -2,111 +2,92 @@
 import { Connection, Commitment, TransactionSignature } from '@solana/web3.js';
 import { ErrorCategory } from '../types';
 import { createPaymentError } from '../utils/errorUtils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
- * ConnectionManager handles all Solana RPC connection functionality
+ * Manager for Solana RPC connections with fallback support
  */
 export class ConnectionManager {
-  private primaryConnection: Connection;
-  private fallbackConnections: Connection[] = [];
-  private currentConnection: Connection;
-  
-  constructor() {
-    this.primaryConnection = this.createConnection();
-    this.currentConnection = this.primaryConnection;
-    
-    // Initialize fallback connections
-    if (FALLBACK_ENDPOINTS && FALLBACK_ENDPOINTS.length > 0) {
-      this.fallbackConnections = FALLBACK_ENDPOINTS.map(endpoint => 
-        this.createConnection()
-      );
-    }
-  }
+  private connections: Map<string, Connection> = new Map();
   
   /**
-   * Create a Solana connection with custom configuration
+   * Get or create a connection for a specific endpoint and commitment
    */
-  private createConnection(): Connection {
-    const commitment: Commitment = 'confirmed';
+  getConnection(endpoint: string = RPC_ENDPOINT, commitment: Commitment = 'confirmed'): Connection {
+    const key = `${endpoint}-${commitment}`;
     
-    try {
-      if (!RPC_ENDPOINT) {
-        throw new Error('No RPC endpoint configured');
-      }
-      
-      const connection = new Connection(RPC_ENDPOINT, {
+    if (!this.connections.has(key)) {
+      const connection = new Connection(endpoint, {
         commitment,
-        confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
       });
       
-      return connection;
-    } catch (error) {
-      blockchainLogger.error('Failed to create Solana connection:', error);
-      throw createPaymentError(
-        ErrorCategory.NETWORK_ERROR,
-        'Connection initialization failed',
-        error,
-        true
-      );
+      this.connections.set(key, connection);
+      blockchainLogger.debug('Created new connection', { endpoint, commitment });
     }
+    
+    return this.connections.get(key)!;
   }
   
   /**
-   * Get the current connection
+   * Try to confirm a transaction with multiple endpoints if needed
    */
-  public getConnection(): Connection {
-    return this.currentConnection;
-  }
-  
-  /**
-   * Verify if a transaction has already been processed successfully
-   */
-  public async verifyTransaction(
-    signature: TransactionSignature
+  async confirmTransaction(
+    signature: TransactionSignature,
+    commitment: Commitment = 'confirmed'
   ): Promise<boolean> {
+    // Start with the main endpoint
     try {
-      blockchainLogger.info(`Verifying transaction signature: ${signature}`);
-      const status = await this.currentConnection.getSignatureStatus(signature);
+      const connection = this.getConnection(RPC_ENDPOINT, commitment);
+      const result = await connection.confirmTransaction(signature, commitment);
       
-      // If we have a confirmation, the transaction succeeded
-      if (status && status.value && !status.value.err) {
-        blockchainLogger.info(`Transaction verified: ${signature} was SUCCESSFUL`);
-        return true;
+      if (result.value.err) {
+        blockchainLogger.warn('Transaction confirmed with error', new Error(String(result.value.err)));
+        return false;
       }
       
-      blockchainLogger.info(`Transaction verified: ${signature} was NOT successful`, {
-        status: status?.value || null
-      });
-      return false;
+      return true;
     } catch (error) {
-      blockchainLogger.error('Error verifying transaction:', error, {
-        signature
-      });
+      blockchainLogger.warn('Failed to confirm transaction with primary endpoint', error instanceof Error ? error : new Error(String(error)));
       
-      // Try fallback connections if available
-      if (this.fallbackConnections.length > 0) {
+      // Try with fallback endpoints
+      for (const fallbackEndpoint of FALLBACK_ENDPOINTS) {
         try {
-          // Switch to a fallback connection
-          const fallback = this.fallbackConnections[0];
-          this.currentConnection = fallback;
+          const connection = this.getConnection(fallbackEndpoint, commitment);
+          const result = await connection.confirmTransaction(signature, commitment);
           
-          // Retry with the fallback
-          const status = await fallback.getSignatureStatus(signature);
-          if (status && status.value && !status.value.err) {
-            blockchainLogger.info(`Transaction verified on fallback: ${signature} was SUCCESSFUL`);
-            return true;
+          if (result.value.err) {
+            blockchainLogger.warn('Transaction confirmed with error on fallback', new Error(String(result.value.err)));
+            return false;
           }
+          
+          blockchainLogger.info('Successfully confirmed transaction with fallback endpoint', {
+            endpoint: fallbackEndpoint,
+            signature
+          });
+          
+          return true;
         } catch (fallbackError) {
-          blockchainLogger.error('Error verifying transaction on fallback:', fallbackError);
-        } finally {
-          // Switch back to primary
-          this.currentConnection = this.primaryConnection;
+          blockchainLogger.warn('Failed to confirm transaction with fallback endpoint', 
+            fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)), 
+            { endpoint: fallbackEndpoint }
+          );
         }
       }
       
-      return false;
+      // All endpoints failed
+      blockchainLogger.error('Failed to confirm transaction with all endpoints', 
+        error instanceof Error ? error : new Error(String(error)), 
+        { signature }
+      );
+      
+      throw createPaymentError(
+        ErrorCategory.BLOCKCHAIN_ERROR,
+        'Failed to confirm transaction with all endpoints',
+        error instanceof Error ? error : new Error(String(error)),
+        true
+      );
     }
   }
 }

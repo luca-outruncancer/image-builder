@@ -28,7 +28,7 @@ import {
   extractSignatureFromError,
   clearSessionBlockhashData
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
@@ -68,8 +68,9 @@ export async function processSolPayment(
     
     // Create connection to Solana
     const connection = new Connection(RPC_ENDPOINT, {
-      commitment: 'confirmed' as Commitment,
-      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+      commitment: 'confirmed',
+      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      disableRetryOnRateLimit: false
     });
     
     // Check SOL balance
@@ -599,7 +600,8 @@ export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balan
     // Create connection
     const connection = new Connection(RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      disableRetryOnRateLimit: false
     });
     
     // Get SOL balance

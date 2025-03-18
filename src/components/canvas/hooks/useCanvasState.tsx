@@ -608,8 +608,8 @@ export function useCanvasState(): CanvasState {
         }
         
         // Clean up on successful payment
-        canvasLogger.info("Payment successful, refreshing page...");
-        window.location.reload();
+        canvasLogger.info("Payment successful, skipping page refresh for debugging");
+        // window.location.reload(); // Temporarily commented out for debugging verification request
       } catch (processingError) {
         const err = processingError instanceof Error ? processingError : new Error(String(processingError));
         canvasLogger.error("Error during payment processing", err);

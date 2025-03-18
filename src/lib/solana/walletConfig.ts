@@ -34,7 +34,7 @@ export const FALLBACK_ENDPOINTS = process.env.NEXT_PUBLIC_SOLANA_FALLBACK_URLS
 // Connection settings
 export const CONNECTION_TIMEOUT = 30000; // 30 seconds
 
-// Set connection timeouts
+// Set confirmation timeouts
 export const CONFIRMATION_TIMEOUT = 60000; // 60 seconds 
 
 // Set RPC retry attempts

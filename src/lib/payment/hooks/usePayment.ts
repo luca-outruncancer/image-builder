@@ -253,8 +253,32 @@ export function usePayment() {
         return false;
       }
       
+      console.log('===== DEBUG: SETTING SUCCESS INFO =====');
+      console.log('Payment response:', {
+        paymentId: response.paymentId,
+        status: response.status,
+        transactionHash: response.transactionHash
+      });
+      
+      // Set payment status before success info to ensure order
       setPaymentStatus(response.status);
-      setSuccessInfo(response);
+      
+      // Set success info with extra debugging
+      try {
+        console.log('Setting successInfo state with:', response);
+        setSuccessInfo(response);
+        console.log('Successfully set successInfo state');
+        
+        // Add timeout to check if state persists
+        setTimeout(() => {
+          console.log('===== DEBUG: SUCCESS INFO STATE CHECK (500ms later) =====');
+          // We can't directly access the successInfo state here, 
+          // but we can log that this timeout fired
+          console.log('Timeout check executed - successInfo should still be set');
+        }, 500);
+      } catch (err) {
+        console.error('Error setting successInfo state:', err);
+      }
       
       // If payment was successful or failed, clean up localStorage
       if (
@@ -262,12 +286,49 @@ export function usePayment() {
         response.status === PaymentStatus.FAILED || 
         response.status === PaymentStatus.CANCELED
       ) {
+        console.log('===== DEBUG: PAYMENT CLEANUP =====');
+        console.log('Payment status triggering cleanup:', response.status);
+        console.log('Before cleanup - localStorage keys:', {
+          paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
+          paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
+          paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
+          transactionId: localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID)
+        });
+        
         if (typeof window !== 'undefined') {
-          localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
-          localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
-          localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
-          localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+          try {
+            // Try to get mapping key for this payment
+            const paymentIdMapping = `payment_mapping_${response.paymentId}`;
+            const hasMappingKey = localStorage.getItem(paymentIdMapping) !== null;
+            
+            // Remove all items
+            localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
+            localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
+            localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
+            localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+            
+            // Also remove the mapping if it exists
+            if (hasMappingKey) {
+              localStorage.removeItem(paymentIdMapping);
+            }
+            
+            console.log('Cleanup completed - removed localStorage keys');
+            console.log('After cleanup - localStorage keys:', {
+              paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
+              paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
+              paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
+              transactionId: localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID),
+              mappingKey: paymentIdMapping,
+              mappingValue: localStorage.getItem(paymentIdMapping)
+            });
+          } catch (err) {
+            console.error('Error during localStorage cleanup:', err);
+          }
+        } else {
+          console.log('Window is undefined, skipping localStorage cleanup');
         }
+      } else {
+        console.log('Payment status does not trigger cleanup:', response.status);
       }
       
       return response.status === PaymentStatus.CONFIRMED;
