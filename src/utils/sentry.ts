@@ -1,11 +1,11 @@
 import * as Sentry from "@sentry/nextjs";
 import { Replay } from "@sentry/replay";
 import { LOGGING } from "./constants";
-import { walletLogger } from "./logger/index";
+import { systemLogger } from "./logger/index";
 
 export const initializeSentry = () => {
   if (!LOGGING.SENTRY.ENABLED || !LOGGING.SENTRY.DSN) {
-    walletLogger.info("Sentry is disabled or DSN is not configured");
+    systemLogger.info("Sentry is disabled or DSN is not configured");
     return;
   }
 
@@ -13,14 +13,13 @@ export const initializeSentry = () => {
     dsn: LOGGING.SENTRY.DSN,
     environment: LOGGING.SENTRY.ENVIRONMENT,
     tracesSampleRate: LOGGING.SENTRY.TRACES_SAMPLE_RATE,
-    replaysOnErrorSampleRate: LOGGING.SENTRY.REPLAYS_SAMPLE_RATE,
-    replaysSessionSampleRate: LOGGING.SENTRY.REPLAYS_SESSION_SAMPLE_RATE,
-    maxBreadcrumbs: LOGGING.SENTRY.MAX_BREADCRUMBS,
-    attachStacktrace: LOGGING.SENTRY.ATTACH_STACKTRACE,
-    normalizeDepth: LOGGING.SENTRY.NORMALIZE_DEPTH,
-    maxValueLength: LOGGING.SENTRY.MAX_VALUE_LENGTH,
+    replaysOnErrorSampleRate: LOGGING.SENTRY.REPLAY_ON_ERROR_SAMPLE_RATE,
+    replaysSessionSampleRate: LOGGING.SENTRY.REPLAY_SAMPLE_RATE,
+    maxBreadcrumbs: 100,
+    attachStacktrace: true,
+    normalizeDepth: 10,
+    maxValueLength: 1000,
     integrations: [
-      new Sentry.BrowserTracing(),
       new Replay({
         maskAllText: true,
         blockAllMedia: true,
