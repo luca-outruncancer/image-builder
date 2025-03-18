@@ -6,6 +6,8 @@ import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN, MAX_FILE_SIZE } from '@/utils/constants';
 import { useImageStore, type ImageToPlace } from '@/store/useImageStore';
 import { imageLogger } from '@/utils/logger';
+import { validateImage } from '@/utils/imageValidation';
+import { clearSessionBlockhashData } from '@/lib/payment/utils';
 
 interface ImageInfo {
   width?: number;
@@ -27,52 +29,46 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const [step, setStep] = useState<'select' | 'preview'>('select');
   const [imageInfo, setImageInfo] = useState<ImageInfo>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > MAX_FILE_SIZE) {
-        alert(`File size must be less than ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+    if (!file) return;
+
+    setError(null);
+    setIsValidating(true);
+    
+    try {
+      // Validate file and get dimensions
+      const result = await validateImage(file, true);
+      
+      if (!result.isValid) {
+        setError(result.error || 'Invalid file');
+        setSelectedFile(null);
+        setImageInfo({});
         return;
       }
-      if (!file.type.startsWith('image/')) {
-        alert('Only image files are allowed');
-        return;
+      
+      if (result.dimensions) {
+        setImageInfo({
+          width: result.dimensions.width,
+          height: result.dimensions.height,
+          format: file.type.split('/')[1]
+        });
       }
       
       setSelectedFile(file);
-      setIsLoadingMetadata(true);
-      
-      try {
-        // Get basic image metadata from server (just dimensions and format)
-        const response = await fetch('/api/image-metadata', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            filename: file.name,
-            size: file.size 
-          })
-        });
-        
-        if (response.ok) {
-          const metadata = await response.json();
-          if (metadata.success) {
-            setImageInfo({
-              width: metadata.width,
-              height: metadata.height,
-              format: metadata.format
-            });
-          }
-        }
-      } catch (error) {
-        imageLogger.error('Failed to get image metadata', error instanceof Error ? error : new Error(String(error)));
-      } finally {
-        setIsLoadingMetadata(false);
-      }
+    } catch (err) {
+      setError('Failed to process image');
+      setSelectedFile(null);
+      setImageInfo({});
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -84,7 +80,19 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   }, [selectedFile]);
 
   const handleNext = () => {
-    if (selectedFile) setStep('preview');
+    imageLogger.debug('handleNext called', { 
+      hasSelectedFile: !!selectedFile,
+      currentStep: step,
+      fileInfo: selectedFile ? {
+        name: selectedFile.name,
+        size: selectedFile.size
+      } : null
+    });
+    
+    if (selectedFile) {
+      setStep('preview');
+      imageLogger.debug('Step updated to preview');
+    }
   };
 
   const handleBack = () => {
@@ -228,9 +236,9 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   ) : 'Click to upload image (maxsize 1MB)'}
                 </button>
                 
-                {isLoadingMetadata && (
+                {isValidating && (
                   <div className="mt-2 text-xs text-white/70 text-center">
-                    <div className="animate-pulse">Analyzing image dimensions...</div>
+                    <div className="animate-pulse">Validating image...</div>
                   </div>
                 )}
               </div>
@@ -265,13 +273,33 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
         <div className="flex justify-end border-t border-white/20 p-6">
           {step === 'select' ? (
-            <button
-              onClick={handleNext}
-              disabled={!selectedFile}
-              className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-            >
-              Next
-            </button>
+            <>
+              {error && error.includes('Payment already in progress') && (
+                <button
+                  onClick={() => {
+                    clearSessionBlockhashData();
+                    setError(null);
+                  }}
+                  className="px-4 py-2 border border-white/30 text-white rounded-md hover:bg-white/10 font-medium transition-colors mr-2"
+                >
+                  Reset Payment
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  imageLogger.debug('Next button clicked', {
+                    hasSelectedFile: !!selectedFile,
+                    isDisabled: !selectedFile,
+                    currentStep: step
+                  });
+                  handleNext();
+                }}
+                disabled={!selectedFile}
+                className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              >
+                Next
+              </button>
+            </>
           ) : (
             <div className="flex gap-2">
               <button

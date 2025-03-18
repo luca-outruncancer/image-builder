@@ -28,7 +28,7 @@ import {
   extractSignatureFromError,
   clearSessionBlockhashData
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
@@ -68,8 +68,9 @@ export async function processSolPayment(
     
     // Create connection to Solana
     const connection = new Connection(RPC_ENDPOINT, {
-      commitment: 'confirmed' as Commitment,
-      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+      commitment: 'confirmed',
+      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      disableRetryOnRateLimit: false
     });
     
     // Check SOL balance
@@ -98,6 +99,40 @@ export async function processSolPayment(
     
     // Calculate lamports (1 SOL = 1,000,000,000 lamports)
     const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
+    
+    // Check wallet balance first to avoid transaction failures
+    try {
+      const balance = await connection.getBalance(walletConfig.publicKey!);
+      const lamportsNeeded = lamports + 5000; // Approximate fee
+      
+      blockchainLogger.info('Checking wallet balance before transaction', {
+        walletAddress: walletConfig.publicKey?.toString(),
+        currentBalanceLamports: balance,
+        currentBalanceSOL: balance / LAMPORTS_PER_SOL,
+        paymentAmountLamports: lamports,
+        paymentAmountSOL: amount,
+        estimatedFee: 5000,
+        totalNeeded: lamportsNeeded,
+        hasSufficientFunds: balance >= lamportsNeeded
+      });
+      
+      if (balance < lamportsNeeded) {
+        return {
+          success: false,
+          error: createPaymentError(
+            ErrorCategory.BALANCE_ERROR,
+            `Insufficient funds: requires ${lamportsNeeded / LAMPORTS_PER_SOL} SOL, has ${balance / LAMPORTS_PER_SOL} SOL`,
+            new Error('Insufficient funds'),
+            false
+          )
+        };
+      }
+    } catch (balanceError) {
+      blockchainLogger.warn('Error checking wallet balance', balanceError, {
+        walletAddress: walletConfig.publicKey?.toString()
+      });
+      // Continue despite balance check error
+    }
     
     // Create transaction
     const transaction = new Transaction();
@@ -184,19 +219,28 @@ export async function processSolPayment(
     transaction.recentBlockhash = blockHash.blockhash;
     transaction.feePayer = walletConfig.publicKey;
     
-    // Get fresh blockhash before sending
-    const freshBlockhash = await connection.getLatestBlockhash('confirmed');
-    transaction.recentBlockhash = freshBlockhash.blockhash;
-    
     // Sign transaction with fresh blockhash
     let signedTransaction;
     try {
+      // Log the signing attempt
+      blockchainLogger.debug('Attempting to sign transaction', {
+        paymentId,
+        blockhash: transaction.recentBlockhash,
+        numInstructions: transaction.instructions.length
+      });
+
       signedTransaction = await walletConfig.signTransaction(transaction);
-      blockchainLogger.debug('Transaction signed', {
+      
+      // Add detailed debugging for transaction after signing
+      blockchainLogger.debug('Transaction signed successfully', {
         signatures: signedTransaction.signatures.map(sig => ({
           publicKey: sig.publicKey.toString(),
-          signature: sig.signature?.toString('hex')
-        }))
+          signature: sig.signature ? Buffer.from(sig.signature).toString('base64') : null,
+          signatureLength: sig.signature?.length || 0
+        })),
+        hasAllSignatures: signedTransaction.signatures.every(sig => !!sig.signature),
+        recentBlockhash: signedTransaction.recentBlockhash,
+        serializedSize: signedTransaction.serialize().length
       });
     } catch (signError) {
       blockchainLogger.error('Transaction signing failed', new Error(String(signError)));
@@ -225,28 +269,156 @@ export async function processSolPayment(
       };
     }
     
+    // Before sending, validate the transaction
+    blockchainLogger.debug('Validating transaction before sending', {
+      paymentId,
+      hasValidSignature: signedTransaction.signatures.every(sig => sig.signature !== null)
+    });
+    
+    // Simulate the transaction to check for errors
+    blockchainLogger.debug('Simulating transaction before sending', { paymentId });
+    try {
+      const simulation = await connection.simulateTransaction(signedTransaction);
+      if (simulation.value.err) {
+        blockchainLogger.error('Transaction simulation failed', {
+          paymentId,
+          error: simulation.value.err,
+          logs: simulation.value.logs,
+          simulationMessage: typeof simulation.value.err === 'string' ? simulation.value.err : JSON.stringify(simulation.value.err)
+        });
+        
+        throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+      }
+      
+      blockchainLogger.debug('Transaction simulation successful', {
+        paymentId,
+        unitsConsumed: simulation.value.unitsConsumed || 0
+      });
+    } catch (simError) {
+      blockchainLogger.error('Error during transaction simulation', simError instanceof Error ? simError : new Error(String(simError)), {
+        paymentId
+      });
+      // Continue with sending despite simulation error - some errors are false positives
+    }
+    
     // Send transaction
     let signature: string | undefined;
     try {
+      // Get fresh blockhash right before sending - THIS IS FOR LOGGING ONLY
+      // We will NOT use this to update the transaction after signing
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      
+      // Add more logging about blockhash
+      blockchainLogger.debug('Available blockhashs', {
+        signedBlockhash: signedTransaction.recentBlockhash,
+        latestBlockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        usingSignedBlockhash: true // IMPORTANT: Using the blockhash from signing, not the latest
+      });
+      
+      // DO NOT update the transaction's blockhash after signing!
+      // signedTransaction.recentBlockhash = finalBlockhash.blockhash; <-- This line causes signature verification failure!
+      
+      // Log detailed transaction info before sending
+      blockchainLogger.debug('Pre-send transaction details', {
+        nonce,
+        usingBlockhash: signedTransaction.recentBlockhash, 
+        latestBlockhash: latestBlockhash.blockhash,
+        numInstructions: transaction.instructions.length,
+        signers: transaction.signatures.map(s => s.publicKey.toString()),
+        serializedSize: signedTransaction.serialize().length,
+        paymentId,
+        timestamp: new Date().toISOString(),
+        // Add instruction details for debugging
+        instructions: transaction.instructions.map(inst => ({
+          programId: inst.programId.toString(),
+          dataSize: inst.data.length,
+          keyCount: inst.keys.length
+        }))
+      });
+
       // Clear any cached transaction data before sending
       clearSessionBlockhashData();
       
-      signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
+      // Send with the SAME blockhash used during signing
+      const serializedTransaction = signedTransaction.serialize();
+      blockchainLogger.debug('Sending serialized transaction', {
+        size: serializedTransaction.length,
+        paymentId,
+        firstBytes: Buffer.from(serializedTransaction.slice(0, 20)).toString('hex')
       });
+      
+      // Send immediately with the original blockhash (the one used during signing)
+      try {
+        // Temporarily skip preflight checks to get more detailed error information
+        signature = await connection.sendRawTransaction(serializedTransaction, {
+          skipPreflight: true,  // Change to true to skip preflight checks
+          preflightCommitment: 'confirmed'
+        });
+      } catch (sendRawError) {
+        // Enhanced error logging for sendRawTransaction errors
+        blockchainLogger.error('Error in sendRawTransaction', sendRawError instanceof Error ? sendRawError : new Error(String(sendRawError)), {
+          paymentId,
+          errorType: sendRawError instanceof Error ? sendRawError.constructor.name : typeof sendRawError,
+          errorMessage: sendRawError instanceof Error ? sendRawError.message : String(sendRawError),
+          errorStack: sendRawError instanceof Error ? sendRawError.stack : undefined,
+          // Additional logging for debit/credit errors
+          isSendTxError: sendRawError instanceof SendTransactionError,
+          hasLogs: sendRawError instanceof SendTransactionError && !!sendRawError.logs,
+          logs: sendRawError instanceof SendTransactionError ? sendRawError.logs : undefined
+        });
+        
+        // Check specifically for account debit errors
+        if (sendRawError instanceof Error && 
+            (sendRawError.message.includes('found no record of a prior credit') ||
+             sendRawError.message.includes('insufficient funds'))) {
+          
+          // This is likely a balance issue - check balance again to confirm
+          try {
+            const currentBalance = await connection.getBalance(walletConfig.publicKey!);
+            const lamportsNeeded = lamports + 5000; // Approximate fee
+            
+            blockchainLogger.error('Account has insufficient funds', {
+              walletAddress: walletConfig.publicKey?.toString(),
+              currentBalanceLamports: currentBalance,
+              currentBalanceSOL: currentBalance / LAMPORTS_PER_SOL,
+              paymentAmountLamports: lamports,
+              paymentAmountSOL: amount,
+              estimatedFee: 5000,
+              totalNeeded: lamportsNeeded,
+              shortfall: Math.max(0, lamportsNeeded - currentBalance)
+            });
+            
+            // Throw a more specific error
+            throw new Error(`Insufficient funds: requires ${lamportsNeeded / LAMPORTS_PER_SOL} SOL, has ${currentBalance / LAMPORTS_PER_SOL} SOL`);
+          } catch (balanceCheckError) {
+            // If we can't check the balance, just rethrow the original error
+            throw sendRawError;
+          }
+        }
+        
+        throw sendRawError; // Re-throw to be caught by outer catch
+      }
       
       blockchainLogger.info('Transaction sent', {
         signature,
-        paymentId
+        paymentId,
+        nonce,
+        blockhash: signedTransaction.recentBlockhash
       });
       
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
+      // Once we've reached this point, signature should be defined
+      if (!signature) {
+        throw new Error('Failed to get transaction signature');
+      }
+      
+      blockchainLogger.debug('Waiting for transaction confirmation', {
         signature,
-        blockhash: freshBlockhash.blockhash,
-        lastValidBlockHeight: freshBlockhash.lastValidBlockHeight
+        blockhash: signedTransaction.recentBlockhash
       });
+      
+      // Wait for confirmation using the correct format for the confirmTransaction API
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
       
       blockchainLogger.info('Transaction confirmed', {
         signature,
@@ -428,7 +600,8 @@ export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balan
     // Create connection
     const connection = new Connection(RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      disableRetryOnRateLimit: false
     });
     
     // Get SOL balance

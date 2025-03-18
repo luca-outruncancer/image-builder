@@ -160,6 +160,27 @@ export function generatePaymentId(): string {
  * Format an error message for user display
  */
 export function formatErrorForUser(error: PaymentError): string {
+  // Special case for original error messages we want to show directly
+  if (error.originalError instanceof Error) {
+    // Check for specific Solana error messages to provide user-friendly explanations
+    const errorMsg = error.originalError.message;
+    
+    if (errorMsg.includes('found no record of a prior credit') || 
+        errorMsg.includes('insufficient funds') ||
+        errorMsg.includes('Attempt to debit an account')) {
+      return "Your wallet has insufficient funds for this transaction. Please add more SOL to your wallet and try again.";
+    }
+    
+    if (errorMsg.includes('Simulation failed')) {
+      return "The blockchain rejected this transaction. This can happen if your wallet is low on funds or the network is congested. Please try again or contact support.";
+    }
+    
+    if (errorMsg.includes('Blockhash not found') || errorMsg.includes('block hash')) {
+      return "The transaction took too long to process. Please try again.";
+    }
+  }
+  
+  // Otherwise use category-based messages
   switch (error.category) {
     case ErrorCategory.USER_REJECTION:
       return "Transaction was declined. You can try again when ready.";
@@ -211,7 +232,7 @@ export async function retryWithBackoff<T>(
     try {
       return await fn();
     } catch (error) {
-      console.warn(`Attempt ${i + 1}/${maxRetries} failed:`, error);
+      paymentLogger.info(`Attempt ${i + 1}/${maxRetries} failed:`, error);
       lastError = error;
       
       // Don't retry if it's a user rejection or balance error
@@ -269,13 +290,13 @@ export function clearSessionBlockhashData(): void {
       try {
         sessionStorage.removeItem(key);
       } catch (e) {
-        console.warn(`Failed to remove ${key} from session storage:`, e);
+        paymentLogger.info(`Failed to remove ${key} from session storage:`, e);
       }
     });
     
-    console.log(`Cleared ${keysToRemove.length} session storage items to prevent transaction reuse`);
+    paymentLogger.info(`Cleared ${keysToRemove.length} session storage items to prevent transaction reuse`);
   } catch (error) {
-    console.error("Error clearing session storage:", error);
+    paymentLogger.error("Error clearing session storage:", error);
   }
 }
 
@@ -290,9 +311,9 @@ export function storeTransactionSignature(paymentId: string, signature: string):
     
     const key = `txSignature_${paymentId}`;
     sessionStorage.setItem(key, signature);
-    console.log(`Stored transaction signature for payment ${paymentId}`);
+    paymentLogger.info(`Stored transaction signature for payment ${paymentId}`);
   } catch (error) {
-    console.error("Error storing transaction signature:", error);
+    paymentLogger.error("Error storing transaction signature:", error);
   }
 }
 
@@ -308,7 +329,7 @@ export function getStoredTransactionSignature(paymentId: string): string | null 
     const key = `txSignature_${paymentId}`;
     return sessionStorage.getItem(key);
   } catch (error) {
-    console.error("Error retrieving transaction signature:", error);
+    paymentLogger.error("Error retrieving transaction signature:", error);
     return null;
   }
 }
@@ -333,7 +354,7 @@ export function getOrCreateSessionId(): string {
     
     return sessionId;
   } catch (error) {
-    console.error("Error with session ID:", error);
+    paymentLogger.error("Error with session ID:", error);
     return `fallback_${Date.now()}`;
   }
 }

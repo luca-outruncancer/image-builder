@@ -1,9 +1,10 @@
 // src/lib/payment/context/PaymentContext.tsx
 'use client';
 
-import React, { createContext, useContext, ReactNode } from 'react';
+import React, { createContext, useContext, ReactNode, useEffect } from 'react';
 import { usePayment } from '../hooks/usePayment';
-import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse } from '../types';
+import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse, PaymentResponse } from '../types';
+import { paymentLogger } from '@/utils/logger/index';
 
 // Define the context type
 interface PaymentContextType {
@@ -12,7 +13,7 @@ interface PaymentContextType {
   isProcessing: boolean;
   error: PaymentError | null;
   successInfo: PaymentStatusResponse | null;
-  initializePayment: (amount: number, metadata: PaymentMetadata) => Promise<string | null>;
+  initializePayment: (amount: number, metadata: PaymentMetadata) => Promise<PaymentResponse | null>;
   processPayment: (paymentId?: string) => Promise<boolean>;
   cancelPayment: (paymentId?: string) => Promise<boolean>;
   resetPayment: () => void;
@@ -28,6 +29,16 @@ const PaymentContext = createContext<PaymentContextType | undefined>(undefined);
 // Provider component
 export function PaymentProvider({ children }: { children: ReactNode }) {
   const payment = usePayment();
+  
+  // Log when payment state changes for debugging
+  useEffect(() => {
+    if (payment.paymentId) {
+      paymentLogger.info('PaymentContext - Payment state changed:', {
+        paymentId: payment.paymentId,
+        status: payment.paymentStatus
+      });
+    }
+  }, [payment.paymentId, payment.paymentStatus]);
   
   return (
     <PaymentContext.Provider value={payment}>

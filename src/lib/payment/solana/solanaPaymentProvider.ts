@@ -22,7 +22,7 @@ import {
 } from '../utils';
 import { processSolPayment } from './solPaymentProcessor';
 import { processTokenPayment } from './tokenPaymentProcessor';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT } from '@/lib/solana/walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -74,7 +74,7 @@ export class SolanaPaymentProvider {
       
       const connection = new Connection(RPC_ENDPOINT, {
         commitment,
-        confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
       });
       
       return connection;
@@ -159,7 +159,8 @@ export class SolanaPaymentProvider {
       blockchainLogger.info('Processing payment', {
         paymentId: request.metadata?.paymentId || 'unknown',
         amount: request.amount,
-        token: request.token
+        token: request.token,
+        metadata: request.metadata
       });
       
       // Clear any cached transaction data for this payment ID
@@ -182,13 +183,80 @@ export class SolanaPaymentProvider {
       // Clear any cached transaction data before attempting
       clearSessionBlockhashData();
       
+      // Call appropriate processor based on token type
+      blockchainLogger.debug('Selecting payment processor', {
+        token: request.token,
+        hasMintAddress: !!mintAddress
+      });
+      
       let result: TransactionResult;
-      if (request.token === 'SOL') {
-        result = await processSolPayment(request, this.wallet);
-      } else if (mintAddress) {
-        result = await processTokenPayment(request, mintAddress, this.wallet);
-      } else {
-        throw new Error(`Unsupported payment token: ${request.token}`);
+      try {
+        if (request.token === 'SOL') {
+          result = await processSolPayment(request, this.wallet);
+        } else if (mintAddress) {
+          result = await processTokenPayment(request, mintAddress, this.wallet);
+        } else {
+          throw new Error(`Unsupported payment token: ${request.token}`);
+        }
+      } catch (processingError) {
+        // Enhanced error logging for processing failures
+        blockchainLogger.error('Payment processing threw exception', processingError instanceof Error ? processingError : new Error(String(processingError)), {
+          token: request.token,
+          paymentId,
+          errorType: processingError instanceof Error ? processingError.constructor.name : typeof processingError,
+          errorDetails: processingError instanceof Error ? {
+            name: processingError.name,
+            message: processingError.message,
+            stack: processingError.stack
+          } : String(processingError)
+        });
+        
+        // Handle Solana-specific errors
+        if (processingError instanceof Error) {
+          // Check for specific error messages
+          if (processingError.message.includes('found no record of a prior credit') ||
+              processingError.message.includes('insufficient funds')) {
+            return {
+              success: false,
+              error: createPaymentError(
+                ErrorCategory.BALANCE_ERROR,
+                'Insufficient funds for transaction',
+                processingError,
+                false
+              )
+            };
+          }
+          
+          // Check for simulation errors
+          if (processingError.message.includes('Simulation failed') ||
+              processingError.message.includes('Transaction simulation failed')) {
+            return {
+              success: false,
+              error: createPaymentError(
+                ErrorCategory.BLOCKCHAIN_ERROR,
+                'Transaction simulation failed: The blockchain rejected this transaction',
+                processingError,
+                true // Most simulation errors can be retried
+              )
+            };
+          }
+          
+          // Check for blockhash errors
+          if (processingError.message.includes('Blockhash not found') ||
+              processingError.message.includes('block hash')) {
+            return {
+              success: false,
+              error: createPaymentError(
+                ErrorCategory.NETWORK_ERROR,
+                'Transaction expired: Please try again',
+                processingError,
+                true
+              )
+            };
+          }
+        }
+        
+        throw processingError; // Re-throw to be handled by outer catch
       }
       
       // Cache successful transactions for future reference
@@ -200,6 +268,15 @@ export class SolanaPaymentProvider {
         });
         blockchainLogger.info('Cached transaction signature', {
           signature: result.transactionHash
+        });
+      } else if (!result.success) {
+        // Log unsuccessful result details for debugging
+        blockchainLogger.warn('Payment processing returned unsuccessful result', {
+          paymentId,
+          errorCategory: result.error?.category,
+          errorMessage: result.error?.message,
+          errorCode: result.error?.code,
+          errorRetryable: result.error?.retryable
         });
       }
       

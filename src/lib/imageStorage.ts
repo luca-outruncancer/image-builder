@@ -1,31 +1,8 @@
 // src/lib/imageStorage.ts
 
-import { createClient } from '@supabase/supabase-js';
 import { PaymentStatus } from './payment/types';
 import { imageLogger, storageLogger } from '@/utils/logger/index';
-import { supabase } from '@/lib/supabase';
-
-// Use environment variables for Supabase connection
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-// Initialize Supabase client
-let supabaseClient: any = null;
-
-// Initialize only if environment variables are available
-if (supabaseUrl && supabaseKey) {
-  try {
-    supabaseClient = createClient(supabaseUrl, supabaseKey);
-    storageLogger.info('Supabase client initialized in imageStorage');
-  } catch (error) {
-    storageLogger.error('Error initializing Supabase client in imageStorage', error instanceof Error ? error : new Error(String(error)));
-  }
-} else {
-  storageLogger.error('Unable to initialize Supabase client due to missing environment variables in imageStorage', undefined, {
-    hasUrl: !!supabaseUrl,
-    hasKey: !!supabaseKey
-  });
-}
+import { supabase, getSupabaseClient } from '@/lib/supabase';
 
 export interface ImageRecord {
   image_id: number;
@@ -53,13 +30,14 @@ export async function createImageRecord(params: {
   status: string;
   sender_wallet: string;
 }): Promise<{ success: boolean; data?: ImageRecord; error?: any }> {
-  if (!supabaseClient) {
+  const client = getSupabaseClient();
+  if (!client) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await client
       .from('images')
       .insert({
         image_location: params.image_location,
@@ -99,7 +77,8 @@ export async function updateImageStatus(
   imageId: number,
   status: PaymentStatus
 ): Promise<{ success: boolean; error?: any }> {
-  if (!supabaseClient) {
+  const client = getSupabaseClient();
+  if (!client) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
@@ -110,7 +89,7 @@ export async function updateImageStatus(
       newStatus: status
     });
 
-    const { error } = await supabaseClient
+    const { error } = await client
       .from('images')
       .update({
         status: status.toUpperCase(),
@@ -145,23 +124,72 @@ export async function updateImageStatus(
  * Get all placed images
  */
 export async function getPlacedImages(): Promise<{ success: boolean; data?: any[]; error?: any }> {
-  if (!supabaseClient) {
-    storageLogger.info('Skipping database operation: Supabase client not available');
+  const client = getSupabaseClient();
+  if (!client) {
+    storageLogger.error('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabaseClient
+    storageLogger.info('Fetching placed images with CONFIRMED status');
+    
+    // First try with the enum value
+    const { data, error } = await client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED.toUpperCase());
+      .eq('status', PaymentStatus.CONFIRMED);
     
     if (error) {
-      storageLogger.error('Error fetching image records', error instanceof Error ? error : new Error(String(error)));
-      return { success: false, error };
+      storageLogger.error('Error fetching image records with enum value', error instanceof Error ? error : new Error(String(error)));
+      
+      // Try with uppercase string as fallback
+      storageLogger.info('Retrying with uppercase string "CONFIRMED"');
+      const fallbackResult = await client
+        .from('images')
+        .select('*')
+        .eq('status', 'CONFIRMED');
+      
+      if (fallbackResult.error) {
+        storageLogger.error('Error fetching image records with uppercase string', 
+          fallbackResult.error instanceof Error ? fallbackResult.error : new Error(String(fallbackResult.error)));
+        return { success: false, error: fallbackResult.error };
+      }
+      
+      if (fallbackResult.data && fallbackResult.data.length > 0) {
+        storageLogger.info(`Successfully fetched ${fallbackResult.data.length} images with uppercase string`);
+        return { success: true, data: fallbackResult.data };
+      } else {
+        storageLogger.warn('No confirmed images found with uppercase string');
+        
+        // Last attempt - try to get all images to see what statuses exist
+        const allImagesResult = await client
+          .from('images')
+          .select('status')
+          .then(result => {
+            if (!result.error && result.data) {
+              // Count occurrences of each status
+              const statusCounts: Record<string, number> = {};
+              result.data.forEach(row => {
+                const status = row.status;
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+              });
+              
+              storageLogger.info('Available image statuses:', { statuses: statusCounts });
+            }
+            return result;
+          });
+        
+        return { success: true, data: [] };
+      }
     }
     
-    return { success: true, data };
+    if (data && data.length > 0) {
+      storageLogger.info(`Successfully fetched ${data.length} images with enum value`);
+      return { success: true, data };
+    } else {
+      storageLogger.warn('No confirmed images found with enum value');
+      return { success: true, data: [] };
+    }
   } catch (error) {
     storageLogger.error('Failed to get image records', error instanceof Error ? error : new Error(String(error)));
     return { success: false, error };
@@ -172,13 +200,14 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
  * Get an image by ID
  */
 export async function getImageById(imageId: number): Promise<{ success: boolean; data?: any; error?: any }> {
-  if (!supabaseClient) {
+  const client = getSupabaseClient();
+  if (!client) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await client
       .from('images')
       .select('*')
       .eq('image_id', imageId)
@@ -210,14 +239,15 @@ export async function checkAreaAvailability(
   height: number,
   excludeImageId?: number
 ): Promise<{ success: boolean; available?: boolean; error?: any }> {
-  if (!supabaseClient) {
+  const client = getSupabaseClient();
+  if (!client) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
     // Query for any confirmed images that overlap with the target area
-    let query = supabaseClient
+    let query = client
       .from('images')
       .select('*')
       .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
@@ -254,13 +284,14 @@ export async function checkAreaAvailability(
 export async function cleanupExpiredPendingPayments(
   timeoutMinutes: number = 3
 ): Promise<{ success: boolean; error?: any }> {
-  if (!supabaseClient) {
+  const client = getSupabaseClient();
+  if (!client) {
     storageLogger.info('Skipping database operation: Supabase client not available');
     return { success: false, error: 'Database client not available' };
   }
   
   try {
-    const { error } = await supabaseClient
+    const { error } = await client
       .from('images')
       .update({
         status: PaymentStatus.TIMEOUT.toUpperCase(),

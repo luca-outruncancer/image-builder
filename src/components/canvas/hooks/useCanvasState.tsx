@@ -145,7 +145,7 @@ export function useCanvasState(): CanvasState {
         setIsLoadingImages(true);
         canvasLogger.info('Fetching placed images from database');
         
-        // Get images with status 1 (confirmed) or 2 (pending payment)
+        // Get images with status CONFIRMED
         const { success, data: records, error } = await getPlacedImages();
         
         if (success && records && Array.isArray(records)) {
@@ -166,13 +166,38 @@ export function useCanvasState(): CanvasState {
           }));
           setPlacedImages(loadedImages);
         } else {
-          canvasLogger.warn('No image records found or invalid records format', { error });
-          setPlacedImages([]);
+          canvasLogger.warn('No image records found or invalid records format', { 
+            success, 
+            error,
+            recordsExist: !!records,
+            isArray: Array.isArray(records)
+          });
+          
+          // If there's an error with Supabase, retry after a delay
+          if (error && error.message && (
+              error.message.includes('Failed to fetch') || 
+              error.message.includes('network') ||
+              error.message.includes('Database client not available')
+            )) {
+            canvasLogger.info('Will retry loading images in 2 seconds');
+            setTimeout(() => {
+              canvasLogger.info('Retrying image load');
+              loadPlacedImages();
+            }, 2000);
+          } else {
+            setPlacedImages([]);
+          }
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         canvasLogger.error('Failed to load placed images', err);
-        setPlacedImages([]);
+        
+        // Retry after a delay for any error
+        canvasLogger.info('Will retry loading images in 3 seconds after error');
+        setTimeout(() => {
+          canvasLogger.info('Retrying image load after error');
+          loadPlacedImages();
+        }, 3000);
       } finally {
         setIsLoadingImages(false);
       }
@@ -486,7 +511,16 @@ export function useCanvasState(): CanvasState {
       
       // STEP 3: Process payment
       try {
-        const success = await processPayment(paymentId);
+        // Call processPayment and wait for result
+        // Ensure we're passing a string paymentId, not the PaymentResponse object
+        canvasLogger.info('Processing payment with ID:', paymentId);
+        
+        // Extract the paymentId string if it's an object
+        const paymentIdString = typeof paymentId === 'string' 
+          ? paymentId 
+          : (paymentId as any)?.paymentId || paymentId;
+          
+        const success = await processPayment(paymentIdString);
         
         if (!success) {
           // Change log level for user rejections
@@ -574,8 +608,8 @@ export function useCanvasState(): CanvasState {
         }
         
         // Clean up on successful payment
-        canvasLogger.info("Payment successful, refreshing page...");
-        window.location.reload();
+        canvasLogger.info("Payment successful, skipping page refresh for debugging");
+        // window.location.reload(); // Temporarily commented out for debugging verification request
       } catch (processingError) {
         const err = processingError instanceof Error ? processingError : new Error(String(processingError));
         canvasLogger.error("Error during payment processing", err);

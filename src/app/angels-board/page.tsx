@@ -11,6 +11,8 @@ import { WalletConnectButton } from '@/components/solana/WalletConnectButton'
 import HowItWorksModal from "@/components/canvas/HowItWorksModal"
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/utils/constants';
 
+import { canvasLogger } from '@/utils/logger/index';
+
 const backgroundStyle = `
   .bg-pattern {
     position: fixed;
@@ -109,10 +111,6 @@ export default function AngelsBoard() {
       <UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        onUpload={(file) => {
-          console.log("Uploaded file:", file)
-          setIsUploadModalOpen(false)
-        }}
       />
       
       <HowItWorksModal

@@ -31,7 +31,7 @@ import {
   getNonce,
   extractSignatureFromError
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
 import { PAYMENT_TOKENS, ACTIVE_NETWORK } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 
@@ -68,7 +68,7 @@ export async function processTokenPayment(
   // Create connection to Solana
   const connection = new Connection(RPC_ENDPOINT, {
     commitment: 'confirmed' as Commitment,
-    confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+    confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
   });
   
   try {
@@ -426,7 +426,7 @@ export async function checkTokenBalance(
     // Create connection
     const connection = new Connection(RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONNECTION_TIMEOUT
+      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
     });
     
     // Get token account

@@ -10,18 +10,8 @@ import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 import { canvasLogger } from '@/utils/logger/index';
 import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
-
-interface PlacedImage {
-  id: string;
-  src: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  status: number;
-  file?: File;
-  cost?: number;
-}
+import { ErrorCategory } from '@/lib/payment/types';
+import { PlacedImage } from '@/types/canvas';
 
 interface CanvasPaymentHandlerProps {
   pendingConfirmation: PlacedImage;
@@ -58,6 +48,29 @@ export default function CanvasPaymentHandler({
   const isProcessingStep = isProcessing;
   const isErrorStep = error !== null;
   const isSuccessStep = successInfo !== null;
+  
+  // Add debug logging for success modal
+  useEffect(() => {
+    canvasLogger.debug('===== DEBUG: SUCCESS MODAL STATE =====');
+    canvasLogger.debug('Success step conditions:', {
+      successInfo,
+      isSuccessStep,
+      paymentStatus,
+      pendingConfirmation: !!pendingConfirmation,
+      isProcessing,
+      hasError: error !== null
+    });
+    
+    if (successInfo) {
+      canvasLogger.debug('Success info details:', {
+        paymentId: successInfo.paymentId,
+        status: successInfo.status,
+        transactionHash: successInfo.transactionHash,
+        metadata: successInfo.metadata,
+        timestamp: successInfo.timestamp
+      });
+    }
+  }, [successInfo, isSuccessStep, paymentStatus, pendingConfirmation, isProcessing, error]);
 
   // Log state changes for debugging
   useEffect(() => {
@@ -89,6 +102,16 @@ export default function CanvasPaymentHandler({
   useEffect(() => {
     return () => {
       try {
+        canvasLogger.debug('===== DEBUG: PAYMENT HANDLER UNMOUNTING =====');
+        canvasLogger.debug('Component state at unmount:', {
+          successInfo,
+          isSuccessStep,
+          paymentStatus,
+          pendingConfirmation: !!pendingConfirmation,
+          isProcessing,
+          hasError: error !== null
+        });
+        
         canvasLogger.debug('Cleaning up payment handler session data');
         clearSessionBlockhashData();
       } catch (error) {
@@ -96,7 +119,7 @@ export default function CanvasPaymentHandler({
         canvasLogger.error('Failed to clear session storage', err);
       }
     };
-  }, []);
+  }, [successInfo, isSuccessStep, paymentStatus, pendingConfirmation, isProcessing, error]);
 
   return (
     <>
@@ -147,6 +170,29 @@ export default function CanvasPaymentHandler({
                 {connected && (
                   <div className="mt-4 text-sm text-white/70">
                     <p>Please make sure your wallet has sufficient balance for this transaction.</p>
+                    
+                    {error && error.category === ErrorCategory.BALANCE_ERROR && (
+                      <div className="mt-2 p-3 bg-black/20 rounded-lg text-left">
+                        <h3 className="font-semibold mb-1">Troubleshooting Tips:</h3>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Your wallet needs SOL for both the payment and transaction fees</li>
+                          <li>Try adding more SOL to your wallet (at least 0.05 SOL)</li>
+                          <li>Reduce other activity while the transaction is processing</li>
+                          <li>Try connecting a different wallet with more funds</li>
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {error && error.category === ErrorCategory.BLOCKCHAIN_ERROR && (
+                      <div className="mt-2 p-3 bg-black/20 rounded-lg text-left">
+                        <h3 className="font-semibold mb-1">Network Issues Detected:</h3>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>The blockchain network may be congested</li>
+                          <li>Try again in a few moments</li>
+                          <li>Check your wallet configuration is correct</li>
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -197,73 +243,76 @@ export default function CanvasPaymentHandler({
       )}
 
       {/* Success modal */}
-      {isSuccessStep && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
-            <button 
-              onClick={() => {
-                canvasLogger.debug('User closed success modal', {
-                  transactionHash: successInfo?.transactionHash,
-                  imageId: successInfo?.metadata?.imageId
-                });
-                onDone();
-              }}
-              className="absolute top-3 right-3 text-white/70 hover:text-white"
-            >
-              <X size={20} />
-            </button>
-            
-            <h2 className="text-xl font-bold p-6 border-b border-white/20">
-              Congratulations!
-            </h2>
-
-            <div className="p-6">
-              <div className="text-center">
-                <p className="text-lg font-semibold text-emerald-300">Image uploaded successfully!</p>
-                <div className="mt-4 text-left text-sm text-white/90">
-                  <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
-                  <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
-                  <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
-                  {successInfo?.transactionHash && (
-                    <div className="mt-2">
-                      <p className="font-semibold text-white/90">Transaction Hash:</p>
-                      <p className="text-xs font-mono break-all bg-[#004E32]/30 p-2 rounded text-white/80">
-                        {successInfo.transactionHash}
-                      </p>
-                      <p className="mt-2 text-sm text-white/70">
-                        View on{" "}
-                        <a
-                          href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-emerald-300 hover:underline"
-                        >
-                          Solana Explorer
-                        </a>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t border-white/20 p-6">
-              <button
+      {isSuccessStep && (() => {
+        canvasLogger.debug('===== DEBUG: RENDERING SUCCESS MODAL =====');
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+            <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
+              <button 
                 onClick={() => {
-                  canvasLogger.debug('User completed payment flow', {
+                  canvasLogger.debug('User closed success modal', {
                     transactionHash: successInfo?.transactionHash,
                     imageId: successInfo?.metadata?.imageId
                   });
                   onDone();
                 }}
-                className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
+                className="absolute top-3 right-3 text-white/70 hover:text-white"
               >
-                Done
+                <X size={20} />
               </button>
+              
+              <h2 className="text-xl font-bold p-6 border-b border-white/20">
+                Congratulations!
+              </h2>
+
+              <div className="p-6">
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-emerald-300">Image uploaded successfully!</p>
+                  <div className="mt-4 text-left text-sm text-white/90">
+                    <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
+                    <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
+                    <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
+                    {successInfo?.transactionHash && (
+                      <div className="mt-2">
+                        <p className="font-semibold text-white/90">Transaction Hash:</p>
+                        <p className="text-xs font-mono break-all bg-[#004E32]/30 p-2 rounded text-white/80">
+                          {successInfo.transactionHash}
+                        </p>
+                        <p className="mt-2 text-sm text-white/70">
+                          View on{" "}
+                          <a
+                            href={`https://explorer.solana.com/tx/${successInfo.transactionHash}?cluster=devnet`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-300 hover:underline"
+                          >
+                            Solana Explorer
+                          </a>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end border-t border-white/20 p-6">
+                <button
+                  onClick={() => {
+                    canvasLogger.debug('User completed payment flow', {
+                      transactionHash: successInfo?.transactionHash,
+                      imageId: successInfo?.metadata?.imageId
+                    });
+                    onDone();
+                  }}
+                  className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </>
   );
 }

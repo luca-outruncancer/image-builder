@@ -3,13 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
+    "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
+    "@sentry/integrations": "^7.114.0",
+    "@sentry/nextjs": "^9.5.0",
+    "@sentry/profiling-node": "^9.5.0",
+    "@sentry/replay": "^7.116.0",
+    "@sentry/tracing": "^7.120.3",
     "@solana/spl-token": "^0.4.12",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
