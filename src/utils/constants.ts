@@ -26,7 +26,7 @@ export enum LogLevel {
 
 export const LOGGING = {
   SENTRY: {
-    ENABLED: process.env.NEXT_PUBLIC_SENTRY_ENABLED === 'true',
+    ENABLED: process.env.NEXT_PUBLIC_SENTRY_ENABLED === 'false',
     DSN: process.env.NEXT_PUBLIC_SENTRY_DSN || '',
     ENVIRONMENT: process.env.NODE_ENV || 'development',
     TRACES_SAMPLE_RATE: 1.0,

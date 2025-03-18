@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS transaction_records (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the transaction was created
     confirmed_at TIMESTAMP WITH TIME ZONE,
     attempt_count INTEGER NOT NULL DEFAULT 0,
-    recipient_wallet VARCHAR(44) NOT NULL
+    recipient_wallet VARCHAR(44) NOT NULL,
+    unique_nonce VARCHAR(16) NOT NULL
 );
 
 -- Payment sessions table

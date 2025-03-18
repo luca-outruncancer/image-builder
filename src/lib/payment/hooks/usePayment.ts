@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import PaymentService from '../paymentService';
+import ClientPaymentService from '../clientPaymentService';
 import { 
   PaymentStatus, 
   PaymentStatusResponse, 
@@ -14,30 +14,97 @@ import {
 import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 import { paymentLogger } from '@/utils/logger';
 
+// Local storage keys
+const STORAGE_KEYS = {
+  PAYMENT_ID: 'image_board_payment_id',
+  PAYMENT_STATUS: 'image_board_payment_status',
+  TRANSACTION_ID: 'image_board_transaction_id',
+  PAYMENT_INFO: 'image_board_payment_info'
+};
+
 /**
  * React hook for managing payment state and interactions
+ * This uses the ClientPaymentService which interacts with APIs instead of direct database access
  */
 export function usePayment() {
   const wallet = useWallet();
-  const [paymentId, setPaymentId] = useState<string | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
+  const [paymentId, setPaymentId] = useState<string | null>(() => {
+    // Try to get paymentId from localStorage on initial load
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(STORAGE_KEYS.PAYMENT_ID);
+    }
+    return null;
+  });
+  
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(() => {
+    // Try to get paymentStatus from localStorage on initial load
+    if (typeof window !== 'undefined') {
+      const savedStatus = localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS);
+      return savedStatus as PaymentStatus | null;
+    }
+    return null;
+  });
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<PaymentError | null>(null);
   const [successInfo, setSuccessInfo] = useState<PaymentStatusResponse | null>(null);
   
   // Create payment service with useMemo to prevent multiple instances
-  const paymentService = useMemo(() => new PaymentService({
-    publicKey: wallet.publicKey,
-    signTransaction: wallet.signTransaction,
-    connected: wallet.connected
-  }), [wallet.publicKey, wallet.signTransaction, wallet.connected]);
+  const paymentService = useMemo(() => {
+    const service = new ClientPaymentService({
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction,
+      connected: wallet.connected
+    });
+    
+    // Restore active payment from localStorage if exists
+    if (typeof window !== 'undefined' && paymentId) {
+      const savedPaymentInfo = localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO);
+      if (savedPaymentInfo) {
+        try {
+          const paymentInfo = JSON.parse(savedPaymentInfo);
+          service.restorePaymentSession(paymentId, paymentInfo);
+          paymentLogger.info('Restored payment session from storage', { 
+            paymentId, 
+            status: paymentStatus 
+          });
+        } catch (err) {
+          paymentLogger.warn('Failed to restore payment session', err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    }
+    
+    return service;
+  }, [wallet.publicKey, wallet.signTransaction, wallet.connected, paymentId, paymentStatus]);
+  
+  // Persist payment ID and status to localStorage when they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (paymentId) {
+        localStorage.setItem(STORAGE_KEYS.PAYMENT_ID, paymentId);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
+      }
+    }
+  }, [paymentId]);
+  
+  // Persist payment status to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (paymentStatus) {
+        localStorage.setItem(STORAGE_KEYS.PAYMENT_STATUS, paymentStatus);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
+      }
+    }
+  }, [paymentStatus]);
   
   // Clean up resources when component unmounts
   useEffect(() => {
     return () => {
       paymentService.dispose();
     };
-  }, [paymentService]); // Add paymentService to dependency array since we're using it in cleanup
+  }, [paymentService]);
   
   /**
    * Initialize a new payment
@@ -62,6 +129,38 @@ export function usePayment() {
       
       setPaymentId(response.paymentId);
       setPaymentStatus(response.status);
+      
+      // Save payment info to localStorage
+      if (typeof window !== 'undefined' && response.paymentId) {
+        try {
+          const paymentInfo = {
+            paymentId: response.paymentId,
+            transactionId: response.transactionId,
+            status: response.status,
+            amount,
+            imageId: metadata.imageId,
+            walletAddress: wallet.publicKey?.toString(),
+            timestamp: new Date().toISOString() // Add timestamp for debugging
+          };
+          
+          // Store different aspects of the payment info
+          localStorage.setItem(STORAGE_KEYS.PAYMENT_INFO, JSON.stringify(paymentInfo));
+          localStorage.setItem(STORAGE_KEYS.PAYMENT_ID, response.paymentId);
+          localStorage.setItem(STORAGE_KEYS.TRANSACTION_ID, String(response.transactionId));
+          localStorage.setItem(STORAGE_KEYS.PAYMENT_STATUS, response.status);
+          
+          // Also store just the transactionId by paymentId for easy lookup
+          const paymentIdMapping = `payment_mapping_${response.paymentId}`;
+          localStorage.setItem(paymentIdMapping, String(response.transactionId));
+          
+          paymentLogger.info('Saved payment info to storage', { 
+            paymentId: response.paymentId 
+          });
+        } catch (err) {
+          paymentLogger.warn('Failed to save payment info to storage', err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+      
       return response;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -73,32 +172,105 @@ export function usePayment() {
       });
       return null;
     }
-  }, [wallet.connected, paymentService]);
+  }, [wallet.connected, paymentService, wallet.publicKey]);
   
   /**
    * Process the current payment
    */
-  const processPayment = useCallback(async () => {
-    if (!paymentId) {
+  const processPayment = useCallback(async (providedPaymentId?: string) => {
+    // Use provided paymentId or fallback to state
+    const paymentIdToUse = providedPaymentId || paymentId;
+    
+    if (!paymentIdToUse) {
       const error = new Error('No active payment to process');
       paymentLogger.error('Failed to process payment:', error);
-      return;
+      return false;
     }
 
     try {
       setIsProcessing(true);
       setError(null);
       
-      const response = await paymentService.processPayment(paymentId);
+      console.log('===== DEBUG: usePayment.processPayment =====');
+      console.log('Using paymentId:', paymentIdToUse);
+      
+      // Try to restore payment info from localStorage if needed
+      if (typeof window !== 'undefined') {
+        // First check if we have a transaction mapping for this payment
+        const paymentIdMapping = `payment_mapping_${paymentIdToUse}`;
+        const mappedTransactionId = localStorage.getItem(paymentIdMapping);
+        
+        if (mappedTransactionId) {
+          console.log('Found transaction ID mapping in localStorage:', mappedTransactionId);
+        }
+        
+        const savedPaymentId = localStorage.getItem(STORAGE_KEYS.PAYMENT_ID);
+        const savedTransactionId = localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID);
+        
+        console.log('Stored payment data in localStorage:', {
+          savedPaymentId,
+          savedTransactionId,
+          mappedTransactionId
+        });
+        
+        const savedPaymentInfo = localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO);
+        if (savedPaymentInfo) {
+          try {
+            const paymentInfo = JSON.parse(savedPaymentInfo);
+            console.log('Parsed payment info from localStorage:', paymentInfo);
+            
+            // Only restore if the payment IDs match
+            if (paymentInfo.paymentId === paymentIdToUse) {
+              paymentService.restorePaymentSession(paymentIdToUse, paymentInfo);
+              paymentLogger.info('Restored payment session before processing', { 
+                paymentId: paymentIdToUse
+              });
+            } else if (mappedTransactionId) {
+              // If we have a transaction ID mapping but payment IDs don't match,
+              // create a synthetic payment info object
+              const syntheticPaymentInfo = {
+                paymentId: paymentIdToUse,
+                transactionId: mappedTransactionId,
+                amount: paymentInfo.amount, // Use amount from stored payment as fallback
+                status: PaymentStatus.INITIALIZED
+              };
+              
+              console.log('Created synthetic payment info from mapping:', syntheticPaymentInfo);
+              paymentService.restorePaymentSession(paymentIdToUse, syntheticPaymentInfo);
+            }
+          } catch (err) {
+            paymentLogger.warn('Failed to restore payment session before processing', 
+              err instanceof Error ? err : new Error(String(err)));
+          }
+        }
+      }
+      
+      const response = await paymentService.processPayment(paymentIdToUse);
       
       if (response.error) {
         setError(response.error);
         setPaymentStatus(response.status);
-        return;
+        return false;
       }
       
       setPaymentStatus(response.status);
       setSuccessInfo(response);
+      
+      // If payment was successful or failed, clean up localStorage
+      if (
+        response.status === PaymentStatus.CONFIRMED || 
+        response.status === PaymentStatus.FAILED || 
+        response.status === PaymentStatus.CANCELED
+      ) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
+          localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
+          localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
+          localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+        }
+      }
+      
+      return response.status === PaymentStatus.CONFIRMED;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       paymentLogger.error('Failed to process payment:', error);
@@ -107,6 +279,7 @@ export function usePayment() {
         message: 'Failed to process payment',
         retryable: true
       });
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -115,23 +288,36 @@ export function usePayment() {
   /**
    * Cancel the current payment
    */
-  const cancelPayment = useCallback(async () => {
-    if (!paymentId) {
+  const cancelPayment = useCallback(async (providedPaymentId?: string) => {
+    // Use provided paymentId or fallback to state
+    const paymentIdToUse = providedPaymentId || paymentId;
+    
+    if (!paymentIdToUse) {
       const error = new Error('No active payment to cancel');
       paymentLogger.error('Failed to cancel payment:', error);
-      return;
+      return false;
     }
 
     try {
-      const result = await paymentService.cancelPayment(paymentId);
+      const result = await paymentService.cancelPayment(paymentIdToUse);
       
       if (result.error) {
         setError(result.error);
-        return;
+        return false;
       }
       
       setPaymentStatus(PaymentStatus.CANCELED);
       setPaymentId(null);
+      
+      // Clean up localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
+        localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
+        localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
+        localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+      }
+      
+      return true;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       paymentLogger.error('Failed to cancel payment:', error);
@@ -140,6 +326,7 @@ export function usePayment() {
         message: 'Failed to cancel payment',
         retryable: true
       });
+      return false;
     }
   }, [paymentId, paymentService]);
   
@@ -152,6 +339,14 @@ export function usePayment() {
     setError(null);
     setSuccessInfo(null);
     setIsProcessing(false);
+    
+    // Clean up localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
+      localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
+      localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
+      localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+    }
   }, []);
   
   /**

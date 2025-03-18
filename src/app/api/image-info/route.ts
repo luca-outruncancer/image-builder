@@ -3,12 +3,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { apiLogger } from '@/utils/logger';
 import { findImageAtPosition, refreshImageCacheIfNeeded } from '@/lib/server/imageCache';
+import { ensureServerInitialized } from '@/lib/server/init';
 
 /**
  * API to fetch image information for a specific position on the canvas
  */
 export async function POST(request: NextRequest) {
   try {
+    // Ensure server is initialized
+    await ensureServerInitialized();
+    
     // Parse request body
     const body = await request.json();
     

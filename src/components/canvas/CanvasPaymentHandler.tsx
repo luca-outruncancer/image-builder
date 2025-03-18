@@ -10,6 +10,7 @@ import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 import { canvasLogger } from '@/utils/logger/index';
 import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
+import { ErrorCategory } from '@/lib/payment/types';
 
 interface PlacedImage {
   id: string;
@@ -147,6 +148,29 @@ export default function CanvasPaymentHandler({
                 {connected && (
                   <div className="mt-4 text-sm text-white/70">
                     <p>Please make sure your wallet has sufficient balance for this transaction.</p>
+                    
+                    {error && error.category === ErrorCategory.BALANCE_ERROR && (
+                      <div className="mt-2 p-3 bg-black/20 rounded-lg text-left">
+                        <h3 className="font-semibold mb-1">Troubleshooting Tips:</h3>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Your wallet needs SOL for both the payment and transaction fees</li>
+                          <li>Try adding more SOL to your wallet (at least 0.05 SOL)</li>
+                          <li>Reduce other activity while the transaction is processing</li>
+                          <li>Try connecting a different wallet with more funds</li>
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {error && error.category === ErrorCategory.BLOCKCHAIN_ERROR && (
+                      <div className="mt-2 p-3 bg-black/20 rounded-lg text-left">
+                        <h3 className="font-semibold mb-1">Network Issues Detected:</h3>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>The blockchain network may be congested</li>
+                          <li>Try again in a few moments</li>
+                          <li>Check your wallet configuration is correct</li>
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

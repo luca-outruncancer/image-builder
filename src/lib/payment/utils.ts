@@ -160,6 +160,27 @@ export function generatePaymentId(): string {
  * Format an error message for user display
  */
 export function formatErrorForUser(error: PaymentError): string {
+  // Special case for original error messages we want to show directly
+  if (error.originalError instanceof Error) {
+    // Check for specific Solana error messages to provide user-friendly explanations
+    const errorMsg = error.originalError.message;
+    
+    if (errorMsg.includes('found no record of a prior credit') || 
+        errorMsg.includes('insufficient funds') ||
+        errorMsg.includes('Attempt to debit an account')) {
+      return "Your wallet has insufficient funds for this transaction. Please add more SOL to your wallet and try again.";
+    }
+    
+    if (errorMsg.includes('Simulation failed')) {
+      return "The blockchain rejected this transaction. This can happen if your wallet is low on funds or the network is congested. Please try again or contact support.";
+    }
+    
+    if (errorMsg.includes('Blockhash not found') || errorMsg.includes('block hash')) {
+      return "The transaction took too long to process. Please try again.";
+    }
+  }
+  
+  // Otherwise use category-based messages
   switch (error.category) {
     case ErrorCategory.USER_REJECTION:
       return "Transaction was declined. You can try again when ready.";

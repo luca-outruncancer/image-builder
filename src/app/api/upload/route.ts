@@ -11,6 +11,7 @@ import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErro
 import { imageLogger } from '@/utils/logger/index';
 import { PaymentStatus } from '@/lib/payment/types';
 import { updateImageInCache } from '@/lib/server/imageCache';
+import { ensureServerInitialized } from '@/lib/server/init';
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const requestId = request.headers.get('x-request-id') || 'unknown';
@@ -20,6 +21,9 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     requestId,
     uploadId
   });
+  
+  // Ensure server is initialized before processing the upload
+  await ensureServerInitialized();
   
   try {
     const formData = await request.formData();
@@ -254,7 +258,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       
       // Update the image cache with the new image
       try {
-        updateImageInCache({
+        const cacheUpdateSuccess = await updateImageInCache({
           image_id: imageRecord.image_id,
           image_location: publicUrl,
           start_position_x: position.x,
@@ -267,13 +271,20 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
           payment_attempts: 0
         });
         
-        imageLogger.debug(`[Upload:${uploadId}] Updated image cache with new image`, { 
-          imageId: imageRecord.image_id,
-          requestId
-        });
+        if (cacheUpdateSuccess) {
+          imageLogger.debug(`[Upload:${uploadId}] Updated image cache with new image`, { 
+            imageId: imageRecord.image_id,
+            requestId
+          });
+        } else {
+          imageLogger.warn(`[Upload:${uploadId}] Failed to update image cache`, { 
+            imageId: imageRecord.image_id,
+            requestId
+          });
+        }
       } catch (cacheError) {
         // Non-critical error, just log it
-        imageLogger.warn(`[Upload:${uploadId}] Failed to update image cache`, cacheError, { 
+        imageLogger.warn(`[Upload:${uploadId}] Error updating image cache`, cacheError, { 
           imageId: imageRecord.image_id,
           requestId
         });

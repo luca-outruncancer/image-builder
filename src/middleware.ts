@@ -2,9 +2,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { apiLogger, generateRequestId } from '@/utils/logger';
+import { ensureServerInitialized } from '@/lib/server/init';
+
+// Initialize server on module load
+const serverInitPromise = ensureServerInitialized();
 
 // This function can be marked `async` if using `await` inside
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   // Generate a unique request ID for tracking this request through the logs
   const requestId = generateRequestId();
   
@@ -29,6 +33,13 @@ export function middleware(request: NextRequest) {
       referer,
       contentType,
       requestId
+    });
+    
+    // Ensure server is initialized for API routes
+    // We don't need to await this for most routes since it's already initialized at module load
+    // But we make sure it's at least in progress
+    serverInitPromise.catch(error => {
+      apiLogger.error('Server initialization error in middleware', error, { requestId });
     });
     
     // Create response with added headers

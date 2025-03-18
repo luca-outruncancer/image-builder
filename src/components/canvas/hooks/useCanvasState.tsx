@@ -511,7 +511,16 @@ export function useCanvasState(): CanvasState {
       
       // STEP 3: Process payment
       try {
-        const success = await processPayment(paymentId);
+        // Call processPayment and wait for result
+        // Ensure we're passing a string paymentId, not the PaymentResponse object
+        console.log('Processing payment with ID:', paymentId);
+        
+        // Extract the paymentId string if it's an object
+        const paymentIdString = typeof paymentId === 'string' 
+          ? paymentId 
+          : (paymentId as any)?.paymentId || paymentId;
+          
+        const success = await processPayment(paymentIdString);
         
         if (!success) {
           // Change log level for user rejections

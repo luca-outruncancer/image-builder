@@ -26,7 +26,7 @@ let imageCache: Map<number, CachedImageData> = new Map();
 let spatialIndex: SpatialIndex = {};
 let isInitialized = false;
 let lastRefreshTime = 0;
-const CACHE_TTL = 60000; // 1 minute cache TTL
+const CACHE_TTL = 180000; // 3 minutes cache TTL
 
 /**
  * Initialize the image cache by loading all confirmed images
@@ -150,12 +150,21 @@ export function clearImageCache() {
  * Add or update a single image in the cache
  * This is used when a new image is added or an existing one is updated
  */
-export function updateImageInCache(image: CachedImageData): void {
+export async function updateImageInCache(image: CachedImageData): Promise<boolean> {
   if (!isInitialized) {
-    systemLogger.warn('Attempted to update image in uninitialized cache', { 
+    systemLogger.info('Cache not initialized when updating image, initializing now', { 
       imageId: image.image_id 
     });
-    return;
+    
+    // Try to initialize the cache
+    const result = await initializeImageCache();
+    if (!result.success) {
+      systemLogger.error('Failed to initialize cache when updating image', { 
+        imageId: image.image_id,
+        error: result.error?.message 
+      });
+      return false;
+    }
   }
   
   // Remove the image from the spatial index if it already exists
@@ -183,6 +192,8 @@ export function updateImageInCache(image: CachedImageData): void {
     position: { x: image.start_position_x, y: image.start_position_y },
     size: { width: image.size_x, height: image.size_y }
   });
+  
+  return true;
 }
 
 /**
