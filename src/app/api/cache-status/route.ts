@@ -1,3 +1,5 @@
+// src/app/api/cache-status/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getImageCacheStats, refreshImageCacheIfNeeded } from '@/lib/server/imageCache';
 import { apiLogger } from '@/utils/logger';

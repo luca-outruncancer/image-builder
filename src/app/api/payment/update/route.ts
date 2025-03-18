@@ -1,3 +1,5 @@
+// src/app/api/payment/update/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { apiLogger } from '@/utils/logger';
 import { ensureServerInitialized } from '@/lib/server/init';
