@@ -232,7 +232,7 @@ export async function retryWithBackoff<T>(
     try {
       return await fn();
     } catch (error) {
-      console.warn(`Attempt ${i + 1}/${maxRetries} failed:`, error);
+      paymentLogger.info(`Attempt ${i + 1}/${maxRetries} failed:`, error);
       lastError = error;
       
       // Don't retry if it's a user rejection or balance error
@@ -290,13 +290,13 @@ export function clearSessionBlockhashData(): void {
       try {
         sessionStorage.removeItem(key);
       } catch (e) {
-        console.warn(`Failed to remove ${key} from session storage:`, e);
+        paymentLogger.info(`Failed to remove ${key} from session storage:`, e);
       }
     });
     
-    console.log(`Cleared ${keysToRemove.length} session storage items to prevent transaction reuse`);
+    paymentLogger.info(`Cleared ${keysToRemove.length} session storage items to prevent transaction reuse`);
   } catch (error) {
-    console.error("Error clearing session storage:", error);
+    paymentLogger.error("Error clearing session storage:", error);
   }
 }
 
@@ -311,9 +311,9 @@ export function storeTransactionSignature(paymentId: string, signature: string):
     
     const key = `txSignature_${paymentId}`;
     sessionStorage.setItem(key, signature);
-    console.log(`Stored transaction signature for payment ${paymentId}`);
+    paymentLogger.info(`Stored transaction signature for payment ${paymentId}`);
   } catch (error) {
-    console.error("Error storing transaction signature:", error);
+    paymentLogger.error("Error storing transaction signature:", error);
   }
 }
 
@@ -329,7 +329,7 @@ export function getStoredTransactionSignature(paymentId: string): string | null 
     const key = `txSignature_${paymentId}`;
     return sessionStorage.getItem(key);
   } catch (error) {
-    console.error("Error retrieving transaction signature:", error);
+    paymentLogger.error("Error retrieving transaction signature:", error);
     return null;
   }
 }
@@ -354,7 +354,7 @@ export function getOrCreateSessionId(): string {
     
     return sessionId;
   } catch (error) {
-    console.error("Error with session ID:", error);
+    paymentLogger.error("Error with session ID:", error);
     return `fallback_${Date.now()}`;
   }
 }

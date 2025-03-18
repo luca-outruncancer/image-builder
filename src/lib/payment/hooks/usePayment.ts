@@ -191,8 +191,8 @@ export function usePayment() {
       setIsProcessing(true);
       setError(null);
       
-      console.log('===== DEBUG: usePayment.processPayment =====');
-      console.log('Using paymentId:', paymentIdToUse);
+      paymentLogger.debug('===== DEBUG: usePayment.processPayment =====');
+      paymentLogger.debug('Using paymentId:', paymentIdToUse);
       
       // Try to restore payment info from localStorage if needed
       if (typeof window !== 'undefined') {
@@ -201,13 +201,13 @@ export function usePayment() {
         const mappedTransactionId = localStorage.getItem(paymentIdMapping);
         
         if (mappedTransactionId) {
-          console.log('Found transaction ID mapping in localStorage:', mappedTransactionId);
+          paymentLogger.debug('Found transaction ID mapping in localStorage:', mappedTransactionId);
         }
         
         const savedPaymentId = localStorage.getItem(STORAGE_KEYS.PAYMENT_ID);
         const savedTransactionId = localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID);
         
-        console.log('Stored payment data in localStorage:', {
+        paymentLogger.debug('Stored payment data in localStorage:', {
           savedPaymentId,
           savedTransactionId,
           mappedTransactionId
@@ -217,7 +217,7 @@ export function usePayment() {
         if (savedPaymentInfo) {
           try {
             const paymentInfo = JSON.parse(savedPaymentInfo);
-            console.log('Parsed payment info from localStorage:', paymentInfo);
+            paymentLogger.debug('Parsed payment info from localStorage:', paymentInfo);
             
             // Only restore if the payment IDs match
             if (paymentInfo.paymentId === paymentIdToUse) {
@@ -235,7 +235,7 @@ export function usePayment() {
                 status: PaymentStatus.INITIALIZED
               };
               
-              console.log('Created synthetic payment info from mapping:', syntheticPaymentInfo);
+              paymentLogger.debug('Created synthetic payment info from mapping:', syntheticPaymentInfo);
               paymentService.restorePaymentSession(paymentIdToUse, syntheticPaymentInfo);
             }
           } catch (err) {
@@ -253,8 +253,8 @@ export function usePayment() {
         return false;
       }
       
-      console.log('===== DEBUG: SETTING SUCCESS INFO =====');
-      console.log('Payment response:', {
+      paymentLogger.debug('===== DEBUG: SETTING SUCCESS INFO =====');
+      paymentLogger.debug('Payment response:', {
         paymentId: response.paymentId,
         status: response.status,
         transactionHash: response.transactionHash
@@ -265,19 +265,19 @@ export function usePayment() {
       
       // Set success info with extra debugging
       try {
-        console.log('Setting successInfo state with:', response);
+        paymentLogger.debug('Setting successInfo state with:', response);
         setSuccessInfo(response);
-        console.log('Successfully set successInfo state');
+        paymentLogger.info('Successfully set successInfo state');
         
         // Add timeout to check if state persists
         setTimeout(() => {
-          console.log('===== DEBUG: SUCCESS INFO STATE CHECK (500ms later) =====');
+          paymentLogger.debug('===== DEBUG: SUCCESS INFO STATE CHECK (500ms later) =====');
           // We can't directly access the successInfo state here, 
           // but we can log that this timeout fired
-          console.log('Timeout check executed - successInfo should still be set');
+          paymentLogger.debug('Timeout check executed - successInfo should still be set');
         }, 500);
       } catch (err) {
-        console.error('Error setting successInfo state:', err);
+        paymentLogger.error('Error setting successInfo state:', err);
       }
       
       // If payment was successful or failed, clean up localStorage
@@ -286,9 +286,9 @@ export function usePayment() {
         response.status === PaymentStatus.FAILED || 
         response.status === PaymentStatus.CANCELED
       ) {
-        console.log('===== DEBUG: PAYMENT CLEANUP =====');
-        console.log('Payment status triggering cleanup:', response.status);
-        console.log('Before cleanup - localStorage keys:', {
+        paymentLogger.debug('===== DEBUG: PAYMENT CLEANUP =====');
+        paymentLogger.debug('Payment status triggering cleanup:', response.status);
+        paymentLogger.debug('Before cleanup - localStorage keys:', {
           paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
           paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
           paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
@@ -312,8 +312,8 @@ export function usePayment() {
               localStorage.removeItem(paymentIdMapping);
             }
             
-            console.log('Cleanup completed - removed localStorage keys');
-            console.log('After cleanup - localStorage keys:', {
+            paymentLogger.info('Cleanup completed - removed localStorage keys');
+            paymentLogger.info('After cleanup - localStorage keys:', {
               paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
               paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
               paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
@@ -322,13 +322,13 @@ export function usePayment() {
               mappingValue: localStorage.getItem(paymentIdMapping)
             });
           } catch (err) {
-            console.error('Error during localStorage cleanup:', err);
+            paymentLogger.error('Error during localStorage cleanup:', err);
           }
         } else {
-          console.log('Window is undefined, skipping localStorage cleanup');
+          paymentLogger.debug('Window is undefined, skipping localStorage cleanup');
         }
       } else {
-        console.log('Payment status does not trigger cleanup:', response.status);
+        paymentLogger.debug('Payment status does not trigger cleanup:', response.status);
       }
       
       return response.status === PaymentStatus.CONFIRMED;

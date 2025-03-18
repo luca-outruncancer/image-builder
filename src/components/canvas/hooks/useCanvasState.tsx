@@ -513,7 +513,7 @@ export function useCanvasState(): CanvasState {
       try {
         // Call processPayment and wait for result
         // Ensure we're passing a string paymentId, not the PaymentResponse object
-        console.log('Processing payment with ID:', paymentId);
+        canvasLogger.info('Processing payment with ID:', paymentId);
         
         // Extract the paymentId string if it's an object
         const paymentIdString = typeof paymentId === 'string' 

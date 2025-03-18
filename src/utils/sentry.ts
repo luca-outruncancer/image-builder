@@ -1,10 +1,11 @@
 import * as Sentry from "@sentry/nextjs";
 import { Replay } from "@sentry/replay";
 import { LOGGING } from "./constants";
+import { walletLogger } from "./logger/index";
 
 export const initializeSentry = () => {
   if (!LOGGING.SENTRY.ENABLED || !LOGGING.SENTRY.DSN) {
-    console.log("Sentry is disabled or DSN is not configured");
+    walletLogger.info("Sentry is disabled or DSN is not configured");
     return;
   }
 

@@ -8,11 +8,12 @@ import { cn } from '@/lib/utils';
 import Providers from './providers';
 import ErrorBoundaryWrapper from '@/components/ErrorBoundaryWrapper';
 import { ensureServerInitialized } from '@/lib/server/init';
+import { systemLogger } from '@/utils/logger/index';
 
 // Initialize server-side modules
 if (typeof window === 'undefined') {
   ensureServerInitialized().catch(error => {
-    console.error('Failed to initialize server:', error);
+    systemLogger.error('Failed to initialize server:', error);
   });
 }
 

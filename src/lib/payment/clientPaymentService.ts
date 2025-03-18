@@ -187,9 +187,9 @@ export class ClientPaymentService {
       const { paymentId, transactionId } = data;
       
       // Debug log to see what we're getting from the API
-      console.log('===== DEBUG: CLIENT PAYMENT SERVICE INIT =====');
-      console.log('Received from API:', { paymentId, transactionId });
-      console.log('Response data:', data);
+      paymentLogger.debug('===== DEBUG: CLIENT PAYMENT SERVICE INIT =====');
+      paymentLogger.debug('Received from API:', { paymentId, transactionId });
+      paymentLogger.debug('Response data:', data);
       
       // Store payment info in memory with consistent property naming
       this.activePayments.set(paymentId, {
@@ -207,7 +207,7 @@ export class ClientPaymentService {
       });
       
       // Debug log to confirm what's stored
-      console.log('Stored payment info:', this.activePayments.get(paymentId));
+      paymentLogger.debug('Stored payment info:', this.activePayments.get(paymentId));
       
       // Set timeout for this payment
       this.setPaymentTimeout(paymentId);
@@ -247,33 +247,33 @@ export class ClientPaymentService {
   public async processPayment(paymentId: string): Promise<PaymentStatusResponse> {
     const context = { paymentId, requestId: this.requestId };
     
-    console.log('===== DEBUG: PROCESSING PAYMENT =====');
-    console.log('Payment ID:', paymentId);
+    paymentLogger.debug('===== DEBUG: PROCESSING PAYMENT =====');
+    paymentLogger.debug('Payment ID:', paymentId);
     
     // Debug: Log all keys in the activePayments Map to see what's available
     const allKeys = Array.from(this.activePayments.keys());
-    console.log('All active payment keys:', allKeys);
-    console.log('Keys include paymentId?', allKeys.includes(paymentId));
-    console.log('Keys exact match check:', allKeys.map(key => ({
+    paymentLogger.debug('All active payment keys:', allKeys);
+    paymentLogger.debug('Keys include paymentId?', allKeys.includes(paymentId));
+    paymentLogger.debug('Keys exact match check:', allKeys.map(key => ({
       key,
       matches: key === paymentId,
       keyLength: key.length,
       paymentIdLength: paymentId.length
     })));
     
-    console.log('All active payments:', Object.fromEntries(this.activePayments));
+    paymentLogger.info('All active payments:', Object.fromEntries(this.activePayments));
     
     // Try to get payment info directly by key and as a fallback try case-insensitive matching
     let paymentInfo = this.activePayments.get(paymentId);
     
     // If not found, try to find it by iterating through the Map (case-insensitive)
     if (!paymentInfo) {
-      console.log('Payment not found by direct key access, trying alternative methods...');
+      paymentLogger.debug('Payment not found by direct key access, trying alternative methods...');
       
       // Try to find a case-insensitive match
       for (const [key, value] of this.activePayments.entries()) {
         if (key.toLowerCase() === paymentId.toLowerCase()) {
-          console.log('Found payment with case-insensitive match:', key);
+          paymentLogger.debug('Found payment with case-insensitive match:', key);
           paymentInfo = value;
           break;
         }
@@ -281,13 +281,13 @@ export class ClientPaymentService {
       
       // If still not found, check localStorage as a fallback
       if (!paymentInfo && typeof window !== 'undefined') {
-        console.log('Trying to restore from localStorage...');
+        paymentLogger.debug('Trying to restore from localStorage...');
         try {
           const storedPaymentInfo = localStorage.getItem('image_board_payment_info');
           if (storedPaymentInfo) {
             const parsed = JSON.parse(storedPaymentInfo);
             if (parsed.paymentId === paymentId) {
-              console.log('Found payment info in localStorage');
+              paymentLogger.debug('Found payment info in localStorage');
               paymentInfo = parsed;
               
               // Also add it back to the activePayments Map
@@ -295,12 +295,12 @@ export class ClientPaymentService {
             }
           }
         } catch (err) {
-          console.error('Error accessing localStorage:', err);
+          paymentLogger.error('Error accessing localStorage:', err);
         }
       }
     }
     
-    console.log('Found payment info:', paymentInfo);
+    paymentLogger.debug('Found payment info:', paymentInfo);
     
     if (!paymentInfo) {
       const error = new Error('Payment session not found');
@@ -318,8 +318,8 @@ export class ClientPaymentService {
     }
     
     try {
-      console.log('About to update payment status to PROCESSING');
-      console.log('Using transaction ID:', paymentInfo.transactionId);
+      paymentLogger.info('About to update payment status to PROCESSING');
+      paymentLogger.info('Using transaction ID:', paymentInfo.transactionId);
       
       // Update payment status to processing via API
       await fetch('/api/payment/update', {
@@ -352,8 +352,8 @@ export class ClientPaymentService {
       };
       
       // Debug log to show the exact request being sent
-      console.log('===== DEBUG: PAYMENT REQUEST =====');
-      console.log('Request:', JSON.stringify(request, null, 2));
+      paymentLogger.debug('===== DEBUG: PAYMENT REQUEST =====');
+      paymentLogger.debug('Request:', JSON.stringify(request, null, 2));
       
       // Process the payment with the blockchain
       const result = await this.paymentProvider.processPayment(

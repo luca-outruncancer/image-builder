@@ -5,7 +5,6 @@ import { getSupabaseClient } from '@/lib/supabase';
 import { nanoid } from 'nanoid';
 import { PaymentStatus } from '@/lib/payment/types';
 import { updateImageInCache } from '@/lib/server/imageCache';
-
 /**
  * API endpoint to update payment status in the database
  * This runs on the server and handles all database operations
@@ -64,8 +63,8 @@ export async function POST(request: NextRequest) {
     } = body || {};
     
     // Add debug logging
-    console.log('===== DEBUG: PAYMENT UPDATE API =====');
-    console.log('Request params:', { transactionId, paymentId, status });
+    apiLogger.debug('===== DEBUG: PAYMENT UPDATE API =====');
+    apiLogger.debug('Request params:', { transactionId, paymentId, status });
     
     if (!transactionId || !status) {
       apiLogger.error('Missing required payment update parameters', {
@@ -96,9 +95,9 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(5);
       
-    console.log('===== DEBUG: Recent transactions =====');
-    console.log('Looking for tx_id:', transactionId);
-    console.log('Recent transactions:', allTransactions);
+    apiLogger.debug('===== DEBUG: Recent transactions =====');
+    apiLogger.debug('Looking for tx_id:', transactionId);
+    apiLogger.debug('Recent transactions:', allTransactions);
     
     // Try alternative query by payment ID (transaction_hash)
     if (paymentId) {
@@ -108,16 +107,16 @@ export async function POST(request: NextRequest) {
         .eq('transaction_hash', paymentId)
         .single();
         
-      console.log('===== DEBUG: Alternative lookup by paymentId =====');
-      console.log('Looking for transaction_hash:', paymentId);
-      console.log('Result:', byHash || 'Not found');
-      console.log('Error:', hashError || 'No error');
+      apiLogger.debug('===== DEBUG: Alternative lookup by paymentId =====');
+      apiLogger.debug('Looking for transaction_hash:', paymentId);
+      apiLogger.debug('Result:', byHash || 'Not found');
+      apiLogger.debug('Error:', hashError || 'No error');
       
       // If we found a match but it has a different tx_id, that might be our issue
       if (byHash && byHash.tx_id !== parseInt(transactionId) && !isNaN(parseInt(transactionId))) {
-        console.log('===== DEBUG: MISMATCH DETECTED =====');
-        console.log('Client sent tx_id:', transactionId);
-        console.log('Database has tx_id:', byHash.tx_id, 'for the same payment');
+        apiLogger.debug('===== DEBUG: MISMATCH DETECTED =====');
+        apiLogger.debug('Client sent tx_id:', transactionId);
+        apiLogger.debug('Database has tx_id:', byHash.tx_id, 'for the same payment');
       }
     }
     
@@ -128,10 +127,10 @@ export async function POST(request: NextRequest) {
       .eq('tx_id', transactionId)
       .single();
       
-    console.log('===== DEBUG: Query result =====');
-    console.log('Query for tx_id:', transactionId);
-    console.log('Result:', currentTransaction || 'Not found');
-    console.log('Error:', fetchError || 'No error');
+    apiLogger.debug('===== DEBUG: Query result =====');
+    apiLogger.debug('Query for tx_id:', transactionId);
+    apiLogger.debug('Result:', currentTransaction || 'Not found');
+    apiLogger.debug('Error:', fetchError || 'No error');
       
     if (fetchError) {
       apiLogger.error('Failed to fetch transaction record', new Error(fetchError.message), {

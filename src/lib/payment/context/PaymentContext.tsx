@@ -4,6 +4,7 @@
 import React, { createContext, useContext, ReactNode, useEffect } from 'react';
 import { usePayment } from '../hooks/usePayment';
 import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse, PaymentResponse } from '../types';
+import { paymentLogger } from '@/utils/logger/index';
 
 // Define the context type
 interface PaymentContextType {
@@ -32,7 +33,7 @@ export function PaymentProvider({ children }: { children: ReactNode }) {
   // Log when payment state changes for debugging
   useEffect(() => {
     if (payment.paymentId) {
-      console.log('PaymentContext - Payment state changed:', {
+      paymentLogger.info('PaymentContext - Payment state changed:', {
         paymentId: payment.paymentId,
         status: payment.paymentStatus
       });

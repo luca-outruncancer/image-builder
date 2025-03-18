@@ -51,8 +51,8 @@ export default function CanvasPaymentHandler({
   
   // Add debug logging for success modal
   useEffect(() => {
-    console.log('===== DEBUG: SUCCESS MODAL STATE =====');
-    console.log('Success step conditions:', {
+    canvasLogger.debug('===== DEBUG: SUCCESS MODAL STATE =====');
+    canvasLogger.debug('Success step conditions:', {
       successInfo,
       isSuccessStep,
       paymentStatus,
@@ -62,7 +62,7 @@ export default function CanvasPaymentHandler({
     });
     
     if (successInfo) {
-      console.log('Success info details:', {
+      canvasLogger.debug('Success info details:', {
         paymentId: successInfo.paymentId,
         status: successInfo.status,
         transactionHash: successInfo.transactionHash,
@@ -102,8 +102,8 @@ export default function CanvasPaymentHandler({
   useEffect(() => {
     return () => {
       try {
-        console.log('===== DEBUG: PAYMENT HANDLER UNMOUNTING =====');
-        console.log('Component state at unmount:', {
+        canvasLogger.debug('===== DEBUG: PAYMENT HANDLER UNMOUNTING =====');
+        canvasLogger.debug('Component state at unmount:', {
           successInfo,
           isSuccessStep,
           paymentStatus,
@@ -244,7 +244,7 @@ export default function CanvasPaymentHandler({
 
       {/* Success modal */}
       {isSuccessStep && (() => {
-        console.log('===== DEBUG: RENDERING SUCCESS MODAL =====');
+        canvasLogger.debug('===== DEBUG: RENDERING SUCCESS MODAL =====');
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
             <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
