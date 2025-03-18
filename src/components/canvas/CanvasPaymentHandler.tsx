@@ -11,18 +11,7 @@ import { PaymentStatus } from '@/lib/payment/types';
 import { canvasLogger } from '@/utils/logger/index';
 import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
 import { ErrorCategory } from '@/lib/payment/types';
-
-interface PlacedImage {
-  id: string;
-  src: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  status: number;
-  file?: File;
-  cost?: number;
-}
+import { PlacedImage } from '@/types/canvas';
 
 interface CanvasPaymentHandlerProps {
   pendingConfirmation: PlacedImage;

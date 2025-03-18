@@ -12,7 +12,7 @@ export const FEATURES = {
   IMAGE_MAGNIFIER_ENABLED: true, // Toggle magnifier functionality
   SHOW_OWNER_WALLET: true, // Show owner wallet address in magnifier
   HIGH_QUALITY_IMAGES: true, // Toggle for high-quality image processing
-  DEBUG_MODE: process.env.NODE_ENV === 'development', // Enable debug features in development mode
+  DEBUG_MODE: false, // Disabled debug features
 };
 
 // Logging configuration

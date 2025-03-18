@@ -4,9 +4,20 @@ import { apiLogger } from '@/utils/logger';
 import { ensureServerInitialized } from '@/lib/server/init';
 
 /**
- * API to check the status of the image cache
+ * This API route is disabled as the CanvasDebug component has been removed.
+ * The image cache stats are no longer displayed in the UI.
+ */
+
+/**
+ * API to check the status of the image cache (DISABLED)
  */
 export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    success: false,
+    message: 'This API route has been disabled'
+  }, { status: 404 });
+  
+  /* Original implementation:
   try {
     // Ensure server is initialized
     await ensureServerInitialized();
@@ -29,12 +40,19 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+  */
 }
 
 /**
- * API to refresh the image cache
+ * API to refresh the image cache (DISABLED)
  */
 export async function POST(request: NextRequest) {
+  return NextResponse.json({
+    success: false,
+    message: 'This API route has been disabled'
+  }, { status: 404 });
+  
+  /* Original implementation:
   try {
     // Ensure server is initialized
     await ensureServerInitialized();
@@ -61,4 +79,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+  */
 } 
