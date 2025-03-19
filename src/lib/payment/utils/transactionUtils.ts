@@ -22,6 +22,11 @@ export async function verifyTransactionUniqueness(
   imageId: number,
   nonce: string
 ): Promise<boolean> {
+  if (!supabase) {
+    blockchainLogger.error('Supabase client not available', new Error('Cannot verify transaction uniqueness'));
+    return false; // Cannot verify, assume non-unique to be safe
+  }
+  
   const { data } = await supabase
     .from('transaction_records')
     .select('tx_id, status')

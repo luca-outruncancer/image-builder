@@ -98,8 +98,8 @@ export async function POST(request: NextRequest) {
       .limit(5);
       
     apiLogger.debug('===== DEBUG: Recent transactions =====');
-    apiLogger.debug('Looking for tx_id:', transactionId);
-    apiLogger.debug('Recent transactions:', allTransactions);
+    apiLogger.debug('Looking for tx_id:', { transactionId });
+    apiLogger.debug('Recent transactions:', { transactions: allTransactions || [] });
     
     // Try alternative query by payment ID (transaction_hash)
     if (paymentId) {
@@ -110,15 +110,15 @@ export async function POST(request: NextRequest) {
         .single();
         
       apiLogger.debug('===== DEBUG: Alternative lookup by paymentId =====');
-      apiLogger.debug('Looking for transaction_hash:', paymentId);
-      apiLogger.debug('Result:', byHash || 'Not found');
-      apiLogger.debug('Error:', hashError || 'No error');
+      apiLogger.debug('Looking for transaction_hash:', { paymentId });
+      apiLogger.debug('Result:', { data: byHash || null });
+      apiLogger.debug('Error:', hashError || { message: 'No error' });
       
       // If we found a match but it has a different tx_id, that might be our issue
       if (byHash && byHash.tx_id !== parseInt(transactionId) && !isNaN(parseInt(transactionId))) {
         apiLogger.debug('===== DEBUG: MISMATCH DETECTED =====');
-        apiLogger.debug('Client sent tx_id:', transactionId);
-        apiLogger.debug('Database has tx_id:', byHash.tx_id, 'for the same payment');
+        apiLogger.debug('Client sent tx_id:', { transactionId });
+        apiLogger.debug('Database has tx_id:', { dbTxId: byHash.tx_id, message: 'for the same payment' });
       }
     }
     
@@ -130,9 +130,9 @@ export async function POST(request: NextRequest) {
       .single();
       
     apiLogger.debug('===== DEBUG: Query result =====');
-    apiLogger.debug('Query for tx_id:', transactionId);
-    apiLogger.debug('Result:', currentTransaction || 'Not found');
-    apiLogger.debug('Error:', fetchError || 'No error');
+    apiLogger.debug('Query for tx_id:', { transactionId });
+    apiLogger.debug('Result:', { data: currentTransaction || null });
+    apiLogger.debug('Error:', fetchError || { message: 'No error' });
       
     if (fetchError) {
       apiLogger.error('Failed to fetch transaction record', new Error(fetchError.message), {

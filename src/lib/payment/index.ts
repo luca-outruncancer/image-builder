@@ -17,4 +17,3 @@ export * from './clientPaymentService';
 
 // Export sub-modules
 export * from './solana';
-export * from './storage';

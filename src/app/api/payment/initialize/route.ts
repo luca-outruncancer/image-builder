@@ -123,13 +123,13 @@ export async function POST(request: NextRequest) {
     }
     
     // Debug logging to see what we're returning to the client
-    console.log('===== DEBUG: PAYMENT INITIALIZE API =====');
-    console.log('Created transaction:', {
+    apiLogger.debug('===== DEBUG: PAYMENT INITIALIZE API =====');
+    apiLogger.debug('Created transaction:', {
       tx_id: transaction.tx_id,
       type: typeof transaction.tx_id,
       transaction_hash: transaction.transaction_hash
     });
-    console.log('Full transaction object:', transaction);
+    apiLogger.debug('Full transaction object:', transaction);
     
     // Update the image status
     const { error: imageError } = await supabase

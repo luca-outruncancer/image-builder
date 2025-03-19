@@ -10,7 +10,6 @@ import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus, ErrorCategory } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 import { canvasLogger, imageLogger } from '@/utils/logger/index';
-import { getImageStatusFromPaymentStatus } from '@/lib/payment/utils/storageUtils';
 import { PlacedImage } from '@/types/canvas';
 
 // Add error context interfaces
@@ -509,20 +508,23 @@ export function useCanvasState(): CanvasState {
       });
       
       // Store additional metadata in localStorage for recovery
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && tempImage.file) {
         try {
-          localStorage.setItem('image_board_enhanced_metadata', JSON.stringify({
+          const storedMetadata = {
             imageId: imageId,
-            fileName: tempImage.file.name,
+            fileName: tempImage.file.name, 
             positionX: imageRecord.start_position_x,
             positionY: imageRecord.start_position_y,
             width: imageRecord.size_x,
             height: imageRecord.size_y,
             fileType: tempImage.file.type,
             imageLocation: imageRecord.image_location
-          }));
+          };
+          
+          localStorage.setItem('image_board_metadata', JSON.stringify(storedMetadata));
+          canvasLogger.debug('Stored metadata in localStorage', storedMetadata);
         } catch (err) {
-          canvasLogger.warn('Failed to store enhanced metadata', 
+          canvasLogger.warn('Failed to store metadata in localStorage',
             err instanceof Error ? err : new Error(String(err)));
         }
       }
@@ -802,27 +804,27 @@ export function useCanvasState(): CanvasState {
         }
       ]);
 
-      // Store additional metadata in localStorage for recovery
-      if (typeof window !== 'undefined') {
+      // Only store metadata if we have access to window and a file is available
+      if (typeof window !== 'undefined' && tempImage.file) {
         try {
-          const enhancedMetadata = {
-            imageId,
-            positionX: imageRecord.start_position_x,
+          // Create metadata object with all needed properties
+          const storedMetadata = {
+            imageId: imageRecord.image_id,
+            fileName: tempImage.file.name,
+            positionX: imageRecord.start_position_x, 
             positionY: imageRecord.start_position_y,
             width: imageRecord.size_x,
             height: imageRecord.size_y,
-            fileName: tempImage.file.name,
-            // Extra fields
             fileType: tempImage.file.type,
             fileSize: tempImage.file.size,
             status: imageRecord.status,
             imageLocation: imageRecord.image_location
           };
           
-          localStorage.setItem('image_board_metadata', JSON.stringify(enhancedMetadata));
-          canvasLogger.debug('Stored enhanced metadata in localStorage', enhancedMetadata);
+          localStorage.setItem('image_board_metadata', JSON.stringify(storedMetadata));
+          imageLogger.debug('Stored image metadata in localStorage', storedMetadata);
         } catch (err) {
-          canvasLogger.warn('Failed to store enhanced metadata in localStorage',
+          imageLogger.warn('Failed to store image metadata', 
             err instanceof Error ? err : new Error(String(err)));
         }
       }
