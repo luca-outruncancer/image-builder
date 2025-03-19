@@ -179,66 +179,63 @@ export function usePayment() {
   /**
    * Process the current payment
    */
-  const processPayment = useCallback(async (providedPaymentId?: string) => {
-    // Use provided paymentId or fallback to state
-    const paymentIdToUse = providedPaymentId || paymentId;
-    
-    if (!paymentIdToUse) {
-      const error = new Error('No active payment to process');
-      paymentLogger.error('Failed to process payment:', error);
-      return false;
-    }
-
+  const processPayment = useCallback(async (paymentIdToUse?: string) => {
     try {
+      // Use provided paymentId or fallback to state
+      const pidToUse = paymentIdToUse || paymentId;
+      
+      if (!pidToUse) {
+        paymentLogger.error('No payment ID available for processing');
+        return false;
+      }
+      
       setIsProcessing(true);
       setError(null);
       
-      paymentLogger.debug('===== DEBUG: usePayment.processPayment =====');
-      paymentLogger.debug('Using paymentId:', { paymentId: paymentIdToUse });
+      paymentLogger.info('Processing payment', { 
+        paymentId: pidToUse 
+      });
       
-      // Try to restore payment info from localStorage if needed
+      // Check if we need to restore payment session from localStorage
       if (typeof window !== 'undefined') {
-        // First check if we have a transaction mapping for this payment
-        const paymentIdMapping = `payment_mapping_${paymentIdToUse}`;
-        const mappedTransactionId = localStorage.getItem(paymentIdMapping);
+        // Get transaction ID mapping from localStorage if available
+        const mappedTransactionId = localStorage.getItem(
+          `${STORAGE_KEYS.TRANSACTION_ID}_${pidToUse}`
+        );
         
         if (mappedTransactionId) {
-          paymentLogger.debug('Found transaction ID mapping in localStorage:', { mappedTransactionId });
+          paymentLogger.debug('Found transaction ID mapping in localStorage', {
+            paymentId: pidToUse,
+            transactionId: mappedTransactionId
+          });
         }
         
-        const savedPaymentId = localStorage.getItem(STORAGE_KEYS.PAYMENT_ID);
-        const savedTransactionId = localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID);
-        
-        paymentLogger.debug('Stored payment data in localStorage:', {
-          savedPaymentId,
-          savedTransactionId,
-          mappedTransactionId
-        });
-        
+        // Get payment info from localStorage if available
         const savedPaymentInfo = localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO);
+        
         if (savedPaymentInfo) {
           try {
             const paymentInfo = JSON.parse(savedPaymentInfo);
             paymentLogger.debug('Parsed payment info from localStorage:', paymentInfo);
             
             // Only restore if the payment IDs match
-            if (paymentInfo.paymentId === paymentIdToUse) {
-              paymentService.restorePaymentSession(paymentIdToUse, paymentInfo);
+            if (paymentInfo.paymentId === pidToUse) {
+              paymentService.restorePaymentSession(pidToUse, paymentInfo);
               paymentLogger.info('Restored payment session before processing', { 
-                paymentId: paymentIdToUse
+                paymentId: pidToUse
               });
             } else if (mappedTransactionId) {
               // If we have a transaction ID mapping but payment IDs don't match,
               // create a synthetic payment info object
               const syntheticPaymentInfo = {
-                paymentId: paymentIdToUse,
+                paymentId: pidToUse,
                 transactionId: mappedTransactionId,
                 amount: paymentInfo.amount, // Use amount from stored payment as fallback
                 status: PaymentStatus.INITIALIZED
               };
               
               paymentLogger.debug('Created synthetic payment info from mapping:', syntheticPaymentInfo);
-              paymentService.restorePaymentSession(paymentIdToUse, syntheticPaymentInfo);
+              paymentService.restorePaymentSession(pidToUse, syntheticPaymentInfo);
             }
           } catch (err) {
             paymentLogger.warn('Failed to restore payment session before processing', 
@@ -247,7 +244,7 @@ export function usePayment() {
         }
       }
       
-      const response = await paymentService.processPayment(paymentIdToUse);
+      const response = await paymentService.processPayment(pidToUse);
       
       if (response.error) {
         setError(response.error);
@@ -259,16 +256,83 @@ export function usePayment() {
       paymentLogger.debug('Payment response:', {
         paymentId: response.paymentId,
         status: response.status,
-        transactionHash: response.transactionHash
+        transactionHash: response.transactionHash,
+        hasMetadata: !!response.metadata,
+        metadataKeys: response.metadata ? Object.keys(response.metadata) : []
       });
+      
+      // Save metadata for the success screen
+      if (typeof window !== 'undefined' && response.metadata) {
+        try {
+          // Store metadata temporarily to ensure it's available for the success screen
+          localStorage.setItem('image_board_metadata', JSON.stringify(response.metadata));
+          paymentLogger.debug('Stored metadata in localStorage for success screen');
+        } catch (err) {
+          paymentLogger.warn('Failed to store metadata in localStorage',
+            err instanceof Error ? err : new Error(String(err)));
+        }
+      }
       
       // Set payment status before success info to ensure order
       setPaymentStatus(response.status);
       
       // Set success info with extra debugging
       try {
-        paymentLogger.debug('Setting successInfo state with:', response);
-        setSuccessInfo(response);
+        // Retrieve stored payment info that might contain more metadata
+        let storedPaymentInfo = null;
+        let extraMetadata = null;
+        
+        if (typeof window !== 'undefined') {
+          const savedPaymentInfo = localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO);
+          const savedMetadata = localStorage.getItem('image_board_metadata');
+          const enhancedMetadata = localStorage.getItem('image_board_enhanced_metadata');
+          
+          if (savedPaymentInfo) {
+            try {
+              storedPaymentInfo = JSON.parse(savedPaymentInfo);
+            } catch (err) {
+              paymentLogger.warn('Failed to parse saved payment info:', 
+                err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+          
+          if (savedMetadata) {
+            try {
+              extraMetadata = JSON.parse(savedMetadata);
+            } catch (err) {
+              paymentLogger.warn('Failed to parse saved metadata:', 
+                err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+          
+          if (!extraMetadata && enhancedMetadata) {
+            try {
+              extraMetadata = JSON.parse(enhancedMetadata);
+              paymentLogger.debug('Using enhanced metadata from localStorage');
+            } catch (err) {
+              paymentLogger.warn('Failed to parse enhanced metadata:', 
+                err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+        }
+        
+        // Enhance response with additional metadata if needed
+        const enhancedResponse = {
+          ...response,
+          metadata: {
+            ...(response.metadata || {}),
+            // If response is missing metadata properties but we have them in storage, use those
+            fileName: response.metadata?.fileName || extraMetadata?.fileName || storedPaymentInfo?.fileName,
+            imageId: response.metadata?.imageId || extraMetadata?.imageId || storedPaymentInfo?.imageId,
+            positionX: response.metadata?.positionX || extraMetadata?.positionX || storedPaymentInfo?.positionX,
+            positionY: response.metadata?.positionY || extraMetadata?.positionY || storedPaymentInfo?.positionY,
+            width: response.metadata?.width || extraMetadata?.width || storedPaymentInfo?.width,
+            height: response.metadata?.height || extraMetadata?.height || storedPaymentInfo?.height
+          }
+        };
+        
+        paymentLogger.debug('Setting enhanced successInfo state with:', enhancedResponse);
+        setSuccessInfo(enhancedResponse);
         paymentLogger.info('Successfully set successInfo state');
         
         // Add timeout to check if state persists
@@ -288,60 +352,35 @@ export function usePayment() {
         response.status === PaymentStatus.FAILED || 
         response.status === PaymentStatus.CANCELED
       ) {
-        paymentLogger.debug('===== DEBUG: PAYMENT CLEANUP =====');
-        paymentLogger.debug('Payment status triggering cleanup:', { status: response.status });
-        paymentLogger.debug('Before cleanup - localStorage keys:', {
-          paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
-          paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
-          paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
-          transactionId: localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID)
-        });
-        
+        // Only clear localStorage if the state has been successfully set
         if (typeof window !== 'undefined') {
           try {
-            // Try to get mapping key for this payment
-            const paymentIdMapping = `payment_mapping_${response.paymentId}`;
-            const hasMappingKey = localStorage.getItem(paymentIdMapping) !== null;
-            
-            // Remove all items
             localStorage.removeItem(STORAGE_KEYS.PAYMENT_INFO);
             localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
             localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
-            localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
-            
-            // Also remove the mapping if it exists
-            if (hasMappingKey) {
-              localStorage.removeItem(paymentIdMapping);
-            }
-            
-            paymentLogger.info('Cleanup completed - removed localStorage keys');
-            paymentLogger.info('After cleanup - localStorage keys:', {
-              paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
-              paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
-              paymentStatus: localStorage.getItem(STORAGE_KEYS.PAYMENT_STATUS),
-              transactionId: localStorage.getItem(STORAGE_KEYS.TRANSACTION_ID),
-              mappingKey: paymentIdMapping,
-              mappingValue: localStorage.getItem(paymentIdMapping)
-            });
+            localStorage.removeItem(`${STORAGE_KEYS.TRANSACTION_ID}_${pidToUse}`);
+            localStorage.removeItem('image_board_metadata');
+            localStorage.removeItem('image_board_enhanced_metadata');
+            paymentLogger.debug('Cleared localStorage payment data');
           } catch (err) {
-            paymentLogger.error('Error during localStorage cleanup:', err instanceof Error ? err : new Error(String(err)));
+            paymentLogger.warn('Failed to clear localStorage payment data:', 
+              err instanceof Error ? err : new Error(String(err)));
           }
-        } else {
-          paymentLogger.debug('Window is undefined, skipping localStorage cleanup');
         }
-      } else {
-        paymentLogger.debug('Payment status does not trigger cleanup:', { status: response.status });
       }
       
-      return response.status === PaymentStatus.CONFIRMED;
+      return true;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      paymentLogger.error('Failed to process payment:', error);
+      paymentLogger.error('Error processing payment:', error);
+      
       setError({
         category: ErrorCategory.UNKNOWN_ERROR,
-        message: 'Failed to process payment',
-        retryable: true
+        message: 'Unknown error processing payment',
+        retryable: true,
+        originalError: error
       });
+      
       return false;
     } finally {
       setIsProcessing(false);
@@ -409,6 +448,8 @@ export function usePayment() {
       localStorage.removeItem(STORAGE_KEYS.PAYMENT_ID);
       localStorage.removeItem(STORAGE_KEYS.PAYMENT_STATUS);
       localStorage.removeItem(STORAGE_KEYS.TRANSACTION_ID);
+      localStorage.removeItem('image_board_metadata');
+      localStorage.removeItem('image_board_enhanced_metadata');
     }
   }, []);
   

@@ -8,24 +8,10 @@ import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
 import SelectionMagnifier from './SelectionMagnifier';
-
-// Define the wallet info interface
-interface WalletInfo {
-  success: boolean;
-  wallet?: string;
-  sender_wallet?: string;
-  imageId?: number;
-  position?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    clickedX: number;
-    clickedY: number;
-  };
-  status?: string;
-  image_location?: string;
-}
+import { WalletInfo } from '@/types/wallet-info';
+import { usePaymentContext } from '@/lib/payment/context';
+import { canvasLogger } from '@/utils/logger/index';
+import ConfirmPlacement from './ConfirmPlacement';
 
 interface CanvasMainProps {
   className?: string;
@@ -35,6 +21,12 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [canvasScale, setCanvasScale] = useState(1);
   const [currentWalletInfo, setCurrentWalletInfo] = useState<WalletInfo | null>(null);
+  
+  // Get payment context to check states
+  const { isProcessing, error, successInfo } = usePaymentContext();
+  
+  // Determine if we need to show the payment handler (processing/result state)
+  const showPaymentHandler = isProcessing || error !== null || successInfo !== null;
   
   const {
     isLoadingImages,
@@ -58,6 +50,17 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setTempImage,
     setPendingConfirmation,
   } = useCanvasState();
+
+  // Log when payment handler visibility changes for debugging
+  useEffect(() => {
+    canvasLogger.debug('Payment handler visibility updated', {
+      showPaymentHandler,
+      isProcessing,
+      hasError: error !== null,
+      hasSuccessInfo: successInfo !== null,
+      pendingConfirmation: !!pendingConfirmation
+    });
+  }, [showPaymentHandler, isProcessing, error, successInfo, pendingConfirmation]);
 
   // Calculate and update canvas scale based on container width
   useEffect(() => {
@@ -144,14 +147,22 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
         </>
       )}
 
-      {/* Placement confirmation UI */}
-      {pendingConfirmation && (
-        <CanvasPaymentHandler
-          pendingConfirmation={pendingConfirmation}
+      {/* Confirmation step - moved to CanvasMain */}
+      {pendingConfirmation && !showPaymentHandler && (
+        <ConfirmPlacement
+          position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
+          cost={pendingConfirmation.cost || 0}
           onConfirm={handleConfirmPlacement}
           onCancel={handleCancel}
           onBack={handleBack}
           onReposition={() => setPendingConfirmation(null)}
+        />
+      )}
+
+      {/* Payment processing and result modals */}
+      {showPaymentHandler && pendingConfirmation && (
+        <CanvasPaymentHandler
+          pendingConfirmation={pendingConfirmation}
           onCloseError={() => setPaymentError(null)}
           onRetry={handleRetryPayment}
           onDone={handleDone}
