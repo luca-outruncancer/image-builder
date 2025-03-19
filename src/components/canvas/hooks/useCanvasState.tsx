@@ -152,7 +152,7 @@ export function useCanvasState(): CanvasState {
         setIsLoadingImages(true);
         canvasLogger.info('Fetching placed images from database');
         
-        // Get images with status CONFIRMED
+        // Get images with PENDING, PROCESSING, or CONFIRMED status
         const { success, data: records, error } = await getPlacedImages();
         
         if (success && records && Array.isArray(records)) {

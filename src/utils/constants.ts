@@ -112,6 +112,7 @@ export const RECIPIENT_WALLET_ADDRESS =
 
 // Payment related constants
 export const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
+export const IMAGE_CACHING_TTL = 180000; // 3 minutes cache TTL
 
 // Payment token configuration
 type NetworkAddresses = {

@@ -131,63 +131,23 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
   }
   
   try {
-    storageLogger.info('Fetching placed images with CONFIRMED status');
+    storageLogger.info('Fetching placed images with PENDING, PROCESSING, or CONFIRMED status');
     
-    // First try with the enum value
     const { data, error } = await client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED);
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.CONFIRMED]);
     
     if (error) {
-      storageLogger.error('Error fetching image records with enum value', error instanceof Error ? error : new Error(String(error)));
-      
-      // Try with uppercase string as fallback
-      storageLogger.info('Retrying with uppercase string "CONFIRMED"');
-      const fallbackResult = await client
-        .from('images')
-        .select('*')
-        .eq('status', 'CONFIRMED');
-      
-      if (fallbackResult.error) {
-        storageLogger.error('Error fetching image records with uppercase string', 
-          fallbackResult.error instanceof Error ? fallbackResult.error : new Error(String(fallbackResult.error)));
-        return { success: false, error: fallbackResult.error };
-      }
-      
-      if (fallbackResult.data && fallbackResult.data.length > 0) {
-        storageLogger.info(`Successfully fetched ${fallbackResult.data.length} images with uppercase string`);
-        return { success: true, data: fallbackResult.data };
-      } else {
-        storageLogger.warn('No confirmed images found with uppercase string');
-        
-        // Last attempt - try to get all images to see what statuses exist
-        const allImagesResult = await client
-          .from('images')
-          .select('status')
-          .then(result => {
-            if (!result.error && result.data) {
-              // Count occurrences of each status
-              const statusCounts: Record<string, number> = {};
-              result.data.forEach(row => {
-                const status = row.status;
-                statusCounts[status] = (statusCounts[status] || 0) + 1;
-              });
-              
-              storageLogger.info('Available image statuses:', { statuses: statusCounts });
-            }
-            return result;
-          });
-        
-        return { success: true, data: [] };
-      }
+      storageLogger.error('Error fetching image records', error instanceof Error ? error : new Error(String(error)));
+      return { success: false, error };
     }
     
     if (data && data.length > 0) {
-      storageLogger.info(`Successfully fetched ${data.length} images with enum value`);
+      storageLogger.info(`Successfully fetched ${data.length} images`);
       return { success: true, data };
     } else {
-      storageLogger.warn('No confirmed images found with enum value');
+      storageLogger.info('No images found with the specified statuses');
       return { success: true, data: [] };
     }
   } catch (error) {
@@ -246,11 +206,11 @@ export async function checkAreaAvailability(
   }
   
   try {
-    // Query for any confirmed images that overlap with the target area
+    // Query for any confirmed, pending, or processing images that overlap with the target area
     let query = client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED)
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.CONFIRMED])
       .or(`start_position_x.lte.${x + width},end_position_x.gte.${x}`)
       .or(`start_position_y.lte.${y + height},end_position_y.gte.${y}`);
     
@@ -281,10 +241,10 @@ export async function checkAreaAvailability(
 }
 
 /**
- * Clean up expired pending payments
+ * Clean up expired pending or still processing payments
  */
 export async function cleanupExpiredPendingPayments(
-  timeoutMinutes: number = 3
+  timeoutMinutes?: number
 ): Promise<{ success: boolean; error?: any }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -293,15 +253,26 @@ export async function cleanupExpiredPendingPayments(
   }
   
   try {
+    // Import PAYMENT_TIMEOUT_MS from constants
+    const { PAYMENT_TIMEOUT_MS } = await import('@/utils/constants');
+    
+    // Calculate timeout value in minutes from the ms constant if not provided
+    const actualTimeoutMinutes = timeoutMinutes ?? (PAYMENT_TIMEOUT_MS / 1000 / 60);
+    
     // Calculate timeout timestamp
     const timeoutThreshold = new Date();
-    timeoutThreshold.setMinutes(timeoutThreshold.getMinutes() - timeoutMinutes);
+    timeoutThreshold.setMinutes(timeoutThreshold.getMinutes() - actualTimeoutMinutes);
     
-    // Update status of expired pending payments
+    storageLogger.debug('Cleaning up expired payments', {
+      timeoutMinutes: actualTimeoutMinutes,
+      thresholdTime: timeoutThreshold.toISOString()
+    });
+    
+    // Update status of expired pending or processing payments
     const { data, error } = await client
       .from('images')
       .update({ status: PaymentStatus.TIMEOUT })
-      .eq('status', PaymentStatus.PENDING)
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING])
       .lt('created_at', timeoutThreshold.toISOString());
     
     if (error) {
