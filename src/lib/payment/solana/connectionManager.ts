@@ -1,8 +1,8 @@
 // src/lib/payment/solana/connectionManager.ts
 import { Connection, Commitment, TransactionSignature } from '@solana/web3.js';
-import { ErrorCategory } from '../types';
+import { PaymentError, ErrorCategory } from '../types/index';
 import { createPaymentError } from '../utils/errorUtils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from './walletConfig';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -24,7 +24,7 @@ export class ConnectionManager {
       });
       
       this.connections.set(key, connection);
-      blockchainLogger.debug('Created new connection', { endpoint, commitment });
+      blockchainLogger.info('Created new connection', { endpoint, commitment });
     }
     
     return this.connections.get(key)!;

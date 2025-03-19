@@ -1,5 +1,5 @@
 // src/lib/payment/utils/errorUtils.ts
-import { ErrorCategory, PaymentError } from '../types';
+import { PaymentError, ErrorCategory } from '../types/index';
 import { SendTransactionError } from '@solana/web3.js';
 import { paymentLogger } from '@/utils/logger';
 

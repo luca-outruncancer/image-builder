@@ -15,12 +15,13 @@ import {
   TokenAccountNotFoundError,
   createAssociatedTokenAccountInstruction
 } from '@solana/spl-token';
-import { 
+import {
   PaymentRequest,
   TransactionResult,
-  WalletConfig,
-  ErrorCategory
-} from '../types';
+  PaymentError,
+  ErrorCategory,
+  WalletConfig
+} from '../types/index';
 import { 
   createPaymentError,
   isUserRejectionError,
@@ -31,7 +32,7 @@ import {
   getNonce,
   extractSignatureFromError
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from './walletConfig';
 import { PAYMENT_TOKENS, ACTIVE_NETWORK } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 

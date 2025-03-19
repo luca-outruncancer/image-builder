@@ -1,4 +1,5 @@
-import { getSupabaseClient } from '@/lib/supabase';
+// src/lib/server/imageCache.ts
+import { getSupabaseClient } from '@/lib/server/supabase';
 import { systemLogger } from '@/utils/logger';
 
 // Define the image data structure

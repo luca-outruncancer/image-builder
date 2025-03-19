@@ -8,7 +8,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
-import { SOLANA_NETWORK, RPC_ENDPOINT } from '@/lib/solana/walletConfig';
+import { ACTIVE_NETWORK as SOLANA_NETWORK, RPC_ENDPOINT } from '@/lib/payment/solana/walletConfig';
 
 // Import the wallet adapter styles
 import '@solana/wallet-adapter-react-ui/styles.css';

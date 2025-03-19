@@ -1,6 +1,6 @@
 // src/utils/logger/index.ts
 import { LOGGING } from "@/utils/constants";
-import { Logger, LogData, ErrorLogData } from "./types";
+import { Logger, LogData } from "./types";
 import pino from "pino";
 import * as Sentry from "@sentry/nextjs";
 

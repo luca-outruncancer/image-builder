@@ -1,4 +1,4 @@
-// src/lib/imageResizer.ts
+// src/lib/server/imageResizer.ts
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
@@ -252,146 +252,66 @@ export async function resizeImage(
           height: options.height,
           processingTimeMs: Math.round(endTime - startTime)
         };
-      } catch (writeError) {
-        const writeErr = writeError instanceof Error ? writeError : new Error(String(writeError));
-        imageLogger.error('Failed to save image on second attempt', writeErr, {
-          targetPath
-        });
-        
-        // If all else fails, write the original file as a fallback
-        try {
-          imageLogger.warn('Falling back to original image', {
-            targetPath,
-            originalSize
-          });
-          
-          await fs.writeFile(targetPath, sourceBuffer);
-          const fileStats = await fs.stat(targetPath);
-          const endTime = performance.now();
-          
-          return {
-            success: false,
-            path: targetPath,
-            format: 'unknown',
-            originalSize,
-            resizedSize: fileStats.size,
-            width: options.width,
-            height: options.height,
-            processingTimeMs: Math.round(endTime - startTime),
-            error: writeErr
-          };
-        } catch (fallbackError) {
-          const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
-          imageLogger.error('Failed to save fallback image', fallbackErr, {
-            targetPath,
-            originalSize
-          });
-          
-          return {
-            success: false,
-            path: targetPath,
-            format: 'unknown',
-            originalSize,
-            resizedSize: 0,
-            width: options.width,
-            height: options.height,
-            processingTimeMs: Math.round(performance.now() - startTime),
-            error: fallbackErr
-          };
-        }
+      } catch (secondError) {
+        imageLogger.error('Failed to save image on second attempt', 
+          secondError instanceof Error ? secondError : new Error(String(secondError)));
       }
     }
     
-    // If all else fails, write the original file as a fallback
-    try {
-      imageLogger.warn('Falling back to original image', {
-        targetPath,
-        originalSize
-      });
-      
-      await fs.writeFile(targetPath, sourceBuffer);
-      const fileStats = await fs.stat(targetPath);
-      const endTime = performance.now();
-      
-      return {
-        success: false,
-        path: targetPath,
-        format: 'unknown',
-        originalSize,
-        resizedSize: fileStats.size,
-        width: options.width,
-        height: options.height,
-        processingTimeMs: Math.round(endTime - startTime),
-        error: err
-      };
-    } catch (fallbackError) {
-      const fallbackErr = fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError));
-      imageLogger.error('Failed to save fallback image', fallbackErr, {
-        targetPath,
-        originalSize
-      });
-      
-      return {
-        success: false,
-        path: targetPath,
-        format: 'unknown',
-        originalSize,
-        resizedSize: 0,
-        width: options.width,
-        height: options.height,
-        processingTimeMs: Math.round(performance.now() - startTime),
-        error: fallbackErr
-      };
-    }
+    return {
+      success: false,
+      path: targetPath,
+      format: options.format || 'unknown',
+      originalSize,
+      resizedSize: 0,
+      width: options.width,
+      height: options.height,
+      processingTimeMs: Math.round(performance.now() - startTime),
+      error: err
+    };
   }
 }
 
 /**
- * Determines the optimal image format based on input size, type and quality needs
- * Uses constants for configurable behavior
- * 
- * @param originalFormat The original image format
- * @param fileSize Size in bytes
- * @returns The recommended output format
+ * Determine the optimal format for an image based on its characteristics
  */
 export function determineOptimalFormat(originalFormat: string, fileSize: number): 'jpeg' | 'png' | 'webp' | 'avif' {
-  // If a specific format is preferred in settings, use that
+  // If format settings dictate a specific format, use that
   if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT) {
-    const preferredFormat = IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT;
-    if (['jpeg', 'png', 'webp', 'avif'].includes(preferredFormat)) {
-      return preferredFormat as 'jpeg' | 'png' | 'webp' | 'avif';
-    }
+    return IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_FORMAT as 'jpeg' | 'png' | 'webp' | 'avif';
   }
   
-  // If we should prefer original format
+  // Check if we should preserve original format
   if (IMAGE_SETTINGS.FORMAT_SETTINGS.PREFER_ORIGINAL) {
-    // Make sure it's a valid format we support
-    if (['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(originalFormat)) {
-      // Normalize 'jpg' to 'jpeg'
-      if (originalFormat === 'jpg') return 'jpeg';
+    if (originalFormat === 'jpeg' || originalFormat === 'png' || 
+        originalFormat === 'webp' || originalFormat === 'avif') {
       return originalFormat as 'jpeg' | 'png' | 'webp' | 'avif';
     }
   }
   
-  // Standard selection logic as fallback
-  
-  // Preserve PNG for transparency support if enabled
-  if (originalFormat === 'png' && IMAGE_SETTINGS.PRESERVE_TRANSPARENCY) {
-    // For large PNGs, suggest webp which supports transparency with better compression
-    return fileSize > 500 * 1024 ? 'webp' : 'png';
-  }
-  
-  // Keep original format if it's already optimized
-  if (originalFormat === 'webp') {
+  // For images that might have transparency
+  if (originalFormat === 'png' || originalFormat === 'webp') {
+    // If file is small, keep as PNG for quality
+    if (fileSize < IMAGE_SETTINGS.SMALL_IMAGE_THRESHOLD) {
+      return 'png';
+    }
+    
+    // For larger files with potential transparency, use WebP for better compression
     return 'webp';
   }
   
-  // For JPEG images
+  // For photos and other non-transparent images
   if (originalFormat === 'jpeg' || originalFormat === 'jpg') {
-    // Keep as JPEG for compatibility and quality
-    return 'jpeg';
+    // Small JPEGs can stay as JPEG
+    if (fileSize < IMAGE_SETTINGS.MEDIUM_IMAGE_THRESHOLD) {
+      return 'jpeg';
+    }
+    
+    // For larger photos, WebP usually offers better compression
+    return 'webp';
   }
   
-  // Default to WebP for good balance of quality and compression
+  
+  // Default to WebP as a good modern format with wide support
   return 'webp';
-}
+} 

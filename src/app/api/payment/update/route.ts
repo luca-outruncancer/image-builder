@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiLogger } from '@/utils/logger';
 import { ensureServerInitialized } from '@/lib/server/init';
-import { getSupabaseClient } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/server/supabase';
 import { nanoid } from 'nanoid';
 import { PaymentStatus } from '@/lib/payment/types';
 import { updateImageInCache } from '@/lib/server/imageCache';

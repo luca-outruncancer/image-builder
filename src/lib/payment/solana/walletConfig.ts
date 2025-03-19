@@ -1,4 +1,3 @@
-// src/lib/solana/walletConfig.ts
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { walletLogger } from '@/utils/logger/index';
 
@@ -46,4 +45,4 @@ walletLogger.info('Solana Wallet Configuration:', {
   primaryRpcEndpoint: RPC_ENDPOINT,
   fallbackEndpoints: FALLBACK_ENDPOINTS,
   connectionTimeout: `${CONNECTION_TIMEOUT / 1000}s`
-});
+}); 

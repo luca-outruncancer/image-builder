@@ -6,11 +6,13 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import ClientPaymentService from '../clientPaymentService';
 import { 
   PaymentStatus, 
-  PaymentStatusResponse, 
   PaymentMetadata, 
-  PaymentError,
-  ErrorCategory
-} from '../types';
+  PaymentStatusResponse, 
+  PaymentResponse,
+  PaymentError, 
+  ErrorCategory,
+  TransactionResult 
+} from '../types/index';
 import { RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 import { paymentLogger } from '@/utils/logger';
 
@@ -192,7 +194,7 @@ export function usePayment() {
       setError(null);
       
       paymentLogger.debug('===== DEBUG: usePayment.processPayment =====');
-      paymentLogger.debug('Using paymentId:', paymentIdToUse);
+      paymentLogger.debug('Using paymentId:', { paymentId: paymentIdToUse });
       
       // Try to restore payment info from localStorage if needed
       if (typeof window !== 'undefined') {
@@ -201,7 +203,7 @@ export function usePayment() {
         const mappedTransactionId = localStorage.getItem(paymentIdMapping);
         
         if (mappedTransactionId) {
-          paymentLogger.debug('Found transaction ID mapping in localStorage:', mappedTransactionId);
+          paymentLogger.debug('Found transaction ID mapping in localStorage:', { mappedTransactionId });
         }
         
         const savedPaymentId = localStorage.getItem(STORAGE_KEYS.PAYMENT_ID);
@@ -277,7 +279,7 @@ export function usePayment() {
           paymentLogger.debug('Timeout check executed - successInfo should still be set');
         }, 500);
       } catch (err) {
-        paymentLogger.error('Error setting successInfo state:', err);
+        paymentLogger.error('Error setting successInfo state:', err instanceof Error ? err : new Error(String(err)));
       }
       
       // If payment was successful or failed, clean up localStorage
@@ -287,7 +289,7 @@ export function usePayment() {
         response.status === PaymentStatus.CANCELED
       ) {
         paymentLogger.debug('===== DEBUG: PAYMENT CLEANUP =====');
-        paymentLogger.debug('Payment status triggering cleanup:', response.status);
+        paymentLogger.debug('Payment status triggering cleanup:', { status: response.status });
         paymentLogger.debug('Before cleanup - localStorage keys:', {
           paymentInfo: localStorage.getItem(STORAGE_KEYS.PAYMENT_INFO),
           paymentId: localStorage.getItem(STORAGE_KEYS.PAYMENT_ID),
@@ -322,13 +324,13 @@ export function usePayment() {
               mappingValue: localStorage.getItem(paymentIdMapping)
             });
           } catch (err) {
-            paymentLogger.error('Error during localStorage cleanup:', err);
+            paymentLogger.error('Error during localStorage cleanup:', err instanceof Error ? err : new Error(String(err)));
           }
         } else {
           paymentLogger.debug('Window is undefined, skipping localStorage cleanup');
         }
       } else {
-        paymentLogger.debug('Payment status does not trigger cleanup:', response.status);
+        paymentLogger.debug('Payment status does not trigger cleanup:', { status: response.status });
       }
       
       return response.status === PaymentStatus.CONFIRMED;

@@ -3,8 +3,8 @@
 
 import React, { createContext, useContext, ReactNode, useEffect } from 'react';
 import { usePayment } from '../hooks/usePayment';
-import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse, PaymentResponse } from '../types';
-import { paymentLogger } from '@/utils/logger/index';
+import { paymentLogger } from '@/utils/logger';
+import { PaymentStatus, PaymentMetadata, PaymentError, PaymentStatusResponse, PaymentResponse } from '../types/index';
 
 // Define the context type
 interface PaymentContextType {

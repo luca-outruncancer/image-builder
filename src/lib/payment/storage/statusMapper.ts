@@ -1,5 +1,5 @@
 // src/lib/payment/storage/statusMapper.ts
-import { PaymentStatus } from '../types';
+import { StatusMapping, PaymentStatus } from '../types/index';
 import { PAYMENT_TO_TRANSACTION_STATUS } from '../utils/storageUtils';
 
 /**

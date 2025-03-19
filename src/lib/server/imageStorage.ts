@@ -1,8 +1,8 @@
-// src/lib/imageStorage.ts
+// src/lib/server/imageStorage.ts
 
-import { PaymentStatus } from './payment/types';
+import { PaymentStatus } from '@/lib/payment/types/index';
 import { imageLogger, storageLogger } from '@/utils/logger/index';
-import { supabase, getSupabaseClient } from '@/lib/supabase';
+import { supabase, getSupabaseClient } from '@/lib/server/supabase';
 
 export interface ImageRecord {
   image_id: number;
@@ -250,11 +250,11 @@ export async function checkAreaAvailability(
     let query = client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
-      .or(`and(x.gte.${x},x.lt.${x + width}),and(x.lte.${x},x.plus.width.gt.${x})`)
-      .or(`and(y.gte.${y},y.lt.${y + height}),and(y.lte.${y},y.plus.height.gt.${y})`);
+      .eq('status', PaymentStatus.CONFIRMED)
+      .or(`start_position_x.lte.${x + width},end_position_x.gte.${x}`)
+      .or(`start_position_y.lte.${y + height},end_position_y.gte.${y}`);
     
-    // Exclude the current image if updating
+    // Exclude the current image if needed
     if (excludeImageId) {
       query = query.neq('image_id', excludeImageId);
     }
@@ -268,8 +268,10 @@ export async function checkAreaAvailability(
       return { success: false, error };
     }
     
-    // Area is available if no overlapping images were found
-    return { success: true, available: data.length === 0 };
+    // If we found any images that overlap, the area is not available
+    const available = !data || data.length === 0;
+    
+    return { success: true, available };
   } catch (error) {
     storageLogger.error('Failed to check area availability', error instanceof Error ? error : new Error(String(error)), {
       x, y, width, height, excludeImageId
@@ -291,36 +293,30 @@ export async function cleanupExpiredPendingPayments(
   }
   
   try {
-    const { error } = await client
+    // Calculate timeout timestamp
+    const timeoutThreshold = new Date();
+    timeoutThreshold.setMinutes(timeoutThreshold.getMinutes() - timeoutMinutes);
+    
+    // Update status of expired pending payments
+    const { data, error } = await client
       .from('images')
-      .update({
-        status: PaymentStatus.TIMEOUT.toUpperCase(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('status', PaymentStatus.PENDING.toUpperCase())
-      .lt('created_at', new Date(Date.now() - timeoutMinutes * 60000).toISOString());
+      .update({ status: PaymentStatus.TIMEOUT })
+      .eq('status', PaymentStatus.PENDING)
+      .lt('created_at', timeoutThreshold.toISOString());
     
     if (error) {
-      storageLogger.error('Error cleaning up expired payments', error instanceof Error ? error : new Error(String(error)), {
-        timeoutMinutes
-      });
+      storageLogger.error('Error cleaning up expired payments', error instanceof Error ? error : new Error(String(error)));
       return { success: false, error };
     }
     
     return { success: true };
   } catch (error) {
-    storageLogger.error('Failed to cleanup expired payments', error instanceof Error ? error : new Error(String(error)), {
-      timeoutMinutes
-    });
+    storageLogger.error('Failed to clean up expired payments', error instanceof Error ? error : new Error(String(error)));
     return { success: false, error };
   }
 }
 
-// Export storage functions that use the shared client
-export async function uploadImage(/* ... existing parameters ... */) {
-  if (!supabase) {
-    storageLogger.error('Unable to upload image - Supabase client not initialized');
-    return { error: 'Storage client not initialized' };
-  }
-  // ... rest of the existing function ...
-}
+// Additional functions can be added here as needed, for example for image uploads
+export async function uploadImage(/* ... parameters as needed ... */) {
+  // Implementation for uploading an image to storage and creating a record
+} 

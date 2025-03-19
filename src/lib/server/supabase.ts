@@ -1,4 +1,4 @@
-// src/lib/supabase.ts
+// src/lib/server/supabase.ts
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { systemLogger } from '@/utils/logger';
@@ -70,4 +70,4 @@ export const getSupabaseClient = () => {
   return supabase;
 };
 export const isSupabaseInitialized = () => isInitialized;
-export const getSupabaseError = () => initError;
+export const getSupabaseError = () => initError; 

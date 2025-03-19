@@ -1,5 +1,11 @@
 // src/lib/payment/utils/storageUtils.ts
-import { PaymentStatus } from '../types';
+import {
+  PaymentSession,
+  PaymentStatus,
+  PaymentError,
+  TransactionRecord,
+  PaymentMetadata
+} from '../types/index';
 import { storageLogger, paymentLogger } from '@/utils/logger';
 import { SupabaseClient } from '@supabase/supabase-js';
 

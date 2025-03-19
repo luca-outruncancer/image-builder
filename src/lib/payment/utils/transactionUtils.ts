@@ -1,7 +1,7 @@
 // src/lib/payment/utils/transactionUtils.ts
 import { blockchainLogger } from '@/utils/logger';
 import crypto from 'crypto';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/server/supabase';
 
 /**
  * Generate a unique nonce for transaction uniqueness

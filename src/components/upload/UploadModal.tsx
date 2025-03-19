@@ -6,7 +6,7 @@ import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN, MAX_FILE_SIZE } from '@/utils/constants';
 import { useImageStore, type ImageToPlace } from '@/store/useImageStore';
 import { imageLogger } from '@/utils/logger';
-import { validateImage } from '@/utils/imageValidation';
+import { validateImage } from '@/lib/server/imageValidation';
 import { clearSessionBlockhashData } from '@/lib/payment/utils';
 
 interface ImageInfo {

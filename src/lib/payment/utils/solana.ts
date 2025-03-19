@@ -1,9 +1,9 @@
-// src/utils/solana.ts
+// src/lib/payment/utils/solana.ts
 "use client"
 
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { RPC_ENDPOINT } from '@/lib/solana/walletConfig';
+import { RPC_ENDPOINT } from '@/lib/payment/solana/walletConfig';
 
 // Create a connection using the RPC endpoint
 export const connection = new Connection(RPC_ENDPOINT);
@@ -64,4 +64,4 @@ export const useWalletVerification = () => {
   };
 
   return { verifyOwnership };
-};
+}; 

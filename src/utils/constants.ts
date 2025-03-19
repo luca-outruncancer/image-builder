@@ -184,3 +184,7 @@ export const PRESET_SIZES = [
   { width: 100, height: 100 },
   { width: 200, height: 100 },
 ] as const;
+
+// Solana program IDs
+// Memo Program ID - Used for adding transaction memos (like nonces) to uniquely identify transactions
+export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
