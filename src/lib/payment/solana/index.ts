@@ -1,7 +1,7 @@
 // src/lib/payment/solana/index.ts
 import { processSolPayment, checkSolBalance } from './solPaymentProcessor';
 import { processTokenPayment, checkTokenBalance } from './tokenPaymentProcessor';
-import { PaymentRequest, TransactionResult, WalletConfig, ErrorCategory } from '../types';
+import { PaymentRequest, TransactionResult, WalletConfig, ErrorCategory } from '../types/index';
 import { ACTIVE_PAYMENT_TOKEN, getMintAddress } from '@/utils/constants';
 import { paymentLogger } from '@/utils/logger';
 import { createPaymentError } from '../utils/errorUtils';

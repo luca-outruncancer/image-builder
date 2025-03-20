@@ -1,5 +1,6 @@
-import { MAX_FILE_SIZE } from './constants';
-import { imageLogger } from './logger';
+// src/lib/server/imageValidation.ts
+import { MAX_FILE_SIZE } from '@/utils/constants';
+import { imageLogger } from '@/utils/logger';
 
 export interface ImageValidationResult {
   isValid: boolean;

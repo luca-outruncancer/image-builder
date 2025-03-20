@@ -1,11 +1,26 @@
 // src/utils/logger/index.ts
-import { LOGGING } from "@/utils/constants";
-import { Logger, LogData, ErrorLogData } from "./types";
+import { LOGGING, LogLevel } from "@/utils/constants";
+import { Logger, LogData } from "./types";
 import pino from "pino";
 import * as Sentry from "@sentry/nextjs";
 
 // Determine if we're running on the server
 const isServer = typeof window === "undefined";
+
+// Utility function to convert string log level to numeric value
+const getLogLevelValue = (level: string): number => {
+  switch (level.toLowerCase()) {
+    case 'debug': return LogLevel.DEBUG;
+    case 'info': return LogLevel.INFO;
+    case 'warn': return LogLevel.WARN;
+    case 'error': return LogLevel.ERROR;
+    case 'none': return LogLevel.NONE;
+    default: return LogLevel.INFO; // Default to INFO
+  }
+};
+
+// Get the current log level as a number for comparison
+const currentLogLevel = getLogLevelValue(LOGGING.CLIENT.LOG_LEVEL);
 
 // Create a base logger that works in both environments
 const createBaseLogger = () => {
@@ -47,7 +62,7 @@ const createBaseLogger = () => {
     // Client-side logging with Sentry integration
     const clientLogger = {
       error: (msg: string, error?: Error, context?: any) => {
-        if (LOGGING.CLIENT.ENABLED) {
+        if (LOGGING.CLIENT.ENABLED && currentLogLevel <= LogLevel.ERROR) {
           console.error(msg, error, context);
           if (error) {
             Sentry.captureException(error, { message: msg, ...context });
@@ -57,7 +72,7 @@ const createBaseLogger = () => {
         }
       },
       info: (obj: any) => {
-        if (LOGGING.CLIENT.ENABLED) {
+        if (LOGGING.CLIENT.ENABLED && currentLogLevel <= LogLevel.INFO) {
           console.log(obj);
           Sentry.captureMessage(
             typeof obj === "string" ? obj : JSON.stringify(obj),
@@ -66,7 +81,7 @@ const createBaseLogger = () => {
         }
       },
       debug: (obj: any) => {
-        if (LOGGING.CLIENT.ENABLED) {
+        if (LOGGING.CLIENT.ENABLED && currentLogLevel <= LogLevel.DEBUG) {
           console.debug(obj);
           Sentry.captureMessage(
             typeof obj === "string" ? obj : JSON.stringify(obj),
@@ -75,7 +90,7 @@ const createBaseLogger = () => {
         }
       },
       warn: (obj: any) => {
-        if (LOGGING.CLIENT.ENABLED) {
+        if (LOGGING.CLIENT.ENABLED && currentLogLevel <= LogLevel.WARN) {
           console.warn(obj);
           Sentry.captureMessage(
             typeof obj === "string" ? obj : JSON.stringify(obj),
@@ -105,6 +120,25 @@ function createLoggerWrapper(logger: any): Logger {
       contextOrError?: Record<string, any> | Error,
       context?: Record<string, any>,
     ) {
+      // Skip logging if client-side and log level doesn't match
+      if (!isServer) {
+        // Map method to LogLevel
+        let methodLevel: number;
+        switch (method) {
+          case "debug": methodLevel = LogLevel.DEBUG; break;
+          case "info": methodLevel = LogLevel.INFO; break;
+          case "warn": methodLevel = LogLevel.WARN; break;
+          case "error": case "fatal": methodLevel = LogLevel.ERROR; break;
+          case "trace": methodLevel = LogLevel.DEBUG; break;
+          default: methodLevel = LogLevel.INFO;
+        }
+        
+        // Skip if level is higher than configured level
+        if (!LOGGING.CLIENT.ENABLED || currentLogLevel > methodLevel) {
+          return;
+        }
+      }
+      
       const timestamp = new Date().toISOString();
       if (typeof msgOrData === "string") {
         // String-style logging
@@ -181,6 +215,22 @@ export const authLogger = createLoggerWrapper(
 export const systemLogger = createLoggerWrapper(
   baseLogger.child({ component: LOGGING.COMPONENTS.SYSTEM }),
 );
+
+// Log the current logger configuration when in development mode
+if (process.env.NODE_ENV === 'development' && !isServer) {
+  console.log('[Logger] Configuration:', {
+    enabled: LOGGING.CLIENT.ENABLED,
+    logLevel: LOGGING.CLIENT.LOG_LEVEL,
+    numericLevel: currentLogLevel,
+    environment: LOGGING.SENTRY.ENVIRONMENT,
+    visibleLevels: {
+      error: currentLogLevel <= LogLevel.ERROR,
+      warn: currentLogLevel <= LogLevel.WARN,
+      info: currentLogLevel <= LogLevel.INFO,
+      debug: currentLogLevel <= LogLevel.DEBUG
+    }
+  });
+}
 
 // Request ID tracking with proper typing
 let currentRequestId: string | null = null;

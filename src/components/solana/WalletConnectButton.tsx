@@ -55,7 +55,7 @@ export const WalletConnectButton: React.FC = () => {
       ) : (
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline px-3 py-1 bg-[#004E32]/70 text-emerald-200 border border-emerald-500/30 rounded-full text-sm font-medium shadow-md">
-            {shortenAddress(publicKey.toString())}
+            {publicKey ? shortenAddress(publicKey.toString()) : 'Loading...'}
           </span>
           <Button
             onClick={handleDisconnect}

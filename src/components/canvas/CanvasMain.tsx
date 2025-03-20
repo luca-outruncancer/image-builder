@@ -8,24 +8,11 @@ import CanvasImagePlacement from './CanvasImagePlacement';
 import CanvasPaymentHandler from './CanvasPaymentHandler';
 import { useCanvasState } from './hooks/useCanvasState';
 import SelectionMagnifier from './SelectionMagnifier';
-
-// Define the wallet info interface
-interface WalletInfo {
-  success: boolean;
-  wallet?: string;
-  sender_wallet?: string;
-  imageId?: number;
-  position?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    clickedX: number;
-    clickedY: number;
-  };
-  status?: string;
-  image_location?: string;
-}
+import { WalletInfo } from '@/types/wallet-info';
+import { usePaymentContext } from '@/lib/payment/context';
+import { canvasLogger } from '@/utils/logger/index';
+import ConfirmPlacement from './ConfirmPlacement';
+import { clearSessionBlockhashData } from '@/lib/payment/utils/transactionUtils';
 
 interface CanvasMainProps {
   className?: string;
@@ -35,6 +22,12 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [canvasScale, setCanvasScale] = useState(1);
   const [currentWalletInfo, setCurrentWalletInfo] = useState<WalletInfo | null>(null);
+  
+  // Get payment context for cancel function
+  const { isProcessing, error, successInfo, cancelPayment } = usePaymentContext();
+  
+  // Determine if we need to show the payment handler (processing/result state)
+  const showPaymentHandler = isProcessing || error !== null || successInfo !== null;
   
   const {
     isLoadingImages,
@@ -58,6 +51,17 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setTempImage,
     setPendingConfirmation,
   } = useCanvasState();
+
+  // Log when payment handler visibility changes for debugging
+  useEffect(() => {
+    canvasLogger.debug('Payment handler visibility updated', {
+      showPaymentHandler,
+      isProcessing,
+      hasError: error !== null,
+      hasSuccessInfo: successInfo !== null,
+      pendingConfirmation: !!pendingConfirmation
+    });
+  }, [showPaymentHandler, isProcessing, error, successInfo, pendingConfirmation]);
 
   // Calculate and update canvas scale based on container width
   useEffect(() => {
@@ -88,7 +92,40 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
     setCurrentWalletInfo(info);
   };
 
-  // No format needed as we show full addresses
+  // Handle closing the error modal with proper cleanup
+  const handleCloseError = () => {
+    try {
+      canvasLogger.info('User cancelled payment from error modal');
+      
+      // Clean up blockchain session data first
+      clearSessionBlockhashData();
+      
+      // Reset payment-related state variables
+      setPaymentError(null);
+      
+      // Clear pendingConfirmation to reset UI state
+      setPendingConfirmation(null);
+      
+      // Immediately call handleDone to reset everything
+      // This bypasses the cancelPayment API call entirely
+      handleDone();
+      
+      // Call cancelPayment asynchronously (fire and forget)
+      // This informs the backend but doesn't block UI cleanup
+      cancelPayment().catch(err => {
+        canvasLogger.warn('Background payment cancellation failed', err instanceof Error ? err : new Error(String(err)));
+      });
+    } catch (err) {
+      // Even if there's an error, we want to ensure the modal is closed
+      const error = err instanceof Error ? err : new Error(String(err));
+      canvasLogger.error('Error during payment cancellation cleanup:', error);
+      
+      // Force UI reset as fallback
+      setPaymentError(null);
+      setPendingConfirmation(null);
+      handleDone();
+    }
+  };
 
   return (
     <div className={`relative ${className}`}>
@@ -144,15 +181,23 @@ export default function CanvasMain({ className = '' }: CanvasMainProps) {
         </>
       )}
 
-      {/* Placement confirmation UI */}
-      {pendingConfirmation && (
-        <CanvasPaymentHandler
-          pendingConfirmation={pendingConfirmation}
+      {/* Confirmation step - moved to CanvasMain */}
+      {pendingConfirmation && !showPaymentHandler && (
+        <ConfirmPlacement
+          position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
+          cost={pendingConfirmation.cost || 0}
           onConfirm={handleConfirmPlacement}
           onCancel={handleCancel}
           onBack={handleBack}
           onReposition={() => setPendingConfirmation(null)}
-          onCloseError={() => setPaymentError(null)}
+        />
+      )}
+
+      {/* Payment processing and result modals */}
+      {showPaymentHandler && pendingConfirmation && (
+        <CanvasPaymentHandler
+          pendingConfirmation={pendingConfirmation}
+          onCloseError={handleCloseError}
           onRetry={handleRetryPayment}
           onDone={handleDone}
         />

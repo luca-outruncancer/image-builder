@@ -1,4 +1,4 @@
-import { initializeSupabase } from '@/lib/supabase';
+import { initializeSupabase } from '@/lib/server/supabase';
 import { systemLogger } from '@/utils/logger';
 import { initializeImageCache } from './imageCache';
 

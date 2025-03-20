@@ -5,38 +5,29 @@ import {
   Transaction,
   SystemProgram,
   LAMPORTS_PER_SOL,
-  Commitment,
   SendTransactionError,
   TransactionInstruction,
-  SignatureResult,
-  TransactionError
 } from '@solana/web3.js';
 import { 
-  PaymentRequest,
   TransactionResult,
-  WalletConfig,
-  ErrorCategory
-} from '../types';
+  PaymentRequest,
+  PaymentError,
+  ErrorCategory,
+  WalletConfig
+} from '../types/index';
 import { 
   createPaymentError,
   isUserRejectionError,
   isNetworkError,
   isBalanceError,
-  retryWithBackoff,
   isTxAlreadyProcessedError,
-  getNonce,
   extractSignatureFromError,
   clearSessionBlockhashData
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from '@/lib/solana/walletConfig';
+import { SOLANA, MEMO_PROGRAM_ID } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
-import { v4 as uuidv4 } from 'uuid';
 import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
 import { WalletContextState } from '@solana/wallet-adapter-react';
-import { PaymentError } from '../types';
-
-// Memo Program ID
-const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 interface SendTransactionOpts {
   skipPreflight?: boolean;
@@ -67,14 +58,14 @@ export async function processSolPayment(
     }
     
     // Create connection to Solana
-    const connection = new Connection(RPC_ENDPOINT, {
+    const connection = new Connection(SOLANA.RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT,
       disableRetryOnRateLimit: false
     });
     
     // Check SOL balance
-    let balance;
+    let balance: number;
     try {
       balance = await connection.getBalance(walletConfig.publicKey);
       blockchainLogger.debug('Retrieved wallet balance', {
@@ -82,7 +73,13 @@ export async function processSolPayment(
         balanceInSOL: balance / LAMPORTS_PER_SOL
       });
     } catch (balanceError) {
-      blockchainLogger.error('Failed to check balance', new Error(String(balanceError)));
+      blockchainLogger.warn('Error checking wallet balance', 
+        balanceError instanceof Error ? balanceError : new Error(String(balanceError)), 
+        {
+          walletAddress: walletConfig.publicKey?.toString()
+        }
+      );
+      // If we can't check the balance, assume it's insufficient
       throw new Error('Failed to check SOL balance');
     }
     
@@ -128,7 +125,7 @@ export async function processSolPayment(
         };
       }
     } catch (balanceError) {
-      blockchainLogger.warn('Error checking wallet balance', balanceError, {
+      blockchainLogger.warn('Error checking wallet balance', balanceError instanceof Error ? balanceError : new Error(String(balanceError)), {
         walletAddress: walletConfig.publicKey?.toString()
       });
       // Continue despite balance check error
@@ -179,7 +176,7 @@ export async function processSolPayment(
     // Add nonce as memo instruction
     const memoInstruction = new TransactionInstruction({
       keys: [],
-      programId: MEMO_PROGRAM_ID,
+      programId: new PublicKey(MEMO_PROGRAM_ID),
       data: Buffer.from(nonce, 'utf8')
     });
     
@@ -391,9 +388,9 @@ export async function processSolPayment(
             
             // Throw a more specific error
             throw new Error(`Insufficient funds: requires ${lamportsNeeded / LAMPORTS_PER_SOL} SOL, has ${currentBalance / LAMPORTS_PER_SOL} SOL`);
-          } catch (balanceCheckError) {
+          } catch (_balanceCheckError) {
             // If we can't check the balance, just rethrow the original error
-            throw sendRawError;
+            throw sendRawError; // Re-throw to be caught by outer catch
           }
         }
         
@@ -455,13 +452,13 @@ export async function processSolPayment(
 
         if (sendError instanceof SendTransactionError) {
           let parsedError = null;
-          let errorMessage = sendError.message;
+          const errorMessage = sendError.message;
           
           const jsonMatch = errorMessage.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             try {
               parsedError = JSON.parse(jsonMatch[0]);
-            } catch (parseError) {
+            } catch (_parseError) {
               blockchainLogger.debug('Failed to parse error JSON content', {
                 content: jsonMatch[0]
               });
@@ -598,9 +595,9 @@ export async function processSolPayment(
 export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balance: number; error?: string }> {
   try {
     // Create connection
-    const connection = new Connection(RPC_ENDPOINT, {
+    const connection = new Connection(SOLANA.RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT,
       disableRetryOnRateLimit: false
     });
     
@@ -618,54 +615,18 @@ export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balan
   }
 }
 
-async function sendTransaction(
-  connection: Connection,
-  transaction: Transaction,
-  wallet: WalletContextState,
-  opts: SendTransactionOpts = {}
-): Promise<{ success: boolean; signature?: string; error?: PaymentError }> {
-  try {
-    // Get latest blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.lastValidBlockHeight = lastValidBlockHeight;
-
-    // Sign and send transaction
-    const signature = await wallet.sendTransaction(transaction, connection);
-    
-    blockchainLogger.info('Transaction sent', {
-      signature,
-      blockhash,
-      lastValidBlockHeight
-    });
-
-    return {
-      success: true,
-      signature
-    };
-
-  } catch (error: any) {
-    blockchainLogger.error('Failed to send transaction', new Error(String(error)));
-
-    return {
-      success: false,
-      error: createPaymentError(ErrorCategory.BLOCKCHAIN_ERROR, error.message, error, false)
-    };
-  }
-}
-
 export class SolanaPaymentProcessor {
-  private logError(message: string, error: unknown, context?: Record<string, any>) {
+  private logError(message: string, error: unknown, context?: Record<string, unknown>) {
     const err = error instanceof Error ? error : new Error(String(error));
-    blockchainLogger.error(message, err, context);
+    blockchainLogger.error(message, err, context as Record<string, any>);
   }
 
-  private logInfo(message: string, context?: Record<string, any>) {
-    blockchainLogger.info(message, context);
+  private logInfo(message: string, context?: Record<string, unknown>) {
+    blockchainLogger.info(message, context as Record<string, any>);
   }
 
-  private logDebug(message: string, context?: Record<string, any>) {
-    blockchainLogger.debug(message, context);
+  private logDebug(message: string, context?: Record<string, unknown>) {
+    blockchainLogger.debug(message, context as Record<string, any>);
   }
 
   public async processPayment(request: PaymentRequest): Promise<TransactionResult> {

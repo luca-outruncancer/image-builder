@@ -12,7 +12,7 @@ import {
   PaymentMetadata,
   WalletConfig,
   PaymentRequest
-} from './types';
+} from './types/index';
 import { SolanaPaymentProvider } from './solana/solanaPaymentProvider';
 import { getMintAddress, ACTIVE_PAYMENT_TOKEN, RECIPIENT_WALLET_ADDRESS } from '@/utils/constants';
 import { paymentLogger } from '@/utils/logger/index';
@@ -250,12 +250,12 @@ export class ClientPaymentService {
     const context = { paymentId, requestId: this.requestId };
     
     paymentLogger.debug('===== DEBUG: PROCESSING PAYMENT =====');
-    paymentLogger.debug('Payment ID:', paymentId);
+    paymentLogger.debug('Payment ID:', { paymentId });
     
     // Debug: Log all keys in the activePayments Map to see what's available
     const allKeys = Array.from(this.activePayments.keys());
     paymentLogger.debug('All active payment keys:', allKeys);
-    paymentLogger.debug('Keys include paymentId?', allKeys.includes(paymentId));
+    paymentLogger.debug('Keys include paymentId?', { includes: allKeys.includes(paymentId) });
     paymentLogger.debug('Keys exact match check:', allKeys.map(key => ({
       key,
       matches: key === paymentId,
@@ -275,7 +275,7 @@ export class ClientPaymentService {
       // Try to find a case-insensitive match
       for (const [key, value] of this.activePayments.entries()) {
         if (key.toLowerCase() === paymentId.toLowerCase()) {
-          paymentLogger.debug('Found payment with case-insensitive match:', key);
+          paymentLogger.debug('Found payment with case-insensitive match:', { key });
           paymentInfo = value;
           break;
         }
@@ -297,12 +297,22 @@ export class ClientPaymentService {
             }
           }
         } catch (err) {
-          paymentLogger.error('Error accessing localStorage:', err);
+          const error = err instanceof Error ? err : new Error('Error accessing localStorage');
+          paymentLogger.error('Error accessing localStorage:', error);
+          return {
+            paymentId,
+            status: PaymentStatus.FAILED,
+            error: {
+              category: ErrorCategory.NETWORK_ERROR,
+              message: 'Payment session not found',
+              retryable: false
+            }
+          };
         }
       }
     }
     
-    paymentLogger.debug('Found payment info:', paymentInfo);
+    paymentLogger.debug('Found payment info:', { paymentInfo });
     
     if (!paymentInfo) {
       const error = new Error('Payment session not found');
@@ -355,7 +365,7 @@ export class ClientPaymentService {
       
       // Debug log to show the exact request being sent
       paymentLogger.debug('===== DEBUG: PAYMENT REQUEST =====');
-      paymentLogger.debug('Request:', JSON.stringify(request, null, 2));
+      paymentLogger.debug('Request:', { request: JSON.stringify(request, null, 2) });
       
       // Process the payment with the blockchain
       const result = await this.paymentProvider.processPayment(
@@ -466,8 +476,8 @@ export class ClientPaymentService {
       };
       
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      paymentLogger.error('Payment processing failed', err, context);
+      const err = error instanceof Error ? error : new Error('Unknown error during payment processing');
+      paymentLogger.error('Unknown error during payment processing', err, context);
       
       // Try to update payment status to failed
       try {
@@ -487,7 +497,8 @@ export class ClientPaymentService {
         }
       } catch (updateError) {
         // Just log any update errors
-        paymentLogger.warn('Failed to update payment status after error', updateError, context);
+        const err = updateError instanceof Error ? updateError : new Error(String(updateError));
+        paymentLogger.warn('Failed to update payment status after error', err, context);
       }
       
       return {

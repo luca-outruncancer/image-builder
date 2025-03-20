@@ -9,10 +9,14 @@ import {
 } from '@solana/web3.js';
 import { 
   PaymentRequest,
+  PaymentResponse,
+  PaymentStatus,
+  PaymentError,
+  ErrorCategory,
+  PaymentStatusResponse,
   TransactionResult,
-  WalletConfig,
-  ErrorCategory
-} from '../types';
+  WalletConfig
+} from '../types/index';
 import { 
   createPaymentError, 
   isUserRejectionError,
@@ -22,7 +26,7 @@ import {
 } from '../utils';
 import { processSolPayment } from './solPaymentProcessor';
 import { processTokenPayment } from './tokenPaymentProcessor';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT } from '@/lib/solana/walletConfig';
+import { SOLANA } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -68,13 +72,13 @@ export class SolanaPaymentProvider {
     const commitment: Commitment = 'confirmed';
     
     try {
-      if (!RPC_ENDPOINT) {
+      if (!SOLANA.RPC_ENDPOINT) {
         throw new Error('No RPC endpoint configured');
       }
       
-      const connection = new Connection(RPC_ENDPOINT, {
+      const connection = new Connection(SOLANA.RPC_ENDPOINT, {
         commitment,
-        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
+        confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT
       });
       
       return connection;
@@ -94,7 +98,7 @@ export class SolanaPaymentProvider {
    */
   public async verifyTransaction(signature: string): Promise<boolean> {
     try {
-      blockchainLogger.debug('Verifying transaction signature', {
+      blockchainLogger.info('Verifying transaction signature', {
         signature
       });
       const status = await this.connection.getSignatureStatus(signature);
@@ -107,7 +111,7 @@ export class SolanaPaymentProvider {
         return true;
       }
       
-      blockchainLogger.info('Transaction verified unsuccessful', {
+      blockchainLogger.warn('Transaction verified unsuccessful', {
         signature,
         status
       });
@@ -169,7 +173,7 @@ export class SolanaPaymentProvider {
       // Check for existing transaction first
       const existingSignature = await this.checkExistingTransaction(paymentId);
       if (existingSignature) {
-        blockchainLogger.info('Using existing transaction', {
+        blockchainLogger.debug('Using existing transaction', {
           signature: existingSignature
         });
         return {

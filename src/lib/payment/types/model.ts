@@ -1,5 +1,10 @@
-// src/lib/payment/types.ts
 import { PublicKey, Transaction } from '@solana/web3.js';
+
+/**
+ * This file contains all the models/types used in the payment system.
+ * For backward compatibility, these are also exported via index.ts
+ * In the future, imports should be made directly from this file.
+ */
 
 // Payment status constants
 export enum PaymentStatus {
@@ -40,7 +45,7 @@ export interface PaymentMetadata {
   width: number;
   height: number;
   fileName?: string;
-  paymentId?: string; // Added for tracking unique payments
+  paymentId?: string;
 }
 
 // Payment request object
@@ -65,7 +70,7 @@ export interface TransactionResult {
   transactionHash?: string;
   error?: PaymentError;
   blockchainConfirmation?: boolean;
-  reused?: boolean; // Indicates this is a reused transaction that was already processed
+  reused?: boolean;
 }
 
 // Status response for payment
@@ -88,23 +93,6 @@ export interface WalletConfig {
   connected: boolean;
 }
 
-// Database transaction record
-export interface TransactionRecord {
-  tx_id?: number;
-  image_id: number;
-  transaction_hash: string;
-  sender_wallet: string;
-  token: string;
-  amount: number;
-  status: string;
-  signature?: string;
-  created_at: string;
-  confirmed_at?: string;
-  attempt_count: number;
-  recipient_wallet: string;
-  unique_nonce: string;  // Added for transaction uniqueness
-}
-
 // Payment session tracking
 export interface PaymentSession {
   paymentId: string;
@@ -122,3 +110,48 @@ export interface PaymentSession {
   walletAddress?: string;
   recipientWallet: string;
 }
+
+// Database transaction record
+export interface TransactionRecord {
+  tx_id?: number;
+  image_id: number;
+  transaction_hash: string;
+  sender_wallet: string;
+  token: string;
+  amount: number;
+  status: string;
+  signature?: string;
+  created_at: string;
+  confirmed_at?: string;
+  attempt_count: number;
+  recipient_wallet: string;
+  unique_nonce?: string;
+}
+
+// Database image record for payments
+export interface PaymentImageRecord {
+  image_id: number;
+  image_location: string;
+  start_position_x: number;
+  start_position_y: number;
+  size_x: number;
+  size_y: number;
+  image_status: number;
+  created_at: string;
+  confirmed_at?: string;
+  payment_attempts?: number;
+  last_updated_at?: string;
+  sender_wallet?: string; 
+}
+
+// Database operation result
+export interface DatabaseResult<T> {
+  success: boolean;
+  data?: T;
+  error?: any;
+}
+
+// Status mapping interfaces
+export interface StatusMapping {
+  [key: string]: string | number;
+} 

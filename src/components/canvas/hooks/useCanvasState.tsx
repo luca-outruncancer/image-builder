@@ -5,12 +5,11 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/utils/constants';
 import { useImageStore } from '@/store/useImageStore';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { getPlacedImages, updateImageStatus, ImageRecord } from '@/lib/imageStorage';
+import { getPlacedImages, updateImageStatus, ImageRecord } from '@/lib/server/imageStorage';
 import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus, ErrorCategory } from '@/lib/payment/types';
 import { debounce, clearSessionBlockhashData } from '@/lib/payment/utils';
 import { canvasLogger, imageLogger } from '@/utils/logger/index';
-import { getImageStatusFromPaymentStatus } from '@/lib/payment/utils/storageUtils';
 import { PlacedImage } from '@/types/canvas';
 
 // Add error context interfaces
@@ -95,13 +94,21 @@ export function useCanvasState(): CanvasState {
 
   // Reset state when payment is complete or when component unmounts
   const resetState = useCallback(() => {
-    canvasLogger.debug('Resetting canvas state');
+    canvasLogger.debug('Resetting canvas state', {
+      tempImage: !!tempImage,
+      pendingConfirmation: !!pendingConfirmation,
+      paymentError: !!paymentError,
+      successInfo: !!successInfo,
+      isProcessing: isPaymentProcessing
+    });
+    
     setTempImage(null);
-    setPendingConfirmation(null);
+    // Note: pendingConfirmation is now cleared explicitly in handleDone
+    // to ensure the success modal is displayed before unmounting
     setPaymentError(null);
     resetPayment();
     clearSessionBlockhashData();
-  }, [resetPayment]);
+  }, [resetPayment, tempImage, pendingConfirmation, paymentError, successInfo, isPaymentProcessing]);
 
   // Handle image record update
   const handleImageRecordUpdate = useCallback(async (imageRecord: ImageRecord | null, tempImage: PlacedImage) => {
@@ -145,7 +152,7 @@ export function useCanvasState(): CanvasState {
         setIsLoadingImages(true);
         canvasLogger.info('Fetching placed images from database');
         
-        // Get images with status CONFIRMED
+        // Get images with PENDING, PROCESSING, or CONFIRMED status
         const { success, data: records, error } = await getPlacedImages();
         
         if (success && records && Array.isArray(records)) {
@@ -265,9 +272,17 @@ export function useCanvasState(): CanvasState {
           : img
       ));
       
-      // Clear temporary states
+      // Log that we're keeping pendingConfirmation for the success modal
+      canvasLogger.debug('pendingConfirmation maintained for success modal display', {
+        imageId: successInfo.metadata?.imageId,
+        pendingConfirmationId: pendingConfirmation.id
+      });
+      
+      // Note: we no longer clear pendingConfirmation here
+      // It will be cleared in handleDone when the user acknowledges the success
+      
+      // Only clear tempImage as it's not needed anymore
       setTempImage(null);
-      setPendingConfirmation(null);
     }
   }, [successInfo, pendingConfirmation]);
 
@@ -333,6 +348,7 @@ export function useCanvasState(): CanvasState {
   const handleCancel = () => {
     canvasLogger.debug('User canceled image placement');
     resetState();
+    canvasLogger.debug("Reloading page after cancellation");
     window.location.reload();
   };
   
@@ -491,6 +507,28 @@ export function useCanvasState(): CanvasState {
         fileName: tempImage.file.name
       });
       
+      // Store additional metadata in localStorage for recovery
+      if (typeof window !== 'undefined' && tempImage.file) {
+        try {
+          const storedMetadata = {
+            imageId: imageId,
+            fileName: tempImage.file.name, 
+            positionX: imageRecord.start_position_x,
+            positionY: imageRecord.start_position_y,
+            width: imageRecord.size_x,
+            height: imageRecord.size_y,
+            fileType: tempImage.file.type,
+            imageLocation: imageRecord.image_location
+          };
+          
+          localStorage.setItem('image_board_metadata', JSON.stringify(storedMetadata));
+          canvasLogger.debug('Stored metadata in localStorage', storedMetadata);
+        } catch (err) {
+          canvasLogger.warn('Failed to store metadata in localStorage',
+            err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+      
       if (!paymentId) {
         const err = new Error("Failed to initialize payment");
         canvasLogger.error(err.message, err);
@@ -608,8 +646,9 @@ export function useCanvasState(): CanvasState {
         }
         
         // Clean up on successful payment
-        canvasLogger.info("Payment successful, skipping page refresh for debugging");
-        // window.location.reload(); // Temporarily commented out for debugging verification request
+        canvasLogger.info("Payment successful, will reload page after modal is dismissed");
+        // The page will be reloaded after the user acknowledges the success modal
+        // and clicks the "Done" button, which calls handleDone
       } catch (processingError) {
         const err = processingError instanceof Error ? processingError : new Error(String(processingError));
         canvasLogger.error("Error during payment processing", err);
@@ -638,12 +677,20 @@ export function useCanvasState(): CanvasState {
       return;
     }
 
+    // Log that we're starting the confirmation process
+    canvasLogger.info("Starting payment confirmation process", {
+      pendingConfirmation: !!pendingConfirmation
+    });
+
     // Set submitting flag to prevent duplicates
     setIsSubmitting(true);
     
     // Use our debounced version to handle the actual submission
     debouncedConfirmPlacement();
-  }, [debouncedConfirmPlacement, isPaymentProcessing, isSubmitting]);
+    
+    // We'll reload the page after the confirmation is fully processed
+    // The reload is handled in the debouncedConfirmPlacement function
+  }, [debouncedConfirmPlacement, isPaymentProcessing, isSubmitting, pendingConfirmation]);
 
   const handleCancelPlacement = () => {
     setPendingConfirmation(null);
@@ -654,13 +701,25 @@ export function useCanvasState(): CanvasState {
   const handleDone = () => {
     canvasLogger.info("Payment complete, resetting state for new transaction");
     
+    // Add more detailed logging
+    canvasLogger.debug("Clearing payment state in handleDone", {
+      pendingConfirmation: !!pendingConfirmation,
+      successInfo: !!successInfo,
+      isProcessing: isPaymentProcessing,
+      hasError: error !== null
+    });
+    
     // Clean up session storage
     clearSessionBlockhashData();
     
-    // Reset all state
+    // Explicitly clear pendingConfirmation
+    setPendingConfirmation(null);
+    
+    // Reset all other state
     resetState();
     
     // Reload the page to ensure a clean state
+    canvasLogger.debug("Reloading page after payment completion");
     window.location.reload();
   };
   
@@ -671,6 +730,7 @@ export function useCanvasState(): CanvasState {
     // If there was an error about already processed transaction, reset completely
     if (error?.category === ErrorCategory.BLOCKCHAIN_ERROR && error.code === 'DUPLICATE_TRANSACTION') {
       resetState();
+      canvasLogger.debug("Reloading page after duplicate transaction error");
       window.location.reload();
       return;
     }
@@ -743,6 +803,31 @@ export function useCanvasState(): CanvasState {
           cost: tempImage.cost
         }
       ]);
+
+      // Only store metadata if we have access to window and a file is available
+      if (typeof window !== 'undefined' && tempImage.file) {
+        try {
+          // Create metadata object with all needed properties
+          const storedMetadata = {
+            imageId: imageRecord.image_id,
+            fileName: tempImage.file.name,
+            positionX: imageRecord.start_position_x, 
+            positionY: imageRecord.start_position_y,
+            width: imageRecord.size_x,
+            height: imageRecord.size_y,
+            fileType: tempImage.file.type,
+            fileSize: tempImage.file.size,
+            status: imageRecord.status,
+            imageLocation: imageRecord.image_location
+          };
+          
+          localStorage.setItem('image_board_metadata', JSON.stringify(storedMetadata));
+          imageLogger.debug('Stored image metadata in localStorage', storedMetadata);
+        } catch (err) {
+          imageLogger.warn('Failed to store image metadata', 
+            err instanceof Error ? err : new Error(String(err)));
+        }
+      }
 
       return { success: true, imageId: imageRecord.image_id };
     } catch (error) {

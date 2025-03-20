@@ -1,6 +1,6 @@
 // src/app/api/image-info/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/server/supabase';
 import { apiLogger } from '@/utils/logger';
 import { findImageAtPosition, refreshImageCacheIfNeeded } from '@/lib/server/imageCache';
 import { ensureServerInitialized } from '@/lib/server/init';

@@ -14,6 +14,7 @@ export interface TransactionRecord {
   confirmed_at?: string;
   attempt_count: number;
   recipient_wallet: string;
+  unique_nonce?: string;  // Added for transaction uniqueness
 }
 
 // Database image record for payments

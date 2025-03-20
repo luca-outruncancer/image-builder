@@ -1,6 +1,50 @@
 // src/utils/constants.ts
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
+// Environment-driven constants (security-sensitive)
+export const ENV = {
+  // Network settings
+  SOLANA_NETWORK: (process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet') as string,
+  SOLANA_RPC_URL: process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com',
+  SOLANA_FALLBACK_URLS: process.env.NEXT_PUBLIC_SOLANA_FALLBACK_URLS?.split(',') || [],
+  
+  // Wallet settings
+  RECIPIENT_WALLET_ADDRESS: process.env.NEXT_PUBLIC_RECIPIENT_WALLET_ADDRESS || '6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWReG4LC',
+  
+  // Supabase configuration
+  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  
+  // Logging settings
+  ENABLE_CLIENT_LOGGING: process.env.NEXT_PUBLIC_ENABLE_CLIENT_LOGGING === 'true',
+  LOG_LEVEL: process.env.NEXT_PUBLIC_LOG_LEVEL || 'info',
+  SENTRY_ENABLED: process.env.NEXT_PUBLIC_SENTRY_ENABLED !== 'false',
+  SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN || '',
+};
+
+// Make Supabase config directly available for backwards compatibility
+export const SUPABASE_CONFIG = {
+  URL: ENV.SUPABASE_URL,
+  ANON_KEY: ENV.SUPABASE_ANON_KEY
+};
+
+// Map string network to WalletAdapterNetwork enum
+export const getWalletAdapterNetwork = (): WalletAdapterNetwork => {
+  switch (ENV.SOLANA_NETWORK.toLowerCase()) {
+    case 'mainnet':
+    case 'mainnet-beta':
+      return WalletAdapterNetwork.Mainnet;
+    case 'testnet':
+      return WalletAdapterNetwork.Testnet;
+    case 'devnet':
+    default:
+      return WalletAdapterNetwork.Devnet;
+  }
+};
+
+// Active network based on environment
+export const ACTIVE_NETWORK = getWalletAdapterNetwork();
+
 // Canvas and grid constants
 export const CANVAS_WIDTH = 1000;
 export const CANVAS_HEIGHT = 1000;
@@ -26,16 +70,16 @@ export enum LogLevel {
 
 export const LOGGING = {
   SENTRY: {
-    ENABLED: process.env.NEXT_PUBLIC_SENTRY_ENABLED === 'false',
-    DSN: process.env.NEXT_PUBLIC_SENTRY_DSN || '',
+    ENABLED: ENV.SENTRY_ENABLED,
+    DSN: ENV.SENTRY_DSN,
     ENVIRONMENT: process.env.NODE_ENV || 'development',
     TRACES_SAMPLE_RATE: 1.0,
     REPLAY_SAMPLE_RATE: 0.1,
     REPLAY_ON_ERROR_SAMPLE_RATE: 1.0,
   },
   CLIENT: {
-    ENABLED: process.env.NEXT_PUBLIC_ENABLE_CLIENT_LOGGING === 'true',
-    LOG_LEVEL: process.env.NEXT_PUBLIC_LOG_LEVEL || 'info',
+    ENABLED: ENV.ENABLE_CLIENT_LOGGING,
+    LOG_LEVEL: ENV.LOG_LEVEL,
   },
   COMPONENTS: {
     PAYMENT: 'PAYMENT',
@@ -103,19 +147,56 @@ export const MAGNIFIER = {
   GRID_COLOR: "rgba(200,200,200,0.2)",
 };
 
-// Network configuration
-export const ACTIVE_NETWORK = WalletAdapterNetwork.Devnet; // Change to Mainnet when going live
+// Solana Wallet Configuration
+export const SOLANA = {
+  // Define RPC endpoints for different networks with rate limit handling
+  RPC_ENDPOINTS: {
+    [WalletAdapterNetwork.Devnet]: 'https://api.devnet.solana.com',
+    [WalletAdapterNetwork.Mainnet]: 'https://api.mainnet-beta.solana.com',
+    [WalletAdapterNetwork.Testnet]: 'https://api.testnet.solana.com',
+  },
+  
+  // Optional fallback RPC endpoints when primary fails
+  FALLBACK_RPC_ENDPOINTS: {
+    [WalletAdapterNetwork.Devnet]: [
+      'https://devnet.solana.rpcpool.com',
+      'https://api.devnet.solana.com'
+    ],
+    [WalletAdapterNetwork.Mainnet]: [
+      'https://solana-api.projectserum.com',
+      'https://api.mainnet-beta.solana.com'
+    ],
+    [WalletAdapterNetwork.Testnet]: [
+      'https://api.testnet.solana.com'
+    ],
+  },
+  
+  // RPC Endpoint configuration based on environment variables
+  RPC_ENDPOINT: ENV.SOLANA_RPC_URL,
+  FALLBACK_ENDPOINTS: ENV.SOLANA_FALLBACK_URLS,
+  
+  // Connection settings
+  CONNECTION_TIMEOUT: 30000, // 30 seconds
+  
+  // Confirmation timeout
+  CONFIRMATION_TIMEOUT: 60000, // 60 seconds
+  
+  // RPC retry attempts
+  MAX_RPC_RETRIES: 3
+};
 
-// Recipient wallet address
-export const RECIPIENT_WALLET_ADDRESS =
-  "6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWReG4LC";
+// Recipient wallet address from environment
+export const RECIPIENT_WALLET_ADDRESS = ENV.RECIPIENT_WALLET_ADDRESS;
 
 // Payment related constants
 export const PAYMENT_TIMEOUT_MS = 180000; // 180 seconds (3 minutes)
+export const IMAGE_CACHING_TTL = 180000; // 3 minutes cache TTL
 
 // Payment token configuration
 type NetworkAddresses = {
-  [key in "mainnet" | "devnet" | "testnet"]: string;
+  [WalletAdapterNetwork.Mainnet]: string;
+  [WalletAdapterNetwork.Devnet]: string; 
+  [WalletAdapterNetwork.Testnet]: string;
 };
 
 type PaymentToken = {
@@ -135,9 +216,9 @@ export const PAYMENT_TOKENS: PaymentTokens = {
     symbol: "SOL",
     decimals: 9,
     mint: {
-      mainnet: "",
-      devnet: "",
-      testnet: "",
+      [WalletAdapterNetwork.Mainnet]: "",
+      [WalletAdapterNetwork.Devnet]: "",
+      [WalletAdapterNetwork.Testnet]: "",
     },
   },
   // Add other tokens as needed
@@ -184,3 +265,7 @@ export const PRESET_SIZES = [
   { width: 100, height: 100 },
   { width: 200, height: 100 },
 ] as const;
+
+// Solana program IDs
+// Memo Program ID - Used for adding transaction memos (like nonces) to uniquely identify transactions
+export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';

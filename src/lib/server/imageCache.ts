@@ -1,5 +1,8 @@
-import { getSupabaseClient } from '@/lib/supabase';
+// src/lib/server/imageCache.ts
+import { getSupabaseClient } from '@/lib/server/supabase';
 import { systemLogger } from '@/utils/logger';
+import { IMAGE_CACHING_TTL } from '@/utils/constants';
+import { PaymentStatus } from '@/lib/payment/types/index';
 
 // Define the image data structure
 export interface CachedImageData {
@@ -26,7 +29,6 @@ let imageCache: Map<number, CachedImageData> = new Map();
 let spatialIndex: SpatialIndex = {};
 let isInitialized = false;
 let lastRefreshTime = 0;
-const CACHE_TTL = 180000; // 3 minutes cache TTL
 
 /**
  * Initialize the image cache by loading all confirmed images
@@ -42,11 +44,11 @@ export async function initializeImageCache(): Promise<{ success: boolean; error?
       return { success: false, error };
     }
     
-    // Fetch all confirmed images
+    // Fetch all confirmed, pending, or processing images
     const { data, error } = await client
       .from('images')
       .select('*')
-      .in('status', ['CONFIRMED', 'PENDING', 'PROCESSING']);
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.CONFIRMED])
     
     if (error) {
       const err = new Error(`Database error: ${error.message}`);
@@ -96,7 +98,7 @@ export async function initializeImageCache(): Promise<{ success: boolean; error?
  * Refresh the image cache if it's older than the TTL
  */
 export async function refreshImageCacheIfNeeded(): Promise<boolean> {
-  if (!isInitialized || (Date.now() - lastRefreshTime) > CACHE_TTL) {
+  if (!isInitialized || (Date.now() - lastRefreshTime) > IMAGE_CACHING_TTL) {
     const result = await initializeImageCache();
     return result.success;
   }
@@ -143,7 +145,7 @@ export function clearImageCache() {
   spatialIndex = {};
   isInitialized = false;
   lastRefreshTime = 0;
-  systemLogger.info('Image cache cleared');
+  systemLogger.debug('Image cache cleared');
 }
 
 /**
@@ -152,7 +154,7 @@ export function clearImageCache() {
  */
 export async function updateImageInCache(image: CachedImageData): Promise<boolean> {
   if (!isInitialized) {
-    systemLogger.info('Cache not initialized when updating image, initializing now', { 
+    systemLogger.warn('Cache not initialized when updating image, initializing now', { 
       imageId: image.image_id 
     });
     

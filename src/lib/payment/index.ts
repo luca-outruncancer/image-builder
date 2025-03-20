@@ -1,7 +1,7 @@
 // src/lib/payment/index.ts
 
 // Export all types
-export * from './types';
+export * from './types/index';
 
 // Export utilities
 export * from './utils';
@@ -13,12 +13,7 @@ export { PaymentProvider, usePaymentContext } from './context';
 export { usePayment } from './hooks';
 
 // Export the ClientPaymentService class for direct use
-export { default as ClientPaymentService } from './clientPaymentService';
-
-// DEPRECATED: This export is deprecated and will be removed in a future update
-// Use ClientPaymentService instead which uses server API endpoints
-export { default as PaymentService } from './ZZZ_paymentService';
+export * from './clientPaymentService';
 
 // Export sub-modules
 export * from './solana';
-export * from './storage';

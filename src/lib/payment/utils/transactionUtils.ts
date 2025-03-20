@@ -1,7 +1,7 @@
 // src/lib/payment/utils/transactionUtils.ts
 import { blockchainLogger } from '@/utils/logger';
 import crypto from 'crypto';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/server/supabase';
 
 /**
  * Generate a unique nonce for transaction uniqueness
@@ -22,6 +22,11 @@ export async function verifyTransactionUniqueness(
   imageId: number,
   nonce: string
 ): Promise<boolean> {
+  if (!supabase) {
+    blockchainLogger.error('Supabase client not available', new Error('Cannot verify transaction uniqueness'));
+    return false; // Cannot verify, assume non-unique to be safe
+  }
+  
   const { data } = await supabase
     .from('transaction_records')
     .select('tx_id, status')

@@ -5,7 +5,6 @@ import { useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletConnectButton } from '@/components/solana/WalletConnectButton';
 import { X } from 'lucide-react';
-import ConfirmPlacement from './ConfirmPlacement';
 import { usePaymentContext } from '@/lib/payment/context';
 import { PaymentStatus } from '@/lib/payment/types';
 import { canvasLogger } from '@/utils/logger/index';
@@ -15,10 +14,6 @@ import { PlacedImage } from '@/types/canvas';
 
 interface CanvasPaymentHandlerProps {
   pendingConfirmation: PlacedImage;
-  onConfirm: () => void;
-  onCancel: () => void;
-  onBack: () => void;
-  onReposition: () => void;
   onCloseError: () => void;
   onRetry: () => void;
   onDone: () => void;
@@ -26,10 +21,6 @@ interface CanvasPaymentHandlerProps {
 
 export default function CanvasPaymentHandler({
   pendingConfirmation,
-  onConfirm,
-  onCancel,
-  onBack,
-  onReposition,
   onCloseError,
   onRetry,
   onDone
@@ -44,7 +35,6 @@ export default function CanvasPaymentHandler({
   } = usePaymentContext();
 
   // Determine current payment step/status
-  const isConfirmationStep = pendingConfirmation && !isProcessing && !error && !successInfo;
   const isProcessingStep = isProcessing;
   const isErrorStep = error !== null;
   const isSuccessStep = successInfo !== null;
@@ -66,8 +56,26 @@ export default function CanvasPaymentHandler({
         paymentId: successInfo.paymentId,
         status: successInfo.status,
         transactionHash: successInfo.transactionHash,
-        metadata: successInfo.metadata,
+        metadata: {
+          ...successInfo.metadata,
+          fullDetails: JSON.stringify(successInfo.metadata)
+        },
         timestamp: successInfo.timestamp
+      });
+      
+      // Debug log for the actual values we're displaying
+      canvasLogger.debug('Success modal display values:', {
+        fileName: successInfo.metadata?.fileName || "Unknown",
+        imageId: successInfo.metadata?.imageId || "Unknown", 
+        position: {
+          x: successInfo.metadata?.positionX || 0,
+          y: successInfo.metadata?.positionY || 0
+        },
+        size: {
+          width: successInfo.metadata?.width || 0,
+          height: successInfo.metadata?.height || 0
+        },
+        timestamp: successInfo.timestamp || new Date().toLocaleString()
       });
     }
   }, [successInfo, isSuccessStep, paymentStatus, pendingConfirmation, isProcessing, error]);
@@ -75,7 +83,6 @@ export default function CanvasPaymentHandler({
   // Log state changes for debugging
   useEffect(() => {
     canvasLogger.debug('Payment handler state updated', {
-      isConfirmationStep,
       isProcessingStep,
       isErrorStep,
       isSuccessStep,
@@ -96,7 +103,7 @@ export default function CanvasPaymentHandler({
         }
       } : undefined
     });
-  }, [isConfirmationStep, isProcessingStep, isErrorStep, isSuccessStep, connected, paymentStatus, error, successInfo]);
+  }, [isProcessingStep, isErrorStep, isSuccessStep, connected, paymentStatus, error, successInfo]);
 
   // Clean up session storage when component unmounts
   useEffect(() => {
@@ -123,18 +130,6 @@ export default function CanvasPaymentHandler({
 
   return (
     <>
-      {/* Confirmation step */}
-      {isConfirmationStep && (
-        <ConfirmPlacement
-          position={{ x: pendingConfirmation.x, y: pendingConfirmation.y }}
-          cost={pendingConfirmation.cost || 0}
-          onConfirm={onConfirm}
-          onCancel={onCancel}
-          onBack={onBack}
-          onReposition={onReposition}
-        />
-      )}
-
       {/* Payment error modal */}
       {isErrorStep && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -202,7 +197,7 @@ export default function CanvasPaymentHandler({
               <button
                 onClick={() => {
                   canvasLogger.debug('User canceled payment after error');
-                  onCancel();
+                  onCloseError();
                 }}
                 className="px-4 py-2 border border-white/30 text-white rounded-md hover:bg-white/10 font-medium transition-colors"
               >
@@ -245,6 +240,63 @@ export default function CanvasPaymentHandler({
       {/* Success modal */}
       {isSuccessStep && (() => {
         canvasLogger.debug('===== DEBUG: RENDERING SUCCESS MODAL =====');
+        
+        // Enhanced debugging for successInfo
+        if (successInfo) {
+          canvasLogger.debug('Success info details (enhanced):', {
+            paymentId: successInfo.paymentId,
+            status: successInfo.status,
+            transactionHash: successInfo.transactionHash?.substring(0, 10) + '...',
+            timestamp: successInfo.timestamp,
+            hasMetadata: !!successInfo.metadata,
+            metadataKeys: successInfo.metadata ? Object.keys(successInfo.metadata) : [],
+            metadataValues: {
+              fileName: successInfo.metadata?.fileName,
+              imageId: successInfo.metadata?.imageId,
+              positionX: successInfo.metadata?.positionX, 
+              positionY: successInfo.metadata?.positionY,
+              width: successInfo.metadata?.width,
+              height: successInfo.metadata?.height
+            }
+          });
+        }
+        
+        // Log pending confirmation details
+        if (pendingConfirmation) {
+          canvasLogger.debug('Pending confirmation details (enhanced):', {
+            id: pendingConfirmation.id,
+            hasFile: !!pendingConfirmation.file,
+            fileName: pendingConfirmation.file?.name,
+            src: pendingConfirmation.src ? 'Available' : 'Not available',
+            position: {
+              x: pendingConfirmation.x,
+              y: pendingConfirmation.y
+            },
+            size: {
+              width: pendingConfirmation.width,
+              height: pendingConfirmation.height
+            },
+            status: pendingConfirmation.status,
+            cost: pendingConfirmation.cost
+          });
+        } else {
+          canvasLogger.debug('No pending confirmation available for image preview');
+        }
+        
+        // Data being shown in the UI
+        canvasLogger.debug('Values being displayed in UI:', {
+          file: successInfo?.metadata?.fileName || (pendingConfirmation?.file?.name || "Unknown"),
+          id: successInfo?.metadata?.imageId || pendingConfirmation?.id || "Unknown",
+          position: {
+            x: successInfo?.metadata?.positionX || pendingConfirmation?.x || 0,
+            y: successInfo?.metadata?.positionY || pendingConfirmation?.y || 0
+          },
+          size: {
+            width: successInfo?.metadata?.width || pendingConfirmation?.width || 0,
+            height: successInfo?.metadata?.height || pendingConfirmation?.height || 0
+          }
+        });
+        
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
             <div className="relative w-full max-w-lg bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white">
@@ -268,12 +320,35 @@ export default function CanvasPaymentHandler({
               <div className="p-6">
                 <div className="text-center">
                   <p className="text-lg font-semibold text-emerald-300">Image uploaded successfully!</p>
+                  
+                  {/* Image preview if available */}
+                  {pendingConfirmation && pendingConfirmation.src && (
+                    <div className="mt-3 flex justify-center">
+                      <div className="w-24 h-24 relative border-2 border-emerald-500 rounded-md overflow-hidden">
+                        <img 
+                          src={pendingConfirmation.src} 
+                          alt="Uploaded image" 
+                          className="object-cover w-full h-full"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="mt-4 text-left text-sm text-white/90">
                     <p>Timestamp: {successInfo?.timestamp || new Date().toLocaleString()}</p>
-                    <p>Image: {successInfo?.metadata?.fileName || "Image"}</p>
-                    <p>Position: ({successInfo?.metadata?.positionX || 0}, {successInfo?.metadata?.positionY || 0})</p>
+                    
+                    {/* Image details section */}
+                    <div className="mt-2 p-3 bg-[#004E32]/30 rounded-lg">
+                      <h3 className="font-semibold mb-1">Image Details:</h3>
+                      <p>File: {successInfo?.metadata?.fileName || (pendingConfirmation?.file?.name || "Unknown")}</p>
+                      <p>ID: {successInfo?.metadata?.imageId || pendingConfirmation?.id || "Unknown"}</p>
+                      <p>Position: ({successInfo?.metadata?.positionX || pendingConfirmation?.x || 0}, {successInfo?.metadata?.positionY || pendingConfirmation?.y || 0})</p>
+                      <p>Size: {successInfo?.metadata?.width || pendingConfirmation?.width || 0} × {successInfo?.metadata?.height || pendingConfirmation?.height || 0} pixels</p>
+                    </div>
+                    
+                    {/* Transaction section */}
                     {successInfo?.transactionHash && (
-                      <div className="mt-2">
+                      <div className="mt-3">
                         <p className="font-semibold text-white/90">Transaction Hash:</p>
                         <p className="text-xs font-mono break-all bg-[#004E32]/30 p-2 rounded text-white/80">
                           {successInfo.transactionHash}

@@ -6,7 +6,7 @@ import { X, FileImage } from 'lucide-react';
 import { PRESET_SIZES, calculateCost, ACTIVE_PAYMENT_TOKEN, MAX_FILE_SIZE } from '@/utils/constants';
 import { useImageStore, type ImageToPlace } from '@/store/useImageStore';
 import { imageLogger } from '@/utils/logger';
-import { validateImage } from '@/utils/imageValidation';
+import { validateImage } from '@/lib/server/imageValidation';
 import { clearSessionBlockhashData } from '@/lib/payment/utils';
 
 interface ImageInfo {
@@ -35,12 +35,14 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setImageToPlace = useImageStore(state => state.setImageToPlace);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setError(null);
+    setShowErrorPopup(false);
     setIsValidating(true);
     
     try {
@@ -51,6 +53,10 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
         setError(result.error || 'Invalid file');
         setSelectedFile(null);
         setImageInfo({});
+        
+        if (result.error && result.error.includes('File size must be less than')) {
+          setShowErrorPopup(true);
+        }
         return;
       }
       
@@ -317,6 +323,36 @@ export default function UploadModal({ isOpen, onClose }: { isOpen: boolean; onCl
             </div>
           )}
         </div>
+
+        {showErrorPopup && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80">
+            <div className="w-full max-w-md bg-[#00A86B]/85 backdrop-blur-sm rounded-xl text-white p-6 shadow-lg border border-white/20">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xl font-bold">File Too Large</h3>
+                <button 
+                  onClick={() => setShowErrorPopup(false)}
+                  className="text-white/70 hover:text-white"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="py-4">
+                <p className="mb-4">{error}</p>
+                <p className="text-sm text-white/80">Please select a smaller image file and try again.</p>
+              </div>
+              
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setShowErrorPopup(false)}
+                  className="px-4 py-2 bg-[#004E32] text-white rounded-md hover:bg-[#003D27] font-medium transition-colors"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

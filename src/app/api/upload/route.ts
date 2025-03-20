@@ -4,9 +4,9 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { nanoid } from 'nanoid';
-import { createImageRecord } from '@/lib/imageStorage';
+import { createImageRecord } from '@/lib/server/imageStorage';
 import { RECIPIENT_WALLET_ADDRESS, IMAGE_SETTINGS, FEATURES, MAX_FILE_SIZE } from '@/utils/constants';
-import { resizeImage, determineOptimalFormat } from '@/lib/imageResizer';
+import { resizeImage, determineOptimalFormat } from '@/lib/server/imageResizer';
 import { withErrorHandling, createApiError, ApiErrorType } from '@/utils/apiErrorHandler';
 import { imageLogger } from '@/utils/logger/index';
 import { PaymentStatus } from '@/lib/payment/types';
@@ -16,7 +16,14 @@ import { ensureServerInitialized } from '@/lib/server/init';
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const requestId = request.headers.get('x-request-id') || 'unknown';
   const uploadId = nanoid(6); // Short ID for logging
-
+  let tempOriginalPath: string | null = null;
+  let finalFilePath: string | null = null;
+  
+  // Helper to ensure errors are always proper Error objects
+  const ensureError = (error: unknown): Error => {
+    return error instanceof Error ? error : new Error(String(error));
+  };
+  
   imageLogger.info(`[Upload:${uploadId}] Processing new upload request`, {
     requestId,
     uploadId
@@ -86,7 +93,6 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     const uploadDir = path.join(process.cwd(), 'public/uploads');
     
     // Step 1: Store original file in temp location first
-    let tempOriginalPath = '';
     let originalBuffer: Buffer;
     
     try {
@@ -104,11 +110,12 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       await writeFile(tempOriginalPath, originalBuffer);
       imageLogger.debug(`[Upload:${uploadId}] Original file saved to temp location: ${tempOriginalPath}`, { requestId });
     } catch (fileError) {
-      imageLogger.error(`[Upload:${uploadId}] Error saving original file`, fileError, { requestId });
+      const error = ensureError(fileError);
+      imageLogger.error(`[Upload:${uploadId}] Error saving original file`, error, { requestId });
       return createApiError(
         ApiErrorType.INTERNAL_ERROR,
         'Failed to save uploaded file',
-        fileError,
+        error,
         undefined,
         requestId
       );
@@ -117,7 +124,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     // Step 2: Determine format for resized image - preserve quality when possible
     const targetFormat = determineOptimalFormat(originalExtension, originalBuffer.length);
     const finalFileName = `${fileId}.${targetFormat}`;
-    const finalFilePath = path.join(uploadDir, finalFileName);
+    finalFilePath = path.join(uploadDir, finalFileName);
     const publicUrl = `/uploads/${finalFileName}`;
     
     // Step 3: Apply MINIMUM_SIZE_MULTIPLIER to prevent excessive downsizing
@@ -172,7 +179,8 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         });
       }
     } catch (resizeError) {
-      imageLogger.error(`[Upload:${uploadId}] Critical resize error`, resizeError, { requestId });
+      const resizeErrorObj = ensureError(resizeError);
+      imageLogger.error(`[Upload:${uploadId}] Critical resize error`, resizeErrorObj, { requestId });
       
       // Use original as fallback in case of complete failure
       try {
@@ -188,28 +196,30 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
           width: storageWidth,
           height: storageHeight,
           processingTimeMs: 0,
-          error: resizeError
+          error: resizeErrorObj
         };
       } catch (fallbackError) {
-        imageLogger.error(`[Upload:${uploadId}] Complete failure - could not save fallback`, fallbackError, { requestId });
+        const fallbackErrorObj = ensureError(fallbackError);
+        imageLogger.error(`[Upload:${uploadId}] Complete failure - could not save fallback`, fallbackErrorObj, { requestId });
         return createApiError(
           ApiErrorType.INTERNAL_ERROR,
           'Failed to process image: could not save either original or resized version',
-          { originalError: resizeError, fallbackError },
+          { originalError: resizeErrorObj, fallbackError: fallbackErrorObj },
           undefined,
           requestId
         );
       }
     }
     
-    // Step 5: Clean up temp file
+    // Clean up the temporary original file
     try {
-      if (tempOriginalPath && fs.existsSync(tempOriginalPath)) {
+      if (tempOriginalPath) {
         fs.unlinkSync(tempOriginalPath);
         imageLogger.debug(`[Upload:${uploadId}] Removed temporary file: ${tempOriginalPath}`, { requestId });
       }
     } catch (cleanupError) {
-      imageLogger.warn(`[Upload:${uploadId}] Failed to clean up temp file`, cleanupError, { requestId });
+      const cleanupErrorObj = ensureError(cleanupError);
+      imageLogger.warn(`[Upload:${uploadId}] Failed to clean up temp file`, cleanupErrorObj, { requestId });
       // Non-critical error, continue
     }
     
@@ -228,7 +238,8 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       });
       
       if (!success || !imageRecord) {
-        imageLogger.error(`[Upload:${uploadId}] Database record creation failed`, error, { requestId });
+        const errorObj = ensureError(error);
+        imageLogger.error(`[Upload:${uploadId}] Database record creation failed`, errorObj, { requestId });
         
         // Still return success with the file URL and a warning since the file was saved
         return NextResponse.json({
@@ -243,16 +254,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
             status: PaymentStatus.INITIALIZED,
             created_at: new Date().toISOString()
           },
-          optimization: {
-            originalSize: resizeResult.originalSize,
-            finalSize: resizeResult.resizedSize,
-            format: resizeResult.format,
-            compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
-            storedSize: `${storageWidth}x${storageHeight}`,
-            displaySize: `${size.width}x${size.height}`
-          },
-          warning: "Image record created in memory only. Database connection failed: " + error,
-          requestId
+          warning: 'File uploaded but database record could not be created'
         });
       }
       
@@ -284,7 +286,8 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         }
       } catch (cacheError) {
         // Non-critical error, just log it
-        imageLogger.warn(`[Upload:${uploadId}] Error updating image cache`, cacheError, { 
+        const cacheErrorObj = ensureError(cacheError);
+        imageLogger.warn(`[Upload:${uploadId}] Error updating image cache`, cacheErrorObj, { 
           imageId: imageRecord.image_id,
           requestId
         });
@@ -306,7 +309,8 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         requestId
       });
     } catch (dbError) {
-      imageLogger.error(`[Upload:${uploadId}] Database operation error`, dbError, { requestId });
+      const dbErrorObj = ensureError(dbError);
+      imageLogger.error(`[Upload:${uploadId}] Database operation error`, dbErrorObj, { requestId });
       
       // Still return success with the file URL and a warning
       return NextResponse.json({
@@ -319,22 +323,15 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
           size_x: size.width,
           size_y: size.height,
           status: PaymentStatus.INITIALIZED,
+          image_id: fileId, // Use the generated file ID as a fallback
           created_at: new Date().toISOString()
         },
-        optimization: {
-          originalSize: resizeResult.originalSize,
-          finalSize: resizeResult.resizedSize,
-          format: resizeResult.format,
-          compressionRatio: resizeResult.originalSize / resizeResult.resizedSize,
-          storedSize: `${storageWidth}x${storageHeight}`,
-          displaySize: `${size.width}x${size.height}`
-        },
-        warning: "Database operation failed. File was saved but record wasn't stored in the database.",
+        warning: "Database operation failed: " + dbErrorObj.message,
         requestId
       });
     }
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
+    const err = ensureError(error);
     imageLogger.error('Image upload failed', err, {
       error: err.message
     });

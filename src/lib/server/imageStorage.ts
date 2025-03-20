@@ -1,8 +1,8 @@
-// src/lib/imageStorage.ts
+// src/lib/server/imageStorage.ts
 
-import { PaymentStatus } from './payment/types';
+import { PaymentStatus } from '@/lib/payment/types/index';
 import { imageLogger, storageLogger } from '@/utils/logger/index';
-import { supabase, getSupabaseClient } from '@/lib/supabase';
+import { supabase, getSupabaseClient } from '@/lib/server/supabase';
 
 export interface ImageRecord {
   image_id: number;
@@ -131,63 +131,23 @@ export async function getPlacedImages(): Promise<{ success: boolean; data?: any[
   }
   
   try {
-    storageLogger.info('Fetching placed images with CONFIRMED status');
+    storageLogger.info('Fetching placed images with PENDING, PROCESSING, or CONFIRMED status');
     
-    // First try with the enum value
     const { data, error } = await client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED);
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.CONFIRMED]);
     
     if (error) {
-      storageLogger.error('Error fetching image records with enum value', error instanceof Error ? error : new Error(String(error)));
-      
-      // Try with uppercase string as fallback
-      storageLogger.info('Retrying with uppercase string "CONFIRMED"');
-      const fallbackResult = await client
-        .from('images')
-        .select('*')
-        .eq('status', 'CONFIRMED');
-      
-      if (fallbackResult.error) {
-        storageLogger.error('Error fetching image records with uppercase string', 
-          fallbackResult.error instanceof Error ? fallbackResult.error : new Error(String(fallbackResult.error)));
-        return { success: false, error: fallbackResult.error };
-      }
-      
-      if (fallbackResult.data && fallbackResult.data.length > 0) {
-        storageLogger.info(`Successfully fetched ${fallbackResult.data.length} images with uppercase string`);
-        return { success: true, data: fallbackResult.data };
-      } else {
-        storageLogger.warn('No confirmed images found with uppercase string');
-        
-        // Last attempt - try to get all images to see what statuses exist
-        const allImagesResult = await client
-          .from('images')
-          .select('status')
-          .then(result => {
-            if (!result.error && result.data) {
-              // Count occurrences of each status
-              const statusCounts: Record<string, number> = {};
-              result.data.forEach(row => {
-                const status = row.status;
-                statusCounts[status] = (statusCounts[status] || 0) + 1;
-              });
-              
-              storageLogger.info('Available image statuses:', { statuses: statusCounts });
-            }
-            return result;
-          });
-        
-        return { success: true, data: [] };
-      }
+      storageLogger.error('Error fetching image records', error instanceof Error ? error : new Error(String(error)));
+      return { success: false, error };
     }
     
     if (data && data.length > 0) {
-      storageLogger.info(`Successfully fetched ${data.length} images with enum value`);
+      storageLogger.info(`Successfully fetched ${data.length} images`);
       return { success: true, data };
     } else {
-      storageLogger.warn('No confirmed images found with enum value');
+      storageLogger.info('No images found with the specified statuses');
       return { success: true, data: [] };
     }
   } catch (error) {
@@ -246,15 +206,15 @@ export async function checkAreaAvailability(
   }
   
   try {
-    // Query for any confirmed images that overlap with the target area
+    // Query for any confirmed, pending, or processing images that overlap with the target area
     let query = client
       .from('images')
       .select('*')
-      .eq('status', PaymentStatus.CONFIRMED.toUpperCase())
-      .or(`and(x.gte.${x},x.lt.${x + width}),and(x.lte.${x},x.plus.width.gt.${x})`)
-      .or(`and(y.gte.${y},y.lt.${y + height}),and(y.lte.${y},y.plus.height.gt.${y})`);
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.CONFIRMED])
+      .or(`start_position_x.lte.${x + width},end_position_x.gte.${x}`)
+      .or(`start_position_y.lte.${y + height},end_position_y.gte.${y}`);
     
-    // Exclude the current image if updating
+    // Exclude the current image if needed
     if (excludeImageId) {
       query = query.neq('image_id', excludeImageId);
     }
@@ -268,8 +228,10 @@ export async function checkAreaAvailability(
       return { success: false, error };
     }
     
-    // Area is available if no overlapping images were found
-    return { success: true, available: data.length === 0 };
+    // If we found any images that overlap, the area is not available
+    const available = !data || data.length === 0;
+    
+    return { success: true, available };
   } catch (error) {
     storageLogger.error('Failed to check area availability', error instanceof Error ? error : new Error(String(error)), {
       x, y, width, height, excludeImageId
@@ -279,10 +241,10 @@ export async function checkAreaAvailability(
 }
 
 /**
- * Clean up expired pending payments
+ * Clean up expired pending or still processing payments
  */
 export async function cleanupExpiredPendingPayments(
-  timeoutMinutes: number = 3
+  timeoutMinutes?: number
 ): Promise<{ success: boolean; error?: any }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -291,36 +253,41 @@ export async function cleanupExpiredPendingPayments(
   }
   
   try {
-    const { error } = await client
+    // Import PAYMENT_TIMEOUT_MS from constants
+    const { PAYMENT_TIMEOUT_MS } = await import('@/utils/constants');
+    
+    // Calculate timeout value in minutes from the ms constant if not provided
+    const actualTimeoutMinutes = timeoutMinutes ?? (PAYMENT_TIMEOUT_MS / 1000 / 60);
+    
+    // Calculate timeout timestamp
+    const timeoutThreshold = new Date();
+    timeoutThreshold.setMinutes(timeoutThreshold.getMinutes() - actualTimeoutMinutes);
+    
+    storageLogger.debug('Cleaning up expired payments', {
+      timeoutMinutes: actualTimeoutMinutes,
+      thresholdTime: timeoutThreshold.toISOString()
+    });
+    
+    // Update status of expired pending or processing payments
+    const { data, error } = await client
       .from('images')
-      .update({
-        status: PaymentStatus.TIMEOUT.toUpperCase(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('status', PaymentStatus.PENDING.toUpperCase())
-      .lt('created_at', new Date(Date.now() - timeoutMinutes * 60000).toISOString());
+      .update({ status: PaymentStatus.TIMEOUT })
+      .in('status', [PaymentStatus.PENDING, PaymentStatus.PROCESSING])
+      .lt('created_at', timeoutThreshold.toISOString());
     
     if (error) {
-      storageLogger.error('Error cleaning up expired payments', error instanceof Error ? error : new Error(String(error)), {
-        timeoutMinutes
-      });
+      storageLogger.error('Error cleaning up expired payments', error instanceof Error ? error : new Error(String(error)));
       return { success: false, error };
     }
     
     return { success: true };
   } catch (error) {
-    storageLogger.error('Failed to cleanup expired payments', error instanceof Error ? error : new Error(String(error)), {
-      timeoutMinutes
-    });
+    storageLogger.error('Failed to clean up expired payments', error instanceof Error ? error : new Error(String(error)));
     return { success: false, error };
   }
 }
 
-// Export storage functions that use the shared client
-export async function uploadImage(/* ... existing parameters ... */) {
-  if (!supabase) {
-    storageLogger.error('Unable to upload image - Supabase client not initialized');
-    return { error: 'Storage client not initialized' };
-  }
-  // ... rest of the existing function ...
-}
+// Additional functions can be added here as needed, for example for image uploads
+export async function uploadImage(/* ... parameters as needed ... */) {
+  // Implementation for uploading an image to storage and creating a record
+} 

@@ -1,12 +1,14 @@
-// src/utils/solana.ts
+// src/lib/payment/utils/solana.ts
 "use client"
 
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { RPC_ENDPOINT } from '@/lib/solana/walletConfig';
+import { SOLANA } from '@/utils/constants';
+import { blockchainLogger } from '@/utils/logger';
+
 
 // Create a connection using the RPC endpoint
-export const connection = new Connection(RPC_ENDPOINT);
+export const connection = new Connection(SOLANA.RPC_ENDPOINT);
 
 // Simplified wallet verification that doesn't rely on deprecated methods
 export const verifyWalletOwnership = async (
@@ -42,7 +44,7 @@ export const verifyWalletOwnership = async (
 
     return isValid;
   } catch (error) {
-    console.error('Error verifying wallet ownership:', error);
+    blockchainLogger.error('Error verifying wallet ownership:', error instanceof Error ? error : new Error(String(error))); 
     throw error;
   }
 };
@@ -58,10 +60,10 @@ export const useWalletVerification = () => {
     try {
       return await verifyWalletOwnership(publicKey, signTransaction);
     } catch (error) {
-      console.error('Wallet verification failed:', error);
+      blockchainLogger.error('Wallet verification failed:', error instanceof Error ? error : new Error(String(error)));
       return false;
     }
   };
 
   return { verifyOwnership };
-};
+}; 
