@@ -2,7 +2,7 @@
 import { Connection, Commitment, TransactionSignature } from '@solana/web3.js';
 import { PaymentError, ErrorCategory } from '../types/index';
 import { createPaymentError } from '../utils/errorUtils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from './walletConfig';
+import { SOLANA } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -14,13 +14,13 @@ export class ConnectionManager {
   /**
    * Get or create a connection for a specific endpoint and commitment
    */
-  getConnection(endpoint: string = RPC_ENDPOINT, commitment: Commitment = 'confirmed'): Connection {
+  getConnection(endpoint: string = SOLANA.RPC_ENDPOINT, commitment: Commitment = 'confirmed'): Connection {
     const key = `${endpoint}-${commitment}`;
     
     if (!this.connections.has(key)) {
       const connection = new Connection(endpoint, {
         commitment,
-        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
+        confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT
       });
       
       this.connections.set(key, connection);
@@ -39,7 +39,7 @@ export class ConnectionManager {
   ): Promise<boolean> {
     // Start with the main endpoint
     try {
-      const connection = this.getConnection(RPC_ENDPOINT, commitment);
+      const connection = this.getConnection(SOLANA.RPC_ENDPOINT, commitment);
       const result = await connection.confirmTransaction(signature, commitment);
       
       if (result.value.err) {
@@ -52,7 +52,7 @@ export class ConnectionManager {
       blockchainLogger.warn('Failed to confirm transaction with primary endpoint', error instanceof Error ? error : new Error(String(error)));
       
       // Try with fallback endpoints
-      for (const fallbackEndpoint of FALLBACK_ENDPOINTS) {
+      for (const fallbackEndpoint of SOLANA.FALLBACK_ENDPOINTS) {
         try {
           const connection = this.getConnection(fallbackEndpoint, commitment);
           const result = await connection.confirmTransaction(signature, commitment);

@@ -24,12 +24,10 @@ import {
   extractSignatureFromError,
   clearSessionBlockhashData
 } from '../utils';
-import { RPC_ENDPOINT, CONFIRMATION_TIMEOUT } from './walletConfig';
+import { SOLANA, MEMO_PROGRAM_ID } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 import { generateUniqueNonce, verifyTransactionUniqueness } from '../utils/transactionUtils';
 import { WalletContextState } from '@solana/wallet-adapter-react';
-import { MEMO_PROGRAM_ID } from '@/utils/constants';
-
 
 interface SendTransactionOpts {
   skipPreflight?: boolean;
@@ -60,9 +58,9 @@ export async function processSolPayment(
     }
     
     // Create connection to Solana
-    const connection = new Connection(RPC_ENDPOINT, {
+    const connection = new Connection(SOLANA.RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT,
       disableRetryOnRateLimit: false
     });
     
@@ -597,9 +595,9 @@ export async function processSolPayment(
 export async function checkSolBalance(walletAddress: PublicKey): Promise<{ balance: number; error?: string }> {
   try {
     // Create connection
-    const connection = new Connection(RPC_ENDPOINT, {
+    const connection = new Connection(SOLANA.RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT,
+      confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT,
       disableRetryOnRateLimit: false
     });
     

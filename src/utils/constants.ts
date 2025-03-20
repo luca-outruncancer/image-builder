@@ -106,6 +106,46 @@ export const MAGNIFIER = {
 // Network configuration
 export const ACTIVE_NETWORK = WalletAdapterNetwork.Devnet; // Change to Mainnet when going live
 
+// Solana Wallet Configuration
+export const SOLANA = {
+  // Define RPC endpoints for different networks with rate limit handling
+  RPC_ENDPOINTS: {
+    [WalletAdapterNetwork.Devnet]: 'https://api.devnet.solana.com',
+    [WalletAdapterNetwork.Mainnet]: 'https://api.mainnet-beta.solana.com',
+    [WalletAdapterNetwork.Testnet]: 'https://api.testnet.solana.com',
+  },
+  
+  // Optional fallback RPC endpoints when primary fails
+  FALLBACK_RPC_ENDPOINTS: {
+    [WalletAdapterNetwork.Devnet]: [
+      'https://devnet.solana.rpcpool.com',
+      'https://api.devnet.solana.com'
+    ],
+    [WalletAdapterNetwork.Mainnet]: [
+      'https://solana-api.projectserum.com',
+      'https://api.mainnet-beta.solana.com'
+    ],
+    [WalletAdapterNetwork.Testnet]: [
+      'https://api.testnet.solana.com'
+    ],
+  },
+  
+  // RPC Endpoint configuration based on environment or defaults
+  RPC_ENDPOINT: process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com',
+  FALLBACK_ENDPOINTS: process.env.NEXT_PUBLIC_SOLANA_FALLBACK_URLS 
+    ? process.env.NEXT_PUBLIC_SOLANA_FALLBACK_URLS.split(',')
+    : [],
+  
+  // Connection settings
+  CONNECTION_TIMEOUT: 30000, // 30 seconds
+  
+  // Confirmation timeout
+  CONFIRMATION_TIMEOUT: 60000, // 60 seconds
+  
+  // RPC retry attempts
+  MAX_RPC_RETRIES: 3
+};
+
 // Recipient wallet address
 export const RECIPIENT_WALLET_ADDRESS =
   "6ghQYEsbBRC4udcJThSDGoGkKWmrFdDDE6hjXWReG4LC";

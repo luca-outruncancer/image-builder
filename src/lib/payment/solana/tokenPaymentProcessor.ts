@@ -32,8 +32,7 @@ import {
   getNonce,
   extractSignatureFromError
 } from '../utils';
-import { RPC_ENDPOINT, CONNECTION_TIMEOUT, CONFIRMATION_TIMEOUT, FALLBACK_ENDPOINTS } from './walletConfig';
-import { PAYMENT_TOKENS, ACTIVE_NETWORK } from '@/utils/constants';
+import { PAYMENT_TOKENS, ACTIVE_NETWORK, SOLANA } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -67,9 +66,10 @@ export async function processTokenPayment(
   }
   
   // Create connection to Solana
-  const connection = new Connection(RPC_ENDPOINT, {
-    commitment: 'confirmed' as Commitment,
-    confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
+  const connection = new Connection(SOLANA.RPC_ENDPOINT, {
+    commitment: 'confirmed',
+    confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT,
+    disableRetryOnRateLimit: false
   });
   
   try {
@@ -412,34 +412,31 @@ export async function checkTokenBalance(
   tokenSymbol: string
 ): Promise<{ hasToken: boolean; balance: number; error?: string }> {
   try {
-    // Get mint address for token
-    const tokenData = PAYMENT_TOKENS[tokenSymbol];
-    if (!tokenData || !tokenData.mint || !tokenData.mint[ACTIVE_NETWORK]) {
-      return { 
-        hasToken: false, 
-        balance: 0, 
-        error: `Token ${tokenSymbol} not configured for ${ACTIVE_NETWORK}` 
-      };
+    // Get mint address from token symbol
+    const tokenConfig = PAYMENT_TOKENS[tokenSymbol];
+    if (!tokenConfig) {
+      return { hasToken: false, balance: 0, error: `Token ${tokenSymbol} not supported` };
     }
-
-    const mintAddress = new PublicKey(tokenData.mint[ACTIVE_NETWORK]);
+    
+    const mintAddress = tokenConfig.mint[ACTIVE_NETWORK];
+    const decimals = tokenConfig.decimals;
     
     // Create connection
-    const connection = new Connection(RPC_ENDPOINT, {
+    const connection = new Connection(SOLANA.RPC_ENDPOINT, {
       commitment: 'confirmed',
-      confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
+      confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT
     });
     
     // Get token account
     const tokenAccount = await getAssociatedTokenAddress(
-      mintAddress,
+      new PublicKey(mintAddress),
       walletAddress
     );
     
     // Check if account exists
     try {
       const accountInfo = await getAccount(connection, tokenAccount);
-      const mintInfo = await getMint(connection, mintAddress);
+      const mintInfo = await getMint(connection, new PublicKey(mintAddress));
       
       // Get balance as UI amount (with proper decimal places)
       const rawBalance = Number(accountInfo.amount);

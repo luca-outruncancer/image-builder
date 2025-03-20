@@ -26,7 +26,7 @@ import {
 } from '../utils';
 import { processSolPayment } from './solPaymentProcessor';
 import { processTokenPayment } from './tokenPaymentProcessor';
-import { RPC_ENDPOINT, CONFIRMATION_TIMEOUT } from './walletConfig';
+import { SOLANA } from '@/utils/constants';
 import { blockchainLogger } from '@/utils/logger';
 
 /**
@@ -72,13 +72,13 @@ export class SolanaPaymentProvider {
     const commitment: Commitment = 'confirmed';
     
     try {
-      if (!RPC_ENDPOINT) {
+      if (!SOLANA.RPC_ENDPOINT) {
         throw new Error('No RPC endpoint configured');
       }
       
-      const connection = new Connection(RPC_ENDPOINT, {
+      const connection = new Connection(SOLANA.RPC_ENDPOINT, {
         commitment,
-        confirmTransactionInitialTimeout: CONFIRMATION_TIMEOUT
+        confirmTransactionInitialTimeout: SOLANA.CONFIRMATION_TIMEOUT
       });
       
       return connection;
