@@ -1,16 +1,4 @@
--- Cleanup old logs
-CREATE OR REPLACE FUNCTION cleanup_old_logs(days_to_keep INTEGER DEFAULT 30)
-RETURNS INTEGER AS $$
-DECLARE
-    deleted_count INTEGER;
-BEGIN
-    DELETE FROM application_logs
-    WHERE ttimestamp < NOW() - (days_to_keep || ' days')::INTERVAL
-    RETURNING COUNT(*) INTO deleted_count;
-    
-    RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
+
 
 -- Check area availability for image placement
 CREATE OR REPLACE FUNCTION check_area_availability(
@@ -38,64 +26,6 @@ BEGIN
         CASE WHEN COUNT(*) = 0 THEN true ELSE false END as is_available,
         ARRAY_AGG(image_id) as conflicting_images
     FROM overlapping_images;
-END;
-$$ LANGUAGE plpgsql;
-
--- Cleanup expired payment sessions
-CREATE OR REPLACE FUNCTION cleanup_expired_sessions(timeout_minutes INTEGER DEFAULT 15)
-RETURNS TABLE (
-    cleaned_session_id UUID,
-    image_id integer,
-    previous_status VARCHAR(20)
-) AS $$
-BEGIN
-    RETURN QUERY
-    WITH expired_sessions AS (
-        DELETE FROM payment_sessions
-        WHERE expires_at < NOW() - (timeout_minutes || ' minutes')::INTERVAL
-        AND status IN ('INITIALIZED', 'PENDING', 'PROCESSING')
-        RETURNING session_id, image_id, status as previous_status
-    )
-    UPDATE images i
-    SET 
-        status = 'TIMEOUT',
-        updated_at = NOW()
-    FROM expired_sessions e
-    WHERE i.image_id = e.image_id
-    AND i.status IN ('INITIALIZED', 'PENDING', 'PROCESSING')
-    RETURNING e.session_id, e.image_id, e.previous_status;
-END;
-$$ LANGUAGE plpgsql;
-
--- Get request logs with context
-CREATE OR REPLACE FUNCTION get_request_logs(
-    req_id UUID,
-    include_context BOOLEAN DEFAULT false
-)
-RETURNS TABLE (
-    log_id integer,
-    ttimestamp TIMESTAMP WITH TIME ZONE,
-    level VARCHAR(20),
-    component VARCHAR(50),
-    message TEXT,
-    data JSONB,
-    context JSONB,
-    sender_wallet VARCHAR(44)
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        l.id,
-        l.ttimestamp,
-        l.level,
-        l.component,
-        l.message,
-        l.data,
-        CASE WHEN include_context THEN l.context ELSE NULL END,
-        l.sender_wallet
-    FROM application_logs l
-    WHERE l.request_id = req_id
-    ORDER BY l.timestamp;
 END;
 $$ LANGUAGE plpgsql;
 
