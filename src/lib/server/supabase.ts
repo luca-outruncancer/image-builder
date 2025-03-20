@@ -2,10 +2,11 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { systemLogger } from '@/utils/logger';
+import { ENV, SUPABASE_CONFIG } from '@/utils/constants';
 
 // Use environment variables for Supabase connection
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = SUPABASE_CONFIG.URL;
+const supabaseKey = SUPABASE_CONFIG.ANON_KEY;
 
 // Initialize Supabase client
 let supabase: SupabaseClient | null = null;
@@ -28,7 +29,10 @@ export function initializeSupabase() {
       const error = new Error('Missing Supabase environment variables');
       systemLogger.error('Failed to initialize Supabase client', error, {
         hasUrl: !!supabaseUrl,
-        hasKey: !!supabaseKey
+        hasUrlValue: supabaseUrl?.substring(0, 10) + '...',
+        hasKey: !!supabaseKey,
+        hasKeyValue: supabaseKey?.substring(0, 10) + '...',
+        envKeys: Object.keys(process.env).filter(key => key.includes('SUPABASE')).join(', ')
       });
       initError = error;
       return { supabase: null, error };
